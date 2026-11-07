@@ -90,3 +90,10 @@ export interface ApiHelp {
 	console: string;
 	note: string;
 }
+
+export interface SettingsView {
+	curseforgeApiKey: string;
+	hasApiKey: boolean;
+	applyUrl: string;
+	docsUrl: string;
+}

@@ -500,6 +500,108 @@ button {
 	gap: 8px;
 }
 
+.settings-btn {
+	position: relative;
+}
+
+.settings-btn.active-settings {
+	border-color: var(--accent);
+	color: var(--accent-strong);
+}
+
+.settings-dot {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--ok);
+}
+
+.linkish {
+	border: 0;
+	background: transparent;
+	color: var(--accent-strong);
+	padding: 0 4px;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.ok-banner {
+	border-color: #2f5a42 !important;
+	background: #142019 !important;
+	color: #b7e0c7 !important;
+}
+
+.settings-page {
+	width: 100%;
+	max-width: 720px;
+	margin: 0 auto;
+	padding: 24px 18px 40px;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+.settings-header {
+	display: flex;
+	align-items: flex-start;
+	gap: 14px;
+}
+
+.settings-header h2 {
+	margin: 0 0 4px;
+	font-size: 22px;
+}
+
+.settings-card {
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 20px;
+	box-shadow: var(--shadow);
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.settings-field {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	font-size: 13px;
+	color: var(--text-muted);
+}
+
+.settings-field input {
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: #101014;
+	color: var(--text);
+	padding: 12px 14px;
+	outline: none;
+}
+
+.settings-field input:focus {
+	border-color: #5a3a1a;
+}
+
+.settings-hint {
+	margin: 0;
+	line-height: 1.5;
+}
+
+.settings-links {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.settings-links a {
+	color: var(--accent-strong);
+}
+
 @media (max-width: 960px) {
 	.browse-layout {
 		grid-template-columns: 1fr;

@@ -3,23 +3,27 @@ import { open } from "@tauri-apps/plugin-dialog";
 import * as api from "./api";
 import { BrowseTab } from "./components/BrowseTab";
 import { InstalledTab } from "./components/InstalledTab";
-import type { ApiHelp, WowInstall } from "./types";
+import { SettingsPage } from "./components/SettingsPage";
+import type { ApiHelp, SettingsView, WowInstall } from "./types";
 import "./styles.css";
 
-type TabId = "browse" | string;
+type TabId = "browse" | "settings" | string;
 
 export default function App() {
 	const [tab, setTab] = useState<TabId>("browse");
+	const [previousTab, setPreviousTab] = useState<TabId>("browse");
 	const [installs, setInstalls] = useState<WowInstall[]>([]);
 	const [refreshKey, setRefreshKey] = useState(0);
+	const [browseNonce, setBrowseNonce] = useState(0);
 	const [apiHelp, setApiHelp] = useState<ApiHelp | null>(null);
+	const [settings, setSettings] = useState<SettingsView | null>(null);
 	const [status, setStatus] = useState<string | null>(null);
 
 	async function refreshInstalls() {
 		try {
 			const list = await api.detectWowInstalls();
 			setInstalls(list);
-			if (tab !== "browse" && !list.some((i) => i.id === tab)) {
+			if (tab !== "browse" && tab !== "settings" && !list.some((i) => i.id === tab)) {
 				setTab("browse");
 			}
 		} catch (err) {
@@ -30,6 +34,7 @@ export default function App() {
 	useEffect(() => {
 		refreshInstalls();
 		api.getApiHelp().then(setApiHelp).catch(console.error);
+		api.getSettings().then(setSettings).catch(console.error);
 	}, []);
 
 	async function handleAddPath() {
@@ -46,6 +51,13 @@ export default function App() {
 		} catch (err) {
 			setStatus(String(err));
 		}
+	}
+
+	function openSettings() {
+		if (tab !== "settings") {
+			setPreviousTab(tab);
+		}
+		setTab("settings");
 	}
 
 	return (
@@ -81,27 +93,50 @@ export default function App() {
 					<button className="btn" onClick={refreshInstalls}>
 						重新扫描
 					</button>
+					<button
+						className={`btn settings-btn ${tab === "settings" ? "active-settings" : ""}`}
+						onClick={openSettings}
+						title="设置"
+					>
+						设置
+						{settings?.hasApiKey ? <span className="settings-dot" /> : null}
+					</button>
 				</div>
 			</header>
 
 			{status ? <div className="banner">{status}</div> : null}
-			{apiHelp && tab === "browse" ? (
+			{apiHelp && tab === "browse" && !settings?.hasApiKey ? (
 				<div className="banner">
-					官方 API 申请：
+					尚未配置 API Key，当前使用网页 GET / 演示数据。点击右上角
+					<button className="linkish" onClick={openSettings}>
+						设置
+					</button>
+					填写 Key 后改用官方接口。
 					<a href={apiHelp.apply} target="_blank" rel="noreferrer">
-						第三方 API Key 申请表
+						申请表
 					</a>
 					{" · "}
 					<a href={apiHelp.docs} target="_blank" rel="noreferrer">
-						API 文档
+						文档
 					</a>
-					。当前暂用 CurseForge 网页 GET；若被 Cloudflare 拦截会回退演示数据。
 				</div>
+			) : null}
+			{tab === "browse" && settings?.hasApiKey ? (
+				<div className="banner ok-banner">已启用 CurseForge 官方 API。</div>
 			) : null}
 
 			<main className="content">
-				{tab === "browse" ? (
+				{tab === "settings" ? (
+					<SettingsPage
+						onBack={() => setTab(previousTab === "settings" ? "browse" : previousTab)}
+						onSaved={(next) => {
+							setSettings(next);
+							setBrowseNonce((v) => v + 1);
+						}}
+					/>
+				) : tab === "browse" ? (
 					<BrowseTab
+						key={browseNonce}
 						installs={installs}
 						onInstalled={() => {
 							setRefreshKey((v) => v + 1);

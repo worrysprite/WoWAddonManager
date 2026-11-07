@@ -26,7 +26,7 @@
 
 > 注意：非游戏开发者请走第三方申请表。未申请 Key 就注册 Console 的账号可能会被删除。
 
-拿到 Key 后，用 `x-api-key` 调用 `https://api.curseforge.com`，替换 `src-tauri/src/curseforge/` 中的网页客户端即可。
+拿到 Key 后，在应用右上角 **设置** 中填写即可。保存后搜索与下载会自动改用官方 API（`api.curseforge.com` + `x-api-key`）。
 
 ## 开发
 

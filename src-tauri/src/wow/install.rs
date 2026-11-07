@@ -27,10 +27,12 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 	let addons_path = PathBuf::from(&install.addons_path);
 	fs::create_dir_all(&addons_path).map_err(|e| e.to_string())?;
 
-	let folders = match curseforge::web::download_addon_zip(&addon.slug, addon.latest_file_id).await {
+	let folders = match curseforge::download_addon_zip(addon.id, &addon.slug, addon.latest_file_id)
+		.await
+	{
 		Ok(bytes) => extract_zip(&bytes, &addons_path)?,
 		Err(err) => {
-			// Temporary path without API: create a tracked placeholder so UI/install flow works.
+			// Without a working download path: create a tracked placeholder for local testing.
 			let folder = sanitize_folder(&addon.slug);
 			let target = addons_path.join(&folder);
 			fs::create_dir_all(&target).map_err(|e| e.to_string())?;

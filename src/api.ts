@@ -6,6 +6,7 @@ import type {
 	InstalledAddon,
 	SearchParams,
 	SearchResult,
+	SettingsView,
 	WowInstall,
 } from "./types";
 
@@ -49,4 +50,14 @@ export function deleteAddon(installId: string, folderName: string) {
 
 export function getApiHelp() {
 	return invoke<ApiHelp>("get_api_help");
+}
+
+export function getSettings() {
+	return invoke<SettingsView>("get_settings");
+}
+
+export function saveSettings(curseforgeApiKey: string) {
+	return invoke<SettingsView>("save_settings", {
+		request: { curseforgeApiKey },
+	});
 }

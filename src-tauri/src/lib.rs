@@ -3,6 +3,7 @@ mod curseforge;
 mod types;
 mod wow;
 
+use config::{SaveSettingsRequest, SettingsView};
 use curseforge::catalog;
 use types::{
 	DeleteRequest, FilterCatalog, InstallRequest, InstalledAddon, SearchParams, SearchResult,
@@ -73,6 +74,16 @@ async fn delete_addon(request: DeleteRequest) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_settings() -> SettingsView {
+	config::settings_view()
+}
+
+#[tauri::command]
+fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, String> {
+	config::save_settings(request)
+}
+
+#[tauri::command]
 fn get_api_help() -> serde_json::Value {
 	serde_json::json!({
 		"docs": "https://docs.curseforge.com/rest-api/",
@@ -96,6 +107,8 @@ pub fn run() {
 			install_addon,
 			update_addon,
 			delete_addon,
+			get_settings,
+			save_settings,
 			get_api_help
 		])
 		.run(tauri::generate_context!())
