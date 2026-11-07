@@ -20,7 +20,7 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 					install.label,
 					cache.addons.len()
 				);
-				return Ok(cache.addons);
+				return Ok(sanitize_installed_list(cache.addons));
 			}
 		}
 	}
@@ -76,6 +76,20 @@ pub fn remove_from_cache(install: &WowInstall, folder_name: &str) -> Result<(), 
 	cache.addons.retain(|a| a.folder_name != folder_name);
 	cache.scanned_at = Some(Utc::now().to_rfc3339());
 	write_scan_cache(&addons_path, &cache)
+}
+
+fn sanitize_installed_list(mut addons: Vec<InstalledAddon>) -> Vec<InstalledAddon> {
+	for addon in &mut addons {
+		addon.title = crate::wow::toc::clean_toc_title(&addon.title);
+		if let Some(author) = addon.author.take() {
+			let cleaned = crate::wow::toc::clean_toc_text(&author);
+			addon.author = (!cleaned.is_empty()).then_some(cleaned);
+		}
+		if let Some(notes) = addon.notes.take() {
+			addon.notes = crate::wow::toc::clean_toc_notes(&notes);
+		}
+	}
+	addons
 }
 
 fn scan_cache_path(addons_path: &Path) -> PathBuf {
@@ -143,16 +157,20 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 		let meta = toc.as_ref().map(|p| parse_toc(p)).unwrap_or_default();
 		let tracked = stored_map.get(&folder_name);
 
+		let raw_title = tracked
+			.and_then(|t| t.name.clone())
+			.or(meta.title)
+			.unwrap_or_else(|| folder_name.clone());
+		let raw_author = tracked.and_then(|t| t.author.clone()).or(meta.author);
+		let raw_notes = meta
+			.notes
+			.or_else(|| tracked.and_then(|t| t.summary.clone()));
+
 		results.push(InstalledAddon {
 			folder_name: folder_name.clone(),
-			title: tracked
-				.and_then(|t| t.name.clone())
-				.or(meta.title)
-				.unwrap_or(folder_name.clone()),
-			author: tracked
-				.and_then(|t| t.author.clone())
-				.or(meta.author),
-			notes: meta.notes,
+			title: crate::wow::toc::clean_toc_title(&raw_title),
+			author: raw_author.map(|v| crate::wow::toc::clean_toc_text(&v)),
+			notes: raw_notes.and_then(|v| crate::wow::toc::clean_toc_notes(&v)),
 			interface_version: meta.interface,
 			version: tracked
 				.and_then(|t| t.version.clone())
@@ -257,22 +275,30 @@ fn parse_toc(path: &Path) -> TocMeta {
 	for line in content.lines() {
 		let line = line.trim();
 		if let Some(rest) = line.strip_prefix("## Title:") {
-			meta.title = Some(strip_color(rest.trim()).to_string());
+			let cleaned = crate::wow::toc::clean_toc_title(rest);
+			if !cleaned.is_empty() {
+				meta.title = Some(cleaned);
+			}
 		} else if let Some(rest) = line.strip_prefix("## Author:") {
-			meta.author = Some(rest.trim().to_string());
+			let cleaned = crate::wow::toc::clean_toc_text(rest);
+			if !cleaned.is_empty() {
+				meta.author = Some(cleaned);
+			}
 		} else if let Some(rest) = line.strip_prefix("## Notes:") {
-			meta.notes = Some(strip_color(rest.trim()).to_string());
+			let cleaned = crate::wow::toc::clean_toc_text(rest);
+			if !cleaned.is_empty() {
+				meta.notes = Some(cleaned);
+			}
 		} else if let Some(rest) = line.strip_prefix("## Version:") {
-			meta.version = Some(rest.trim().to_string());
+			let cleaned = crate::wow::toc::clean_toc_text(rest);
+			if !cleaned.is_empty() {
+				meta.version = Some(cleaned);
+			}
 		} else if let Some(rest) = line.strip_prefix("## Interface:") {
 			meta.interface = Some(rest.trim().to_string());
 		}
 	}
 	meta
-}
-
-fn strip_color(input: &str) -> &str {
-	input
 }
 
 #[cfg(test)]

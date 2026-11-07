@@ -301,13 +301,24 @@ pub fn read_toc_meta(addons_path: &Path, folder: &str) -> (Option<String>, Optio
 	for line in content.lines() {
 		let line = line.trim();
 		if let Some(rest) = line.strip_prefix("## Title:") {
-			title = Some(rest.trim().to_string());
+			let cleaned = crate::wow::toc::clean_toc_title(rest);
+			if !cleaned.is_empty() {
+				title = Some(cleaned);
+			}
 		} else if let Some(rest) = line.strip_prefix("## Author:") {
-			author = Some(rest.trim().to_string());
+			let cleaned = crate::wow::toc::clean_toc_text(rest);
+			if !cleaned.is_empty() {
+				author = Some(cleaned);
+			}
 		} else if let Some(rest) = line.strip_prefix("## Notes:") {
-			notes = Some(rest.trim().to_string());
+			if let Some(cleaned) = crate::wow::toc::clean_toc_notes(rest) {
+				notes = Some(cleaned);
+			}
 		} else if let Some(rest) = line.strip_prefix("## Version:") {
-			version = Some(rest.trim().to_string());
+			let cleaned = crate::wow::toc::clean_toc_text(rest);
+			if !cleaned.is_empty() {
+				version = Some(cleaned);
+			}
 		}
 	}
 	(title, author, notes, version)
