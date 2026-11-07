@@ -57,6 +57,9 @@ export type MessageKey =
 	| "installed.rescanDone"
 	| "installed.manualDone"
 	| "installed.deleteConfirm"
+	| "installed.deleteTitle"
+	| "installed.deleteOk"
+	| "installed.deleteCancel"
 	| "installed.pickArchive"
 	| "installed.archiveFilter"
 	| "installed.clientMissing"
@@ -170,6 +173,9 @@ export const en: Messages = {
 	"installed.rescanDone": "Addon scan complete. {count} addon(s).",
 	"installed.manualDone": "Manually installed: {names}",
 	"installed.deleteConfirm": "Delete addon {name}?",
+	"installed.deleteTitle": "Delete addon",
+	"installed.deleteOk": "Delete",
+	"installed.deleteCancel": "Cancel",
 	"installed.pickArchive": "Select addon archive",
 	"installed.archiveFilter": "Addon Archive",
 	"installed.clientMissing": "Client not found",
@@ -283,6 +289,9 @@ export const zhCN: Messages = {
 	"installed.rescanDone": "插件扫描完成，共 {count} 个插件",
 	"installed.manualDone": "已手动安装：{names}",
 	"installed.deleteConfirm": "确定删除插件 {name}？",
+	"installed.deleteTitle": "删除插件",
+	"installed.deleteOk": "删除",
+	"installed.deleteCancel": "取消",
 	"installed.pickArchive": "选择插件压缩包",
 	"installed.archiveFilter": "插件压缩包",
 	"installed.clientMissing": "未找到该客户端",
