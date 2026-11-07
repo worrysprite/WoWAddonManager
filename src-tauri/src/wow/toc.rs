@@ -97,6 +97,19 @@ impl<'a> ClientContext<'a> {
 
 /// Detect TOC markers that mean this single TOC is not for the current client.
 pub fn client_unsupported_reason(meta: &TocMeta, game_version: Option<&str>) -> Option<CompatibilityIssue> {
+	client_unsupported_reason_for(
+		meta,
+		&ClientContext {
+			flavor_key: None,
+			game_version,
+		},
+	)
+}
+
+pub fn client_unsupported_reason_for(
+	meta: &TocMeta,
+	ctx: &ClientContext<'_>,
+) -> Option<CompatibilityIssue> {
 	let title_raw = meta.title_raw.as_deref().unwrap_or("");
 	let notes_raw = meta.notes_raw.as_deref().unwrap_or("");
 	let title_l = title_raw.to_ascii_lowercase();
@@ -130,7 +143,16 @@ pub fn client_unsupported_reason(meta: &TocMeta, game_version: Option<&str>) -> 
 		});
 	}
 
-	if let Some(gv) = game_version {
+	// Prefer flavor Interface ranges (Forever=16001) over comparing against a
+	// possibly shared Retail `.build.info` game version like 12.1.5.
+	if let Some(flavor_key) = ctx.flavor_key {
+		if let Some(reason) = interface_flavor_mismatch_reason(meta, flavor_key) {
+			return Some(CompatibilityIssue { reason });
+		}
+		return None;
+	}
+
+	if let Some(gv) = ctx.game_version {
 		if let Some(reason) = interface_mismatch_reason(meta, gv) {
 			return Some(CompatibilityIssue { reason });
 		}
@@ -159,16 +181,52 @@ fn parse_interface_numbers(raw: &str) -> Vec<u32> {
 		.collect()
 }
 
+fn toc_interfaces(meta: &TocMeta) -> Vec<u32> {
+	if !meta.interfaces.is_empty() {
+		return meta.interfaces.clone();
+	}
+	meta.interface
+		.as_deref()
+		.map(parse_interface_numbers)
+		.unwrap_or_default()
+}
+
+/// Whether a TOC Interface number belongs to this client flavor.
+pub fn interface_fits_flavor(interface: u32, flavor_key: &str) -> bool {
+	match flavor_key {
+		// WoW Forever uses Interface 16001 (and neighbors), not Retail 12.x.
+		"forever" => (16000..17000).contains(&interface),
+		"classic" => (11000..12000).contains(&interface),
+		"classic-tbc" => (20000..21000).contains(&interface),
+		"wotlk" => (30000..39000).contains(&interface),
+		"cataclysm" => (40000..41000).contains(&interface),
+		"mop-classic" | "classic-beta" | "classic-ptr" => (50000..51000).contains(&interface),
+		"retail" | "ptr" | "xptr" => interface >= 90000,
+		_ => true,
+	}
+}
+
+fn interface_flavor_mismatch_reason(meta: &TocMeta, flavor_key: &str) -> Option<String> {
+	let interfaces = toc_interfaces(meta);
+	if interfaces.is_empty() {
+		return None;
+	}
+	if interfaces
+		.iter()
+		.any(|n| interface_fits_flavor(*n, flavor_key))
+	{
+		return None;
+	}
+	Some(format!(
+		"插件 Interface={:?} 与当前客户端（{flavor_key}）不匹配",
+		interfaces
+	))
+}
+
 fn interface_mismatch_reason(meta: &TocMeta, game_version: &str) -> Option<String> {
 	let expected = game_version_to_interface(game_version)?;
 	let exp_major = expected / 10000;
-
-	let mut interfaces = meta.interfaces.clone();
-	if interfaces.is_empty() {
-		if let Some(raw) = meta.interface.as_deref() {
-			interfaces = parse_interface_numbers(raw);
-		}
-	}
+	let interfaces = toc_interfaces(meta);
 	if interfaces.is_empty() {
 		return None;
 	}
@@ -183,15 +241,23 @@ fn interface_mismatch_reason(meta: &TocMeta, game_version: &str) -> Option<Strin
 	))
 }
 
-fn interfaces_match_game_version(meta: &TocMeta, game_version: Option<&str>) -> bool {
-	let Some(gv) = game_version else {
+fn interfaces_match_client(meta: &TocMeta, ctx: &ClientContext<'_>) -> bool {
+	if let Some(flavor_key) = ctx.flavor_key {
+		let interfaces = toc_interfaces(meta);
+		return !interfaces.is_empty()
+			&& interfaces
+				.iter()
+				.any(|n| interface_fits_flavor(*n, flavor_key));
+	}
+	let Some(gv) = ctx.game_version else {
 		return false;
 	};
 	let Some(expected) = game_version_to_interface(gv) else {
 		return false;
 	};
 	let exp_major = expected / 10000;
-	!meta.interfaces.is_empty() && meta.interfaces.iter().any(|n| n / 10000 == exp_major)
+	let interfaces = toc_interfaces(meta);
+	!interfaces.is_empty() && interfaces.iter().any(|n| n / 10000 == exp_major)
 }
 
 /// TOC filename suffixes commonly used for each flavor key.
@@ -270,9 +336,11 @@ fn score_toc_for_client(meta: &TocMeta, ctx: &ClientContext<'_>) -> i32 {
 		score += 5;
 	}
 
-	if interfaces_match_game_version(meta, ctx.game_version) {
+	if interfaces_match_client(meta, ctx) {
 		score += 50;
-	} else if ctx.game_version.is_some() && !meta.interfaces.is_empty() {
+	} else if (ctx.flavor_key.is_some() || ctx.game_version.is_some())
+		&& !toc_interfaces(meta).is_empty()
+	{
 		// Has interfaces but none match this client.
 		score -= 20;
 	}
@@ -422,7 +490,7 @@ pub fn folder_unsupported_reason(
 
 	if best_score >= 0 {
 		if let Some(meta) = best_meta {
-			if let Some(issue) = client_unsupported_reason(meta, ctx.game_version) {
+			if let Some(issue) = client_unsupported_reason_for(meta, ctx) {
 				return Some(issue);
 			}
 		}
@@ -434,12 +502,12 @@ pub fn folder_unsupported_reason(
 		.iter()
 		.find(|m| client_unsupported_reason(m, None).is_some())
 	{
-		return client_unsupported_reason(stub, ctx.game_version)
+		return client_unsupported_reason_for(stub, ctx)
 			.or_else(|| client_unsupported_reason(stub, None));
 	}
 
 	best_meta
-		.and_then(|m| client_unsupported_reason(m, ctx.game_version))
+		.and_then(|m| client_unsupported_reason_for(m, ctx))
 		.or_else(|| {
 			Some(CompatibilityIssue {
 				reason: "未找到适用于当前客户端的 TOC".into(),
@@ -583,6 +651,46 @@ mod tests {
 		let meta = read_folder_toc_for_client(&dir, "Questie", &ctx).unwrap();
 		assert_eq!(meta.flavor_suffix.as_deref(), Some("Vanilla"));
 		assert!(folder_unsupported_reason(&dir, "Questie", &ctx).is_none());
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn forever_interface_allows_even_if_build_info_is_retail() {
+		let meta = TocMeta {
+			title: Some("PrettyTooltip".into()),
+			notes_raw: Some("A full reskin of tooltips for WoW Forever.".into()),
+			interface: Some("16001".into()),
+			interfaces: vec![16001],
+			..TocMeta::default()
+		};
+		let ctx = ClientContext::from_install("forever", Some("12.1.5.70783"));
+		assert!(client_unsupported_reason_for(&meta, &ctx).is_none());
+		assert!(interface_fits_flavor(16001, "forever"));
+		assert!(!interface_fits_flavor(16001, "retail"));
+	}
+
+	#[test]
+	fn forever_addon_folder_installs_on_forever_client() {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-prettytooltip-{}-{}",
+			std::process::id(),
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addon = dir.join("PrettyTooltip");
+		fs::create_dir_all(&addon).unwrap();
+		fs::write(
+			addon.join("PrettyTooltip.toc"),
+			"## Interface: 16001\n## Title: PrettyTooltip\n## Notes: A full reskin of tooltips for WoW Forever.\n## Version: 1.3.7\n",
+		)
+		.unwrap();
+		let ctx = ClientContext::from_install("forever", Some("12.1.5.70783"));
+		assert!(folder_unsupported_reason(&dir, "PrettyTooltip", &ctx).is_none());
+		let retail = ClientContext::from_install("retail", Some("12.1.5.70783"));
+		assert!(folder_unsupported_reason(&dir, "PrettyTooltip", &retail).is_some());
 		let _ = fs::remove_dir_all(dir);
 	}
 
