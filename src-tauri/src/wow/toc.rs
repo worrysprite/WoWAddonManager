@@ -385,7 +385,31 @@ pub fn folder_unsupported_reason(
 		})
 		.collect();
 
-	// If any TOC is a positive match for this flavor/client, allow install.
+	let real_flavor_tocs: Vec<&TocMeta> = metas
+		.iter()
+		.filter(|m| {
+			m.flavor_suffix.is_some() && client_unsupported_reason(m, None).is_none()
+		})
+		.collect();
+
+	// Multi-TOC packs (Questie_Forever / _Vanilla / …): require an explicit
+	// matching flavor TOC. Do not accept another flavor just because Interface
+	// majors overlap (e.g. Forever vs Vanilla both in the 1.x range).
+	if !real_flavor_tocs.is_empty() {
+		if let Some(flavor_key) = ctx.flavor_key {
+			if real_flavor_tocs.iter().any(|m| {
+				m.flavor_suffix
+					.as_deref()
+					.is_some_and(|suffix| toc_suffix_matches_flavor(suffix, flavor_key))
+			}) {
+				return None;
+			}
+			return Some(CompatibilityIssue {
+				reason: format!("未找到适用于 {flavor_key} 客户端的 TOC"),
+			});
+		}
+	}
+
 	let mut best_score = i32::MIN;
 	let mut best_meta: Option<&TocMeta> = None;
 	for meta in &metas {
@@ -398,16 +422,6 @@ pub fn folder_unsupported_reason(
 
 	if best_score >= 0 {
 		if let Some(meta) = best_meta {
-			let flavor_matched = meta
-				.flavor_suffix
-				.as_deref()
-				.zip(ctx.flavor_key)
-				.is_some_and(|(suffix, key)| toc_suffix_matches_flavor(suffix, key));
-			// Flavor-specific TOC (Questie_Forever.toc) wins even if .build.info
-			// game version major doesn't line up with Interface.
-			if flavor_matched {
-				return None;
-			}
 			if let Some(issue) = client_unsupported_reason(meta, ctx.game_version) {
 				return Some(issue);
 			}
@@ -416,14 +430,16 @@ pub fn folder_unsupported_reason(
 	}
 
 	// No usable TOC. Prefer a clear stub reason if present.
-	if let Some(stub) = metas.iter().find(|m| {
-		client_unsupported_reason(m, None).is_some()
-	}) {
+	if let Some(stub) = metas
+		.iter()
+		.find(|m| client_unsupported_reason(m, None).is_some())
+	{
 		return client_unsupported_reason(stub, ctx.game_version)
 			.or_else(|| client_unsupported_reason(stub, None));
 	}
 
-	best_meta.and_then(|m| client_unsupported_reason(m, ctx.game_version))
+	best_meta
+		.and_then(|m| client_unsupported_reason(m, ctx.game_version))
 		.or_else(|| {
 			Some(CompatibilityIssue {
 				reason: "未找到适用于当前客户端的 TOC".into(),
@@ -567,6 +583,34 @@ mod tests {
 		let meta = read_folder_toc_for_client(&dir, "Questie", &ctx).unwrap();
 		assert_eq!(meta.flavor_suffix.as_deref(), Some("Vanilla"));
 		assert!(folder_unsupported_reason(&dir, "Questie", &ctx).is_none());
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn rejects_other_flavor_even_if_interface_major_overlaps() {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-questie-no-forever-{}-{}",
+			std::process::id(),
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addon = dir.join("Questie");
+		fs::create_dir_all(&addon).unwrap();
+		fs::write(
+			addon.join("Questie.toc"),
+			"## Interface: 00000\n## Title: Questie|cFFFF0000 game client not supported|r\n## Notes: Questie only supports Classic official servers.\n",
+		)
+		.unwrap();
+		fs::write(
+			addon.join("Questie_Vanilla.toc"),
+			"## Interface: 11508, 11509\n## Title: Questie|cFF00FF00 v12.6.2|r\n## Notes: A standalone Classic QuestHelper\n## Version: 12.6.2\n",
+		)
+		.unwrap();
+		let ctx = ClientContext::from_install("forever", Some("1.16.0"));
+		assert!(folder_unsupported_reason(&dir, "Questie", &ctx).is_some());
 		let _ = fs::remove_dir_all(dir);
 	}
 }
