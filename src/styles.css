@@ -394,6 +394,11 @@ button {
 	transition: background 0.15s ease, border-color 0.15s ease;
 }
 
+.addon-card-installed {
+	grid-template-columns: 96px minmax(0, 1fr) auto;
+	align-items: center;
+}
+
 .addon-card:hover {
 	background: var(--bg-card-hover);
 	border-color: #3a3a42;
@@ -483,6 +488,33 @@ button {
 	flex-wrap: wrap;
 	gap: 8px;
 	margin-top: 8px;
+}
+
+.card-actions-side {
+	margin-top: 0;
+	flex-direction: column;
+	flex-wrap: nowrap;
+	align-items: stretch;
+	justify-content: center;
+	align-self: stretch;
+}
+
+.card-actions-side .btn {
+	white-space: nowrap;
+	min-width: 88px;
+}
+
+@media (max-width: 720px) {
+	.addon-card-installed {
+		grid-template-columns: 72px minmax(0, 1fr);
+	}
+
+	.addon-card-installed .card-actions-side {
+		grid-column: 1 / -1;
+		flex-direction: row;
+		justify-content: flex-end;
+		align-self: auto;
+	}
 }
 
 .btn {

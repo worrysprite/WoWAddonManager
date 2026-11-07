@@ -112,7 +112,7 @@ export function AddonCard(props: Props) {
 	const { addon, busy, onUpdate, onDelete } = props;
 	const extra = extraCategoryCount(addon.categories);
 	return (
-		<article className="addon-card">
+		<article className="addon-card addon-card-installed">
 			<Thumb url={addon.thumbnailUrl} name={addon.title} />
 			<div className="card-body">
 				<h3 className="card-title">{addon.title}</h3>
@@ -134,16 +134,16 @@ export function AddonCard(props: Props) {
 						{t("card.installedAt", { date: formatDate(addon.installedAt) })}
 					</span>
 				</div>
-				<div className="card-actions">
-					{addon.hasUpdate ? (
-						<button className="btn primary" disabled={busy} onClick={onUpdate}>
-							{t("card.update")}
-						</button>
-					) : null}
-					<button className="btn danger" disabled={busy} onClick={onDelete}>
-						{t("card.delete")}
+			</div>
+			<div className="card-actions card-actions-side">
+				{addon.hasUpdate ? (
+					<button className="btn primary" disabled={busy} onClick={onUpdate}>
+						{t("card.update")}
 					</button>
-				</div>
+				) : null}
+				<button className="btn danger" disabled={busy} onClick={onDelete}>
+					{t("card.delete")}
+				</button>
 			</div>
 		</article>
 	);
