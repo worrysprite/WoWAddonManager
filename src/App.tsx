@@ -3,12 +3,14 @@ import * as api from "./api";
 import { BrowseTab } from "./components/BrowseTab";
 import { InstalledTab } from "./components/InstalledTab";
 import { SettingsPage } from "./components/SettingsPage";
+import { useI18n, type LocalePreference } from "./i18n";
 import type { ApiHelp, SettingsView, WowInstall } from "./types";
 import "./styles.css";
 
 type TabId = "browse" | "settings" | string;
 
 export default function App() {
+	const { t, setPreference, setSystemLocale } = useI18n();
 	const [tab, setTab] = useState<TabId>("browse");
 	const [previousTab, setPreviousTab] = useState<TabId>("browse");
 	const [installs, setInstalls] = useState<WowInstall[]>([]);
@@ -21,6 +23,9 @@ export default function App() {
 	async function applySettings(next: SettingsView) {
 		setSettings(next);
 		setInstalls(next.detectedInstalls);
+		setSystemLocale(next.systemLocale);
+		const pref = (next.locale || "system") as LocalePreference;
+		setPreference(pref === "zh-CN" || pref === "en" ? pref : "system");
 		if (
 			tab !== "browse" &&
 			tab !== "settings" &&
@@ -40,14 +45,14 @@ export default function App() {
 	}
 
 	async function handleRescanClients() {
-		setStatus("正在重新扫描魔兽客户端…");
+		setStatus(t("banner.rescanningClients"));
 		try {
 			const next = await api.rescanWowInstalls();
 			await applySettings(next);
 			setStatus(
 				next.hasWowInstall
-					? `已重新扫描，发现 ${next.detectedInstalls.length} 个客户端`
-					: "已重新扫描，未发现客户端",
+					? t("banner.rescanClientsFound", { count: next.detectedInstalls.length })
+					: t("banner.rescanClientsNone"),
 			);
 		} catch (err) {
 			setStatus(String(err));
@@ -75,7 +80,7 @@ export default function App() {
 			<header className="topbar">
 				<div className="brand">
 					<div className="brand-mark">W</div>
-					<div className="brand-title">WoW Addon Manager</div>
+					<div className="brand-title">{t("app.brand")}</div>
 				</div>
 
 				<nav className="tab-row">
@@ -83,7 +88,7 @@ export default function App() {
 						className={`tab-btn ${tab === "browse" ? "active" : ""}`}
 						onClick={() => setTab("browse")}
 					>
-						Browse All
+						{t("nav.browse")}
 					</button>
 					{installs.map((install) => (
 						<button
@@ -98,14 +103,14 @@ export default function App() {
 
 				<div className="toolbar-actions">
 					<button className="btn" onClick={handleRescanClients}>
-						重新扫描
+						{t("nav.rescan")}
 					</button>
 					<button
 						className={`btn settings-btn ${tab === "settings" ? "active-settings" : ""}`}
 						onClick={openSettings}
-						title="设置"
+						title={t("nav.settings")}
 					>
-						设置
+						{t("nav.settings")}
 						{settings?.hasApiKey ? <span className="settings-dot" /> : null}
 					</button>
 				</div>
@@ -115,19 +120,19 @@ export default function App() {
 
 			{showApiWarning ? (
 				<div className="banner">
-					尚未配置 API Key，当前使用网页 GET / 演示数据。请到
+					{t("banner.noApiKey")}
 					<button className="linkish" onClick={openSettings}>
-						设置
+						{t("banner.goSettings")}
 					</button>
-					填写 Key 后改用官方接口。
+					{t("banner.fillKey")}
 					{apiHelp ? (
 						<>
 							<a href={apiHelp.apply} target="_blank" rel="noreferrer">
-								申请表
+								{t("banner.applyForm")}
 							</a>
 							{" · "}
 							<a href={apiHelp.docs} target="_blank" rel="noreferrer">
-								文档
+								{t("banner.docs")}
 							</a>
 						</>
 					) : null}
@@ -135,26 +140,27 @@ export default function App() {
 			) : null}
 
 			{settings?.hasApiKey ? (
-				<div className="banner ok-banner">已启用 CurseForge 官方 API。</div>
+				<div className="banner ok-banner">{t("banner.apiEnabled")}</div>
 			) : null}
 
 			{showWowWarning ? (
 				<div className="banner">
-					未检测到魔兽世界安装目录。请到
+					{t("banner.noWow")}
 					<button className="linkish" onClick={openSettings}>
-						设置
+						{t("banner.goSettings")}
 					</button>
-					手动添加「World of Warcraft」根目录，或点击右上角「重新扫描」。
+					{t("banner.addWowHint")}
 				</div>
 			) : null}
 
 			{showInvalidWowWarning ? (
 				<div className="banner">
-					部分手动设置的安装目录无效：{settings?.invalidWowRoots.join("；")}。请到
+					{t("banner.invalidWow")}
+					{settings?.invalidWowRoots.join("；")}。{t("banner.fixOrRemove")}
 					<button className="linkish" onClick={openSettings}>
-						设置
+						{t("banner.goSettings")}
 					</button>
-					修正或移除。
+					。
 				</div>
 			) : null}
 
@@ -164,20 +170,18 @@ export default function App() {
 						onBack={() => setTab(previousTab === "settings" ? "browse" : previousTab)}
 						onSaved={(next) => {
 							applySettings(next);
-							// Remount browse so it refetches after API key / cache invalidation.
 							setBrowseNonce((v) => v + 1);
 						}}
 					/>
 				) : null}
 
-				{/* Keep browse mounted across tab switches to avoid re-requesting the same query. */}
 				<div style={{ display: tab === "browse" ? undefined : "none" }}>
 					<BrowseTab
 						key={browseNonce}
 						installs={installs}
 						onInstalled={() => {
 							setRefreshKey((v) => v + 1);
-							setStatus("插件已安装（或写入占位目录）");
+							setStatus(t("banner.addonInstalled"));
 						}}
 					/>
 				</div>
@@ -186,9 +190,13 @@ export default function App() {
 					? (() => {
 							const install = installs.find((i) => i.id === tab);
 							return install ? (
-								<InstalledTab install={install} refreshKey={refreshKey} />
+								<InstalledTab
+									key={install.id}
+									install={install}
+									refreshKey={refreshKey}
+								/>
 							) : (
-								<div className="empty">未找到该客户端</div>
+								<div className="empty">{t("installed.clientMissing")}</div>
 							);
 						})()
 					: null}

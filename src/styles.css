@@ -622,7 +622,8 @@ button {
 	color: var(--text-muted);
 }
 
-.settings-field input {
+.settings-field input,
+.settings-field select {
 	border: 1px solid var(--border);
 	border-radius: 8px;
 	background: #101014;
@@ -631,8 +632,25 @@ button {
 	outline: none;
 }
 
-.settings-field input:focus {
+.settings-field input:focus,
+.settings-field select:focus {
 	border-color: #5a3a1a;
+}
+
+.log-pane {
+	margin: 0;
+	max-height: 320px;
+	overflow: auto;
+	padding: 12px 14px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: #0c0c10;
+	color: #c8c8d0;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 12px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	word-break: break-word;
 }
 
 .settings-hint {

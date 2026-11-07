@@ -100,4 +100,18 @@ export interface SettingsView {
 	detectedInstalls: WowInstall[];
 	invalidWowRoots: string[];
 	hasWowInstall: boolean;
+	locale: string;
+	systemLocale: string;
+}
+
+export interface LogEntry {
+	timestamp: string;
+	level: string;
+	target: string;
+	message: string;
+}
+
+export interface LogView {
+	level: string;
+	entries: LogEntry[];
 }

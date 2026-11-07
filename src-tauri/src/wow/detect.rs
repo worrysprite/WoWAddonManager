@@ -152,6 +152,7 @@ fn detect_cached(extra_roots: &[String], deep: bool) -> DetectionReport {
 }
 
 fn detect_uncached(extra_roots: &[String], deep: bool) -> DetectionReport {
+	log::info!("detect_uncached deep={deep} extra_roots={}", extra_roots.len());
 	let mut found: BTreeMap<String, WowInstall> = BTreeMap::new();
 	let mut scanned = BTreeSet::new();
 	let mut invalid = Vec::new();
@@ -190,6 +191,11 @@ fn detect_uncached(extra_roots: &[String], deep: bool) -> DetectionReport {
 	installs.sort_by(|a, b| a.label.cmp(&b.label));
 
 	let _ = scanned;
+	log::info!(
+		"detect_uncached done installs={} invalid={}",
+		installs.len(),
+		invalid.len()
+	);
 	DetectionReport {
 		installs,
 		invalid_roots: invalid,

@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import type { AddonSummary, InstalledAddon, WowInstall } from "../types";
 import {
 	extraCategoryCount,
@@ -49,6 +50,8 @@ function Thumb({ url, name }: { url?: string | null; name: string }) {
 }
 
 export function AddonCard(props: Props) {
+	const { t } = useI18n();
+
 	if (props.mode === "browse") {
 		const { addon, installs, busy, onInstall } = props;
 		const extra = extraCategoryCount(addon.categories);
@@ -57,8 +60,10 @@ export function AddonCard(props: Props) {
 				<Thumb url={addon.thumbnailUrl} name={addon.name} />
 				<div className="card-body">
 					<h3 className="card-title">{addon.name}</h3>
-					<p className="card-author">By {addon.author || "Unknown"}</p>
-					<p className="card-summary">{addon.summary || "No description"}</p>
+					<p className="card-author">
+						{t("card.by", { author: addon.author || t("card.unknownAuthor") })}
+					</p>
+					<p className="card-summary">{addon.summary || t("card.noDescription")}</p>
 					<div className="meta-row">
 						<span className="tag">
 							{primaryCategory(addon.categories)}
@@ -76,7 +81,7 @@ export function AddonCard(props: Props) {
 					</div>
 					<div className="card-actions">
 						{installs.length === 0 ? (
-							<span className="muted">请先添加魔兽安装目录</span>
+							<span className="muted">{t("card.needWowPath")}</span>
 						) : (
 							installs.map((install) => (
 								<button
@@ -85,7 +90,7 @@ export function AddonCard(props: Props) {
 									disabled={busy}
 									onClick={() => onInstall(install.id)}
 								>
-									安装到 {install.label}
+									{t("card.installTo", { label: install.label })}
 								</button>
 							))
 						)}
@@ -102,8 +107,10 @@ export function AddonCard(props: Props) {
 			<Thumb url={addon.thumbnailUrl} name={addon.title} />
 			<div className="card-body">
 				<h3 className="card-title">{addon.title}</h3>
-				<p className="card-author">By {addon.author || "Unknown"}</p>
-				<p className="card-summary">{addon.notes || "已安装插件"}</p>
+				<p className="card-author">
+					{t("card.by", { author: addon.author || t("card.unknownAuthor") })}
+				</p>
+				<p className="card-summary">{addon.notes || t("card.installedAddon")}</p>
 				<div className="meta-row">
 					<span className="tag">
 						{primaryCategory(addon.categories)}
@@ -111,17 +118,21 @@ export function AddonCard(props: Props) {
 					</span>
 					<span className="meta-item">↓ {formatDownloads(addon.downloadCount)}</span>
 					<span className="meta-item">⏱ {formatDate(addon.updatedAt)}</span>
-					<span className="meta-item">🎮 {addon.latestGameVersion || addon.interfaceVersion || "-"}</span>
-					<span className="meta-item">安装于 {formatDate(addon.installedAt)}</span>
+					<span className="meta-item">
+						🎮 {addon.latestGameVersion || addon.interfaceVersion || "-"}
+					</span>
+					<span className="meta-item">
+						{t("card.installedAt", { date: formatDate(addon.installedAt) })}
+					</span>
 				</div>
 				<div className="card-actions">
 					{addon.hasUpdate ? (
 						<button className="btn primary" disabled={busy} onClick={onUpdate}>
-							更新
+							{t("card.update")}
 						</button>
 					) : null}
 					<button className="btn danger" disabled={busy} onClick={onDelete}>
-						删除
+						{t("card.delete")}
 					</button>
 				</div>
 			</div>

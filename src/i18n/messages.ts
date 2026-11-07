@@ -1,0 +1,386 @@
+export type LocaleCode = "en" | "zh-CN";
+export type LocalePreference = "system" | LocaleCode;
+
+export type MessageKey =
+	| "app.brand"
+	| "nav.browse"
+	| "nav.rescan"
+	| "nav.settings"
+	| "banner.noApiKey"
+	| "banner.goSettings"
+	| "banner.fillKey"
+	| "banner.applyForm"
+	| "banner.docs"
+	| "banner.apiEnabled"
+	| "banner.noWow"
+	| "banner.addWowHint"
+	| "banner.invalidWow"
+	| "banner.fixOrRemove"
+	| "banner.rescanningClients"
+	| "banner.rescanClientsFound"
+	| "banner.rescanClientsNone"
+	| "banner.addonInstalled"
+	| "browse.searchPlaceholder"
+	| "browse.searchAria"
+	| "browse.refreshTitle"
+	| "browse.refresh"
+	| "browse.loading"
+	| "browse.loadingList"
+	| "browse.noMatchTitle"
+	| "browse.noMatchHint"
+	| "browse.prevPage"
+	| "browse.nextPage"
+	| "browse.pageInfo"
+	| "browse.results"
+	| "filters.title"
+	| "filters.clearAll"
+	| "filters.categories"
+	| "filters.flavor"
+	| "filters.gameVersion"
+	| "card.by"
+	| "card.unknownAuthor"
+	| "card.noDescription"
+	| "card.needWowPath"
+	| "card.installTo"
+	| "card.installedAddon"
+	| "card.installedAt"
+	| "card.update"
+	| "card.delete"
+	| "installed.title"
+	| "installed.manual"
+	| "installed.rescan"
+	| "installed.scanning"
+	| "installed.rescanning"
+	| "installed.loadingList"
+	| "installed.emptyTitle"
+	| "installed.emptyHint"
+	| "installed.rescanDone"
+	| "installed.manualDone"
+	| "installed.deleteConfirm"
+	| "installed.pickArchive"
+	| "installed.archiveFilter"
+	| "installed.clientMissing"
+	| "settings.back"
+	| "settings.title"
+	| "settings.subtitle"
+	| "settings.language"
+	| "settings.languageHint"
+	| "settings.languageSystem"
+	| "settings.languageZh"
+	| "settings.languageEn"
+	| "settings.languageSaved"
+	| "settings.apiTitle"
+	| "settings.apiKey"
+	| "settings.apiPlaceholder"
+	| "settings.apiHint"
+	| "settings.apiEnabled"
+	| "settings.apiDisabled"
+	| "settings.applyKey"
+	| "settings.apiDocs"
+	| "settings.saveApiKey"
+	| "settings.saving"
+	| "settings.clearInput"
+	| "settings.apiSaved"
+	| "settings.apiCleared"
+	| "settings.wowTitle"
+	| "settings.wowHint"
+	| "settings.addWowPath"
+	| "settings.rescan"
+	| "settings.pickWowDir"
+	| "settings.pathAdded"
+	| "settings.pathRemoved"
+	| "settings.detectedClients"
+	| "settings.versionUnknown"
+	| "settings.noClients"
+	| "settings.manualPaths"
+	| "settings.remove"
+	| "settings.invalidPaths"
+	| "settings.rescanDoneFound"
+	| "settings.rescanDoneNone"
+	| "settings.logsTitle"
+	| "settings.logsHint"
+	| "settings.openLogs"
+	| "settings.closeLogs"
+	| "settings.saveLogs"
+	| "settings.clearLogs"
+	| "settings.logLevel"
+	| "settings.noLogs"
+	| "settings.logLevelSet"
+	| "settings.logsCleared"
+	| "settings.logsSaved"
+	| "settings.saveLogTitle";
+
+export type Messages = Record<MessageKey, string>;
+
+export const en: Messages = {
+	"app.brand": "WoW Addon Manager",
+	"nav.browse": "Browse All",
+	"nav.rescan": "Rescan",
+	"nav.settings": "Settings",
+	"banner.noApiKey": "No API Key configured. Using web GET / demo data. Go to",
+	"banner.goSettings": "Settings",
+	"banner.fillKey": "to enter a Key and switch to the official API.",
+	"banner.applyForm": "Application form",
+	"banner.docs": "Docs",
+	"banner.apiEnabled": "CurseForge official API is enabled.",
+	"banner.noWow": "No World of Warcraft install found. Go to",
+	"banner.addWowHint":
+		'and add a "World of Warcraft" root folder, or click Rescan in the top-right.',
+	"banner.invalidWow": "Some manually added install paths are invalid:",
+	"banner.fixOrRemove": "Please fix or remove them in",
+	"banner.rescanningClients": "Rescanning WoW clients…",
+	"banner.rescanClientsFound": "Rescan complete. Found {count} client(s).",
+	"banner.rescanClientsNone": "Rescan complete. No clients found.",
+	"banner.addonInstalled": "Addon installed (or placeholder written).",
+	"browse.searchPlaceholder": "Search for World of Warcraft addons...",
+	"browse.searchAria": "Search",
+	"browse.refreshTitle": "Ignore cache and fetch again",
+	"browse.refresh": "Refresh",
+	"browse.loading": "Loading…",
+	"browse.loadingList": "Loading addon list…",
+	"browse.noMatchTitle": "No matching addons",
+	"browse.noMatchHint": "Try another keyword or adjust filters",
+	"browse.prevPage": "Previous",
+	"browse.nextPage": "Next",
+	"browse.pageInfo": "Page {page} / {totalPages}",
+	"browse.results": "{total} results",
+	"filters.title": "Filters",
+	"filters.clearAll": "Clear all",
+	"filters.categories": "Categories",
+	"filters.flavor": "Flavor",
+	"filters.gameVersion": "Game Version",
+	"card.by": "By {author}",
+	"card.unknownAuthor": "Unknown",
+	"card.noDescription": "No description",
+	"card.needWowPath": "Add a WoW install path first",
+	"card.installTo": "Install to {label}",
+	"card.installedAddon": "Installed addon",
+	"card.installedAt": "Installed {date}",
+	"card.update": "Update",
+	"card.delete": "Delete",
+	"installed.title": "{label} installed addons",
+	"installed.manual": "Manual install",
+	"installed.rescan": "Rescan",
+	"installed.scanning": "Scanning…",
+	"installed.rescanning": "Rescanning addon folder…",
+	"installed.loadingList": "Loading addon list…",
+	"installed.emptyTitle": "No installed addons yet",
+	"installed.emptyHint":
+		'Install from Browse All, or click "Manual install" and choose an archive.',
+	"installed.rescanDone": "Rescan complete. {count} addon(s).",
+	"installed.manualDone": "Manually installed: {names}",
+	"installed.deleteConfirm": "Delete addon {name}?",
+	"installed.pickArchive": "Select addon archive",
+	"installed.archiveFilter": "Addon Archive",
+	"installed.clientMissing": "Client not found",
+	"settings.back": "← Back",
+	"settings.title": "Settings",
+	"settings.subtitle": "API Key, language, WoW paths, and logs",
+	"settings.language": "Language",
+	"settings.languageHint": "Default follows the system language. You can override it here.",
+	"settings.languageSystem": "System default",
+	"settings.languageZh": "简体中文",
+	"settings.languageEn": "English",
+	"settings.languageSaved": "Language updated.",
+	"settings.apiTitle": "CurseForge API",
+	"settings.apiKey": "CurseForge API Key",
+	"settings.apiPlaceholder": "Paste x-api-key",
+	"settings.apiHint":
+		"With a key, search and download use the official API (`api.curseforge.com`). Clear and save to fall back to web GET / demo data.",
+	"settings.apiEnabled": " Official API is currently enabled.",
+	"settings.apiDisabled": " No key configured.",
+	"settings.applyKey": "Apply for API Key",
+	"settings.apiDocs": "API docs",
+	"settings.saveApiKey": "Save API Key",
+	"settings.saving": "Saving…",
+	"settings.clearInput": "Clear input",
+	"settings.apiSaved": "API Key saved. Browse and download will use the official CurseForge API.",
+	"settings.apiCleared": "API Key cleared. Falling back to web GET / demo data.",
+	"settings.wowTitle": "World of Warcraft installs",
+	"settings.wowHint":
+		"Startup scans the registry, Battle.net Agent, and common drive paths. If nothing is found, add a World of Warcraft root or a `_retail_` / `_classic_` folder here.",
+	"settings.addWowPath": "Add install path",
+	"settings.rescan": "Rescan",
+	"settings.pickWowDir": "Select World of Warcraft install folder",
+	"settings.pathAdded": "Added install path: {path}",
+	"settings.pathRemoved": "Removed: {path}",
+	"settings.detectedClients": "Detected clients",
+	"settings.versionUnknown": "Unknown version",
+	"settings.noClients": "No World of Warcraft clients detected.",
+	"settings.manualPaths": "Manually added paths",
+	"settings.remove": "Remove",
+	"settings.invalidPaths": "These manual paths are invalid or have no recognizable client:",
+	"settings.rescanDoneFound": "Rescan complete. Detected {count} client(s).",
+	"settings.rescanDoneNone": "Rescan complete. Still no World of Warcraft clients found.",
+	"settings.logsTitle": "Logs",
+	"settings.logsHint":
+		"Default level is WARN. Open to view in-memory logs and save them to a file.",
+	"settings.openLogs": "Open logs",
+	"settings.closeLogs": "Hide logs",
+	"settings.saveLogs": "Save log file",
+	"settings.clearLogs": "Clear",
+	"settings.logLevel": "Log level",
+	"settings.noLogs": "(No logs yet)",
+	"settings.logLevelSet": "Log level set to {level}",
+	"settings.logsCleared": "Logs cleared",
+	"settings.logsSaved": "Logs saved: {path}",
+	"settings.saveLogTitle": "Save log file",
+};
+
+export const zhCN: Messages = {
+	"app.brand": "WoW Addon Manager",
+	"nav.browse": "Browse All",
+	"nav.rescan": "重新扫描",
+	"nav.settings": "设置",
+	"banner.noApiKey": "尚未配置 API Key，当前使用网页 GET / 演示数据。请到",
+	"banner.goSettings": "设置",
+	"banner.fillKey": "填写 Key 后改用官方接口。",
+	"banner.applyForm": "申请表",
+	"banner.docs": "文档",
+	"banner.apiEnabled": "已启用 CurseForge 官方 API。",
+	"banner.noWow": "未检测到魔兽世界安装目录。请到",
+	"banner.addWowHint": "手动添加「World of Warcraft」根目录，或点击右上角「重新扫描」。",
+	"banner.invalidWow": "部分手动设置的安装目录无效：",
+	"banner.fixOrRemove": "请到",
+	"banner.rescanningClients": "正在重新扫描魔兽客户端…",
+	"banner.rescanClientsFound": "已重新扫描，发现 {count} 个客户端",
+	"banner.rescanClientsNone": "已重新扫描，未发现客户端",
+	"banner.addonInstalled": "插件已安装（或写入占位目录）",
+	"browse.searchPlaceholder": "Search for World of Warcraft addons...",
+	"browse.searchAria": "搜索",
+	"browse.refreshTitle": "忽略缓存，重新请求",
+	"browse.refresh": "刷新",
+	"browse.loading": "加载中…",
+	"browse.loadingList": "正在加载插件列表…",
+	"browse.noMatchTitle": "没有匹配的插件",
+	"browse.noMatchHint": "试试调整关键词或过滤器",
+	"browse.prevPage": "上一页",
+	"browse.nextPage": "下一页",
+	"browse.pageInfo": "第 {page} / {totalPages} 页",
+	"browse.results": "{total} 个结果",
+	"filters.title": "Filters",
+	"filters.clearAll": "Clear all",
+	"filters.categories": "Categories",
+	"filters.flavor": "Flavor",
+	"filters.gameVersion": "Game Version",
+	"card.by": "By {author}",
+	"card.unknownAuthor": "Unknown",
+	"card.noDescription": "No description",
+	"card.needWowPath": "请先添加魔兽安装目录",
+	"card.installTo": "安装到 {label}",
+	"card.installedAddon": "已安装插件",
+	"card.installedAt": "安装于 {date}",
+	"card.update": "更新",
+	"card.delete": "删除",
+	"installed.title": "{label} 已安装插件",
+	"installed.manual": "手动安装",
+	"installed.rescan": "重新扫描",
+	"installed.scanning": "扫描中…",
+	"installed.rescanning": "正在重新扫描插件目录…",
+	"installed.loadingList": "正在读取插件列表…",
+	"installed.emptyTitle": "还没有已安装插件",
+	"installed.emptyHint": "可从 Browse All 安装，或点击右上角「手动安装」选择压缩包。",
+	"installed.rescanDone": "已重新扫描，共 {count} 个插件",
+	"installed.manualDone": "已手动安装：{names}",
+	"installed.deleteConfirm": "确定删除插件 {name}？",
+	"installed.pickArchive": "选择插件压缩包",
+	"installed.archiveFilter": "插件压缩包",
+	"installed.clientMissing": "未找到该客户端",
+	"settings.back": "← 返回",
+	"settings.title": "设置",
+	"settings.subtitle": "配置语言、API Key、魔兽世界安装目录与日志",
+	"settings.language": "语言",
+	"settings.languageHint": "默认跟随系统语言，也可在此手动切换。",
+	"settings.languageSystem": "跟随系统",
+	"settings.languageZh": "简体中文",
+	"settings.languageEn": "English",
+	"settings.languageSaved": "语言已更新。",
+	"settings.apiTitle": "CurseForge API",
+	"settings.apiKey": "CurseForge API Key",
+	"settings.apiPlaceholder": "粘贴 x-api-key",
+	"settings.apiHint":
+		"填写后，搜索与下载走官方 API（`api.curseforge.com`）。清空并保存则恢复网页 GET / 演示数据模式。",
+	"settings.apiEnabled": " 当前已启用官方 API。",
+	"settings.apiDisabled": " 当前未配置 Key。",
+	"settings.applyKey": "申请 API Key",
+	"settings.apiDocs": "API 文档",
+	"settings.saveApiKey": "保存 API Key",
+	"settings.saving": "保存中…",
+	"settings.clearInput": "清空输入",
+	"settings.apiSaved": "已保存 API Key。浏览与下载将使用 CurseForge 官方 API。",
+	"settings.apiCleared": "已清空 API Key。将回退到网页 GET / 演示数据。",
+	"settings.wowTitle": "魔兽世界安装目录",
+	"settings.wowHint":
+		"启动时会自动扫描注册表、Battle.net Agent、常见盘符路径。若未找到，可在此手动添加「World of Warcraft」根目录，或其中的 `_retail_` / `_classic_` 等版本目录。",
+	"settings.addWowPath": "添加安装目录",
+	"settings.rescan": "重新扫描",
+	"settings.pickWowDir": "选择 World of Warcraft 安装目录",
+	"settings.pathAdded": "已添加安装目录：{path}",
+	"settings.pathRemoved": "已移除：{path}",
+	"settings.detectedClients": "已检测到的客户端",
+	"settings.versionUnknown": "版本未知",
+	"settings.noClients": "尚未检测到魔兽世界客户端。",
+	"settings.manualPaths": "手动添加的路径",
+	"settings.remove": "移除",
+	"settings.invalidPaths": "以下手动路径无效或不包含可识别的客户端：",
+	"settings.rescanDoneFound": "重新扫描完成，检测到 {count} 个客户端。",
+	"settings.rescanDoneNone": "重新扫描完成，仍未检测到魔兽世界客户端。",
+	"settings.logsTitle": "日志",
+	"settings.logsHint": "默认级别为 WARN。打开后可查看内存中的运行日志，并保存为文件。",
+	"settings.openLogs": "打开日志",
+	"settings.closeLogs": "收起日志",
+	"settings.saveLogs": "保存日志文件",
+	"settings.clearLogs": "清空",
+	"settings.logLevel": "日志级别",
+	"settings.noLogs": "（暂无日志）",
+	"settings.logLevelSet": "日志级别已设为 {level}",
+	"settings.logsCleared": "日志已清空",
+	"settings.logsSaved": "日志已保存：{path}",
+	"settings.saveLogTitle": "保存日志文件",
+};
+
+export const catalogs: Record<LocaleCode, Messages> = {
+	en,
+	"zh-CN": zhCN,
+};
+
+export function normalizeLocale(raw: string | null | undefined): LocaleCode {
+	const value = (raw || "").trim().toLowerCase().replace(/_/g, "-");
+	if (value.startsWith("zh")) {
+		return "zh-CN";
+	}
+	return "en";
+}
+
+export function detectSystemLocale(): LocaleCode {
+	if (typeof navigator !== "undefined") {
+		const candidates = [...(navigator.languages ?? []), navigator.language].filter(Boolean);
+		if (candidates[0]) {
+			return normalizeLocale(candidates[0]);
+		}
+	}
+	return "en";
+}
+
+export function resolveLocale(
+	preference: LocalePreference | string | null | undefined,
+	systemLocale?: string | null,
+): LocaleCode {
+	const pref = (preference || "system").trim();
+	if (pref === "system" || pref === "" || pref === "auto") {
+		return systemLocale ? normalizeLocale(systemLocale) : detectSystemLocale();
+	}
+	return normalizeLocale(pref);
+}
+
+export function translate(
+	locale: LocaleCode,
+	key: MessageKey,
+	vars?: Record<string, string | number>,
+): string {
+	const template = catalogs[locale][key] ?? catalogs.en[key] ?? key;
+	if (!vars) return template;
+	return template.replace(/\{(\w+)\}/g, (_, name: string) =>
+		vars[name] === undefined || vars[name] === null ? "" : String(vars[name]),
+	);
+}
