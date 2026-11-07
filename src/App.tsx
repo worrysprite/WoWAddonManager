@@ -102,7 +102,11 @@ export default function App() {
 				</nav>
 
 				<div className="toolbar-actions">
-					<button className="btn" onClick={handleRescanClients}>
+					<button
+						className="btn"
+						onClick={handleRescanClients}
+						title={t("nav.rescan")}
+					>
 						{t("nav.rescan")}
 					</button>
 					<button

@@ -176,7 +176,12 @@ export function InstalledTab({ install, refreshKey }: Props) {
 					>
 						{t("installed.manual")}
 					</button>
-					<button className="btn" onClick={handleRescan} disabled={blocked}>
+					<button
+						className="btn"
+						onClick={handleRescan}
+						disabled={blocked}
+						title={t("installed.rescan")}
+					>
 						{scanning ? t("installed.scanning") : t("installed.rescan")}
 					</button>
 				</div>
