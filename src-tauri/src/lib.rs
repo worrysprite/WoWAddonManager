@@ -1,8 +1,10 @@
+mod app_log;
 mod config;
 mod curseforge;
 mod types;
 mod wow;
 
+use app_log::LogView;
 use config::{SaveSettingsRequest, SettingsView};
 use curseforge::catalog;
 use types::{
@@ -23,7 +25,20 @@ where
 
 #[tauri::command]
 async fn search_addons(params: SearchParams, force_refresh: Option<bool>) -> Result<SearchResult, String> {
-	Ok(curseforge::search_addons(params, force_refresh.unwrap_or(false)).await)
+	let force = force_refresh.unwrap_or(false);
+	log::info!(
+		"search_addons force={force} search={:?} page={:?}",
+		params.search,
+		params.page
+	);
+	let result = curseforge::search_addons(params, force).await;
+	log::info!(
+		"search_addons done source={} total={} items={}",
+		result.source,
+		result.total,
+		result.items.len()
+	);
+	Ok(result)
 }
 
 #[tauri::command]
@@ -60,6 +75,7 @@ async fn remove_wow_path(path: String) -> Result<SettingsView, String> {
 
 #[tauri::command]
 async fn rescan_wow_installs() -> Result<SettingsView, String> {
+	log::warn!("rescan_wow_installs (deep)");
 	run_blocking(|| {
 		detect::invalidate_cache();
 		Ok(config::settings_view_deep())
@@ -69,14 +85,28 @@ async fn rescan_wow_installs() -> Result<SettingsView, String> {
 
 #[tauri::command]
 async fn list_installed_addons(install_id: String) -> Result<Vec<InstalledAddon>, String> {
-	let install = resolve_install_async(install_id).await?;
-	scan::list_installed(&install, false).await
+	log::info!("list_installed_addons install_id={install_id}");
+	let install = resolve_install_async(install_id.clone()).await?;
+	let list = scan::list_installed(&install, false).await?;
+	log::info!(
+		"list_installed_addons done install={} count={}",
+		install.label,
+		list.len()
+	);
+	Ok(list)
 }
 
 #[tauri::command]
 async fn rescan_installed_addons(install_id: String) -> Result<Vec<InstalledAddon>, String> {
-	let install = resolve_install_async(install_id).await?;
-	scan::list_installed(&install, true).await
+	log::warn!("rescan_installed_addons install_id={install_id}");
+	let install = resolve_install_async(install_id.clone()).await?;
+	let list = scan::list_installed(&install, true).await?;
+	log::warn!(
+		"rescan_installed_addons done install={} count={}",
+		install.label,
+		list.len()
+	);
+	Ok(list)
 }
 
 async fn resolve_install_async(install_id: String) -> Result<WowInstall, String> {
@@ -110,11 +140,13 @@ async fn install_from_archive(request: ManualInstallRequest) -> Result<Vec<Insta
 
 #[tauri::command]
 async fn get_settings() -> Result<SettingsView, String> {
+	log::info!("get_settings");
 	run_blocking(|| Ok(config::settings_view())).await
 }
 
 #[tauri::command]
 async fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, String> {
+	log::warn!("save_settings");
 	run_blocking(move || config::save_settings(request)).await
 }
 
@@ -128,8 +160,29 @@ fn get_api_help() -> serde_json::Value {
 	})
 }
 
+#[tauri::command]
+fn get_logs() -> LogView {
+	app_log::view()
+}
+
+#[tauri::command]
+fn set_log_level(level: String) -> Result<String, String> {
+	app_log::set_level(&level)
+}
+
+#[tauri::command]
+fn clear_logs() {
+	app_log::clear();
+}
+
+#[tauri::command]
+fn save_logs(path: String) -> Result<(), String> {
+	app_log::save_to_path(&path)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+	app_log::init();
 	tauri::Builder::default()
 		.plugin(tauri_plugin_opener::init())
 		.plugin(tauri_plugin_dialog::init())
@@ -148,7 +201,11 @@ pub fn run() {
 			delete_addon,
 			get_settings,
 			save_settings,
-			get_api_help
+			get_api_help,
+			get_logs,
+			set_log_level,
+			clear_logs,
+			save_logs
 		])
 		.run(tauri::generate_context!())
 		.expect("error while running tauri application");

@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { useEffect, useRef, useState } from "react";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
-import type { SettingsView } from "../types";
+import type { LogEntry, SettingsView } from "../types";
 
 type Props = {
 	onBack: () => void;
 	onSaved: (settings: SettingsView) => void;
 };
+
+const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
 
 export function SettingsPage({ onBack, onSaved }: Props) {
 	const [settings, setSettings] = useState<SettingsView | null>(null);
@@ -15,6 +17,11 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [logLevel, setLogLevel] = useState("warn");
+	const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+	const [logsOpen, setLogsOpen] = useState(false);
+	const [logsBusy, setLogsBusy] = useState(false);
+	const logPaneRef = useRef<HTMLPreElement | null>(null);
 
 	async function reload() {
 		const data = await api.getSettings();
@@ -108,6 +115,89 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 		}
 	}
 
+	async function refreshLogs() {
+		const data = await api.getLogs();
+		setLogLevel(data.level);
+		setLogEntries(data.entries);
+	}
+
+	async function handleOpenLogs() {
+		setLogsBusy(true);
+		setError(null);
+		try {
+			await refreshLogs();
+			setLogsOpen(true);
+		} catch (err) {
+			setError(String(err));
+		} finally {
+			setLogsBusy(false);
+		}
+	}
+
+	async function handleChangeLogLevel(nextLevel: string) {
+		setLogsBusy(true);
+		setError(null);
+		try {
+			const applied = await api.setLogLevel(nextLevel);
+			setLogLevel(applied);
+			await refreshLogs();
+			setMessage(`日志级别已设为 ${applied.toUpperCase()}`);
+		} catch (err) {
+			setError(String(err));
+		} finally {
+			setLogsBusy(false);
+		}
+	}
+
+	async function handleClearLogs() {
+		setLogsBusy(true);
+		setError(null);
+		try {
+			await api.clearLogs();
+			await refreshLogs();
+			setMessage("日志已清空");
+		} catch (err) {
+			setError(String(err));
+		} finally {
+			setLogsBusy(false);
+		}
+	}
+
+	async function handleSaveLogs() {
+		setLogsBusy(true);
+		setError(null);
+		setMessage(null);
+		try {
+			const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+			const selected = await save({
+				title: "保存日志文件",
+				defaultPath: `wow-addon-manager-${stamp}.log`,
+				filters: [{ name: "Log", extensions: ["log", "txt"] }],
+			});
+			if (!selected) return;
+			await api.saveLogs(selected);
+			setMessage(`日志已保存：${selected}`);
+			await refreshLogs();
+		} catch (err) {
+			setError(String(err));
+		} finally {
+			setLogsBusy(false);
+		}
+	}
+
+	useEffect(() => {
+		if (!logsOpen) return;
+		const timer = window.setInterval(() => {
+			refreshLogs().catch(() => undefined);
+		}, 1500);
+		return () => window.clearInterval(timer);
+	}, [logsOpen]);
+
+	useEffect(() => {
+		if (!logsOpen || !logPaneRef.current) return;
+		logPaneRef.current.scrollTop = logPaneRef.current.scrollHeight;
+	}, [logsOpen, logEntries.length]);
+
 	return (
 		<section className="settings-page">
 			<div className="settings-header">
@@ -116,7 +206,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 				</button>
 				<div>
 					<h2>设置</h2>
-					<p className="muted">配置 API Key 与魔兽世界安装目录</p>
+					<p className="muted">配置 API Key、魔兽世界安装目录与日志</p>
 				</div>
 			</div>
 
@@ -231,6 +321,68 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 						以下手动路径无效或不包含可识别的客户端：
 						{settings.invalidWowRoots.join("；")}
 					</div>
+				) : null}
+			</div>
+
+			<div className="settings-card">
+				<h3 className="settings-card-title">日志</h3>
+				<p className="muted settings-hint">
+					默认级别为 WARN。打开后可查看内存中的运行日志，并保存为文件。
+				</p>
+				<div className="card-actions">
+					<button
+						className="btn primary"
+						type="button"
+						disabled={logsBusy}
+						onClick={logsOpen ? () => setLogsOpen(false) : handleOpenLogs}
+					>
+						{logsOpen ? "收起日志" : "打开日志"}
+					</button>
+					<button
+						className="btn"
+						type="button"
+						disabled={logsBusy || !logsOpen}
+						onClick={handleSaveLogs}
+					>
+						保存日志文件
+					</button>
+					<button
+						className="btn"
+						type="button"
+						disabled={logsBusy || !logsOpen}
+						onClick={handleClearLogs}
+					>
+						清空
+					</button>
+				</div>
+
+				{logsOpen ? (
+					<>
+						<label className="settings-field">
+							<span>日志级别</span>
+							<select
+								value={logLevel}
+								disabled={logsBusy}
+								onChange={(e) => handleChangeLogLevel(e.target.value)}
+							>
+								{LOG_LEVELS.map((level) => (
+									<option key={level} value={level}>
+										{level.toUpperCase()}
+									</option>
+								))}
+							</select>
+						</label>
+						<pre className="log-pane" ref={logPaneRef}>
+							{logEntries.length === 0
+								? "（暂无日志）"
+								: logEntries
+										.map(
+											(entry) =>
+												`${entry.timestamp} [${entry.level.padEnd(5)}] ${entry.target}: ${entry.message}`,
+										)
+										.join("\n")}
+						</pre>
+					</>
 				) : null}
 			</div>
 		</section>

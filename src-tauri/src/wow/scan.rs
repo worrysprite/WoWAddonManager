@@ -15,13 +15,28 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 	if !force_rescan {
 		if let Some(cache) = load_scan_cache(&addons_path) {
 			if cache.scanned_at.is_some() {
+				log::info!(
+					"list_installed cache hit install={} count={}",
+					install.label,
+					cache.addons.len()
+				);
 				return Ok(cache.addons);
 			}
 		}
 	}
 
+	log::warn!(
+		"list_installed scanning install={} force={}",
+		install.label,
+		force_rescan
+	);
 	let results = scan_disk_with_updates(install, force_rescan).await?;
 	save_scan_cache(&addons_path, &results)?;
+	log::info!(
+		"list_installed scanned install={} count={}",
+		install.label,
+		results.len()
+	);
 	Ok(results)
 }
 

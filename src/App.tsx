@@ -186,7 +186,11 @@ export default function App() {
 					? (() => {
 							const install = installs.find((i) => i.id === tab);
 							return install ? (
-								<InstalledTab install={install} refreshKey={refreshKey} />
+								<InstalledTab
+									key={install.id}
+									install={install}
+									refreshKey={refreshKey}
+								/>
 							) : (
 								<div className="empty">未找到该客户端</div>
 							);

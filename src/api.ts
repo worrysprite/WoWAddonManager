@@ -4,6 +4,7 @@ import type {
 	ApiHelp,
 	FilterCatalog,
 	InstalledAddon,
+	LogView,
 	SearchParams,
 	SearchResult,
 	SettingsView,
@@ -78,4 +79,20 @@ export function saveSettings(curseforgeApiKey: string, wowRoots?: string[]) {
 	return invoke<SettingsView>("save_settings", {
 		request: { curseforgeApiKey, wowRoots },
 	});
+}
+
+export function getLogs() {
+	return invoke<LogView>("get_logs");
+}
+
+export function setLogLevel(level: string) {
+	return invoke<string>("set_log_level", { level });
+}
+
+export function clearLogs() {
+	return invoke<void>("clear_logs");
+}
+
+export function saveLogs(path: string) {
+	return invoke<void>("save_logs", { path });
 }

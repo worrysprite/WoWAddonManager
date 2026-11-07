@@ -101,3 +101,15 @@ export interface SettingsView {
 	invalidWowRoots: string[];
 	hasWowInstall: boolean;
 }
+
+export interface LogEntry {
+	timestamp: string;
+	level: string;
+	target: string;
+	message: string;
+}
+
+export interface LogView {
+	level: string;
+	entries: LogEntry[];
+}
