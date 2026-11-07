@@ -156,6 +156,21 @@ export function InstalledTab({ install, refreshKey }: Props) {
 		}
 	}
 
+	function interfaceDirFromAddonsPath(addonsPath: string): string {
+		const trimmed = addonsPath.replace(/[\\/]+$/, "");
+		return trimmed.replace(/[\\/]+AddOns$/i, "");
+	}
+
+	async function handleOpenInterface() {
+		setError(null);
+		try {
+			const interfaceDir = interfaceDirFromAddonsPath(install.addonsPath);
+			await api.openDir(interfaceDir);
+		} catch (err) {
+			setError(String(err));
+		}
+	}
+
 	const blocked = loading || scanning || busy !== null;
 
 	return (
@@ -183,6 +198,14 @@ export function InstalledTab({ install, refreshKey }: Props) {
 						title={t("installed.rescan")}
 					>
 						{scanning ? t("installed.scanning") : t("installed.rescan")}
+					</button>
+					<button
+						className="btn"
+						onClick={handleOpenInterface}
+						disabled={blocked}
+						title={t("installed.openInterface")}
+					>
+						{t("installed.openInterface")}
 					</button>
 				</div>
 			</div>

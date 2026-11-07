@@ -4,7 +4,6 @@ export type LocalePreference = "system" | LocaleCode;
 export type MessageKey =
 	| "app.brand"
 	| "nav.browse"
-	| "nav.rescan"
 	| "nav.settings"
 	| "banner.noApiKey"
 	| "banner.goSettings"
@@ -49,6 +48,7 @@ export type MessageKey =
 	| "installed.title"
 	| "installed.manual"
 	| "installed.rescan"
+	| "installed.openInterface"
 	| "installed.scanning"
 	| "installed.rescanning"
 	| "installed.loadingList"
@@ -115,7 +115,6 @@ export type Messages = Record<MessageKey, string>;
 export const en: Messages = {
 	"app.brand": "WoW Addon Manager",
 	"nav.browse": "Browse All",
-	"nav.rescan": "Scan Clients",
 	"nav.settings": "Settings",
 	"banner.noApiKey": "No API Key configured. Using web GET / demo data. Go to",
 	"banner.goSettings": "Settings",
@@ -125,7 +124,7 @@ export const en: Messages = {
 	"banner.apiEnabled": "CurseForge official API is enabled.",
 	"banner.noWow": "No World of Warcraft install found. Go to",
 	"banner.addWowHint":
-		'and add a "World of Warcraft" root folder, or click "Scan Clients" in the top-right.',
+		'and add a "World of Warcraft" root folder, or open Settings to scan clients.',
 	"banner.invalidWow": "Some manually added install paths are invalid:",
 	"banner.fixOrRemove": "Please fix or remove them in",
 	"banner.rescanningClients": "Scanning WoW clients…",
@@ -161,6 +160,7 @@ export const en: Messages = {
 	"installed.title": "{label} installed addons",
 	"installed.manual": "Manual install",
 	"installed.rescan": "Scan Addons",
+	"installed.openInterface": "Open Interface Folder",
 	"installed.scanning": "Scanning…",
 	"installed.rescanning": "Scanning addon folder…",
 	"installed.loadingList": "Loading addon list…",
@@ -230,7 +230,6 @@ export const en: Messages = {
 export const zhCN: Messages = {
 	"app.brand": "WoW Addon Manager",
 	"nav.browse": "Browse All",
-	"nav.rescan": "扫描客户端",
 	"nav.settings": "设置",
 	"banner.noApiKey": "尚未配置 API Key，当前使用网页 GET / 演示数据。请到",
 	"banner.goSettings": "设置",
@@ -239,7 +238,7 @@ export const zhCN: Messages = {
 	"banner.docs": "文档",
 	"banner.apiEnabled": "已启用 CurseForge 官方 API。",
 	"banner.noWow": "未检测到魔兽世界安装目录。请到",
-	"banner.addWowHint": "手动添加「World of Warcraft」根目录，或点击右上角「扫描客户端」。",
+	"banner.addWowHint": "手动添加「World of Warcraft」根目录，或到设置里扫描客户端。",
 	"banner.invalidWow": "部分手动设置的安装目录无效：",
 	"banner.fixOrRemove": "请到",
 	"banner.rescanningClients": "正在扫描魔兽客户端…",
@@ -275,6 +274,7 @@ export const zhCN: Messages = {
 	"installed.title": "{label} 已安装插件",
 	"installed.manual": "手动安装",
 	"installed.rescan": "扫描插件",
+	"installed.openInterface": "打开插件目录",
 	"installed.scanning": "扫描中…",
 	"installed.rescanning": "正在扫描插件目录…",
 	"installed.loadingList": "正在读取插件列表…",

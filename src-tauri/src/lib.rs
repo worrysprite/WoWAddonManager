@@ -180,6 +180,46 @@ fn save_logs(path: String) -> Result<(), String> {
 	app_log::save_to_path(&path)
 }
 
+#[tauri::command]
+fn open_dir(path: String) -> Result<(), String> {
+	use std::path::PathBuf;
+	use std::process::Command;
+
+	let dir = PathBuf::from(&path);
+	std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建目录: {e}"))?;
+	log::info!("open_dir {}", dir.display());
+
+	#[cfg(target_os = "windows")]
+	{
+		Command::new("explorer")
+			.arg(dir.as_os_str())
+			.spawn()
+			.map_err(|e| format!("无法打开目录: {e}"))?;
+		return Ok(());
+	}
+
+	#[cfg(target_os = "macos")]
+	{
+		Command::new("open")
+			.arg(dir.as_os_str())
+			.spawn()
+			.map_err(|e| format!("无法打开目录: {e}"))?;
+		return Ok(());
+	}
+
+	#[cfg(all(unix, not(target_os = "macos")))]
+	{
+		Command::new("xdg-open")
+			.arg(dir.as_os_str())
+			.spawn()
+			.map_err(|e| format!("无法打开目录: {e}"))?;
+		return Ok(());
+	}
+
+	#[allow(unreachable_code)]
+	Err("当前平台不支持打开目录".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
 	app_log::init();
@@ -205,7 +245,8 @@ pub fn run() {
 			get_logs,
 			set_log_level,
 			clear_logs,
-			save_logs
+			save_logs,
+			open_dir
 		])
 		.run(tauri::generate_context!())
 		.expect("error while running tauri application");

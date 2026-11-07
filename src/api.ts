@@ -104,3 +104,7 @@ export function clearLogs() {
 export function saveLogs(path: string) {
 	return invoke<void>("save_logs", { path });
 }
+
+export function openDir(path: string) {
+	return invoke<void>("open_dir", { path });
+}
