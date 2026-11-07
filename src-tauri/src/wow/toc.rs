@@ -66,7 +66,10 @@ pub struct TocMeta {
 	pub notes: Option<String>,
 	pub notes_raw: Option<String>,
 	pub version: Option<String>,
+	/// First/raw Interface field (for display).
 	pub interface: Option<String>,
+	/// All Interface numbers declared in the TOC (multi-value / multi-line).
+	pub interfaces: Vec<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -80,32 +83,37 @@ pub fn client_unsupported_reason(meta: &TocMeta, game_version: Option<&str>) -> 
 	let notes_raw = meta.notes_raw.as_deref().unwrap_or("");
 	let title_l = title_raw.to_ascii_lowercase();
 	let notes_l = notes_raw.to_ascii_lowercase();
+	let title_plain = clean_toc_text(title_raw).to_ascii_lowercase();
 
-	let title_plain = clean_toc_text(title_raw);
-
+	// Prefer explicit wrong-client title markers (e.g. Questie).
 	if title_l.contains("game client not supported")
 		|| title_l.contains("client not supported")
-		|| title_l.contains("not compatible")
-		|| is_compat_warning(&title_plain)
+		|| title_plain.contains("game client not supported")
+		|| title_plain.contains("client not supported")
 	{
 		return Some(CompatibilityIssue {
 			reason: "当前游戏客户端不支持该插件（TOC 标记为 game client not supported）".into(),
 		});
 	}
 
-	if notes_l.contains("only supports")
-		|| notes_l.contains("not supported")
+	// Notes: only clear client-gate phrasing, not generic "unsupported feature".
+	if notes_l.contains("game client not supported")
 		|| notes_l.contains("wrong client")
-		|| notes_raw.contains("仅支持")
-		|| notes_raw.contains("不支持")
+		|| notes_l.contains("only supports classic")
+		|| notes_l.contains("only supports retail")
+		|| notes_l.contains("only supports season of discovery")
+		|| notes_l.contains("only supports wrath")
+		|| notes_l.contains("only supports cataclysm")
+		|| notes_raw.contains("仅支持经典")
+		|| notes_raw.contains("仅支持正式服")
 	{
 		return Some(CompatibilityIssue {
 			reason: "该插件声明仅支持其他版本客户端，与当前安装不匹配".into(),
 		});
 	}
 
-	if let (Some(toc_if), Some(gv)) = (meta.interface.as_deref(), game_version) {
-		if let Some(reason) = interface_mismatch_reason(toc_if, gv) {
+	if let Some(gv) = game_version {
+		if let Some(reason) = interface_mismatch_reason(meta, gv) {
 			return Some(CompatibilityIssue { reason });
 		}
 	}
@@ -125,21 +133,35 @@ pub fn game_version_to_interface(game_version: &str) -> Option<u32> {
 	Some(major * 10000 + minor * 100 + patch)
 }
 
-fn interface_mismatch_reason(toc_interface: &str, game_version: &str) -> Option<String> {
-	let toc_if = toc_interface
-		.split(|c: char| !c.is_ascii_digit())
-		.find(|p| !p.is_empty())
-		.and_then(|p| p.parse::<u32>().ok())?;
-	let expected = game_version_to_interface(game_version)?;
+fn parse_interface_numbers(raw: &str) -> Vec<u32> {
+	raw.split(|c: char| !c.is_ascii_digit())
+		.filter(|p| !p.is_empty())
+		.filter_map(|p| p.parse::<u32>().ok())
+		.filter(|&n| n >= 100) // ignore tiny tokens
+		.collect()
+}
 
-	let toc_major = toc_if / 10000;
+fn interface_mismatch_reason(meta: &TocMeta, game_version: &str) -> Option<String> {
+	let expected = game_version_to_interface(game_version)?;
 	let exp_major = expected / 10000;
-	if toc_major == exp_major {
+
+	let mut interfaces = meta.interfaces.clone();
+	if interfaces.is_empty() {
+		if let Some(raw) = meta.interface.as_deref() {
+			interfaces = parse_interface_numbers(raw);
+		}
+	}
+	if interfaces.is_empty() {
+		return None;
+	}
+
+	if interfaces.iter().any(|n| n / 10000 == exp_major) {
 		return None;
 	}
 
 	Some(format!(
-		"插件 Interface={toc_if} 与当前客户端版本 {game_version}（约 {expected}）不匹配"
+		"插件 Interface={:?} 与当前客户端版本 {game_version}（约 {expected}）不匹配",
+		interfaces
 	))
 }
 
@@ -180,7 +202,10 @@ pub fn parse_toc_file(path: &Path) -> TocMeta {
 				meta.version = Some(cleaned);
 			}
 		} else if let Some(rest) = line.strip_prefix("## Interface:") {
-			meta.interface = Some(rest.trim().to_string());
+			if meta.interface.is_none() {
+				meta.interface = Some(rest.trim().to_string());
+			}
+			meta.interfaces.extend(parse_interface_numbers(rest));
 		}
 	}
 	meta
@@ -223,6 +248,7 @@ mod tests {
 		let meta = TocMeta {
 			title: Some("Questie".into()),
 			interface: Some("11507".into()),
+			interfaces: vec![11507],
 			..TocMeta::default()
 		};
 		let issue = client_unsupported_reason(&meta, Some("12.1.5.70783"));
@@ -234,6 +260,30 @@ mod tests {
 		let meta = TocMeta {
 			title: Some("SomeAddon".into()),
 			interface: Some("120100".into()),
+			interfaces: vec![120100],
+			..TocMeta::default()
+		};
+		assert!(client_unsupported_reason(&meta, Some("12.1.5.70783")).is_none());
+	}
+
+	#[test]
+	fn allows_when_any_interface_major_matches() {
+		let meta = TocMeta {
+			title: Some("Multi".into()),
+			interface: Some("11507,120100".into()),
+			interfaces: vec![11507, 120100],
+			..TocMeta::default()
+		};
+		assert!(client_unsupported_reason(&meta, Some("12.1.5.70783")).is_none());
+	}
+
+	#[test]
+	fn notes_feature_unsupported_is_not_client_gate() {
+		let meta = TocMeta {
+			title: Some("HandyNotes".into()),
+			notes_raw: Some("Some features are not supported on this build.".into()),
+			interface: Some("120100".into()),
+			interfaces: vec![120100],
 			..TocMeta::default()
 		};
 		assert!(client_unsupported_reason(&meta, Some("12.1.5.70783")).is_none());
