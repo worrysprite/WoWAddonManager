@@ -1,6 +1,7 @@
 import { useI18n } from "../i18n";
 import type { AddonSummary, InstalledAddon, WowInstall } from "../types";
 import {
+	compatibleInstalls,
 	extraCategoryCount,
 	formatDate,
 	formatDownloads,
@@ -83,16 +84,24 @@ export function AddonCard(props: Props) {
 						{installs.length === 0 ? (
 							<span className="muted">{t("card.needWowPath")}</span>
 						) : (
-							installs.map((install) => (
-								<button
-									key={install.id}
-									className="btn primary"
-									disabled={busy}
-									onClick={() => onInstall(install.id)}
-								>
-									{t("card.installTo", { label: install.label })}
-								</button>
-							))
+							(() => {
+								const targets = compatibleInstalls(addon, installs);
+								if (targets.length === 0) {
+									return (
+										<span className="muted">{t("card.noCompatibleInstall")}</span>
+									);
+								}
+								return targets.map((install) => (
+									<button
+										key={install.id}
+										className="btn primary"
+										disabled={busy}
+										onClick={() => onInstall(install.id)}
+									>
+										{t("card.installTo", { label: install.label })}
+									</button>
+								));
+							})()
 						)}
 					</div>
 				</div>
