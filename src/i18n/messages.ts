@@ -31,6 +31,8 @@ export type MessageKey =
 	| "browse.nextPage"
 	| "browse.pageInfo"
 	| "browse.results"
+	| "browse.attributionBefore"
+	| "browse.attributionAfter"
 	| "filters.title"
 	| "filters.clearAll"
 	| "filters.categories"
@@ -146,6 +148,8 @@ export const en: Messages = {
 	"browse.nextPage": "Next",
 	"browse.pageInfo": "Page {page} / {totalPages}",
 	"browse.results": "{total} results",
+	"browse.attributionBefore": "Addons come from ",
+	"browse.attributionAfter": ". Please respect addon authors' copyright.",
 	"filters.title": "Filters",
 	"filters.clearAll": "Clear all",
 	"filters.categories": "Categories",
@@ -263,6 +267,8 @@ export const zhCN: Messages = {
 	"browse.nextPage": "下一页",
 	"browse.pageInfo": "第 {page} / {totalPages} 页",
 	"browse.results": "{total} 个结果",
+	"browse.attributionBefore": "插件来自于 ",
+	"browse.attributionAfter": "，请尊重插件作者版权。",
 	"filters.title": "Filters",
 	"filters.clearAll": "Clear all",
 	"filters.categories": "Categories",

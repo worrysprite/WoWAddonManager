@@ -154,6 +154,18 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 					</button>
 				</div>
 
+				<p className="browse-attribution">
+					{t("browse.attributionBefore")}
+					<a
+						href="https://www.curseforge.com/"
+						target="_blank"
+						rel="noreferrer"
+					>
+						CurseForge
+					</a>
+					{t("browse.attributionAfter")}
+				</p>
+
 				{result?.message ? <div className="banner">{result.message}</div> : null}
 				{error ? <div className="banner">{error}</div> : null}
 
