@@ -4,8 +4,6 @@ type Props = {
 	catalog: FilterCatalog | null;
 	categories: string[];
 	flavors: number[];
-	versionQuery: string;
-	onVersionQuery: (value: string) => void;
 	onToggleCategory: (value: string) => void;
 	onToggleFlavor: (id: number) => void;
 	onClear: () => void;
@@ -15,8 +13,6 @@ export function FilterSidebar({
 	catalog,
 	categories,
 	flavors,
-	versionQuery,
-	onVersionQuery,
 	onToggleCategory,
 	onToggleFlavor,
 	onClear,
@@ -71,23 +67,13 @@ export function FilterSidebar({
 
 			<details className="filter-section" open>
 				<summary>Game Version</summary>
-				<input
-					className="version-search"
-					placeholder="Search versions"
-					value={versionQuery}
-					onChange={(e) => onVersionQuery(e.target.value)}
-				/>
 				<div className="filter-list">
-					{(catalog?.gameVersions ?? [])
-						.filter((item) =>
-							item.label.toLowerCase().includes(versionQuery.trim().toLowerCase()),
-						)
-						.map((item) => (
-							<label key={item.id} className="filter-item">
-								<input type="checkbox" disabled />
-								<span>{item.label}</span>
-							</label>
-						))}
+					{(catalog?.gameVersions ?? []).map((item) => (
+						<label key={item.id} className="filter-item">
+							<input type="checkbox" disabled />
+							<span>{item.label}</span>
+						</label>
+					))}
 				</div>
 			</details>
 		</aside>

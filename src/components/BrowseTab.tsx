@@ -17,7 +17,6 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 	const [page, setPage] = useState(1);
 	const [categories, setCategories] = useState<string[]>([]);
 	const [flavors, setFlavors] = useState<number[]>([]);
-	const [versionQuery, setVersionQuery] = useState("");
 	const [loading, setLoading] = useState(false);
 	const [busyId, setBusyId] = useState<number | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -76,8 +75,6 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 				catalog={catalog}
 				categories={categories}
 				flavors={flavors}
-				versionQuery={versionQuery}
-				onVersionQuery={setVersionQuery}
 				onToggleCategory={(value) => {
 					setPage(1);
 					setCategories((prev) =>
@@ -99,8 +96,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 
 			<section className="main-pane">
 				<form
-					className="search-box"
-					style={{ margin: "14px 18px 0", maxWidth: "100%" }}
+					className="browse-search"
 					onSubmit={(e) => {
 						e.preventDefault();
 						setPage(1);
@@ -112,8 +108,24 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 						onChange={(e) => setDraftSearch(e.target.value)}
 						placeholder="Search for World of Warcraft addons..."
 					/>
-					<button type="submit" aria-label="Search">
-						⌕
+					<button type="submit" className="browse-search-btn" aria-label="Search">
+						<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+							<circle
+								cx="11"
+								cy="11"
+								r="7"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="2"
+							/>
+							<path
+								d="M20 20l-3.5-3.5"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="2"
+								strokeLinecap="round"
+							/>
+						</svg>
 					</button>
 				</form>
 

@@ -133,6 +133,7 @@ button {
 	min-width: 320px;
 	max-width: 460px;
 	flex: 1;
+	height: 40px;
 	background: #101014;
 	border: 1px solid var(--border);
 	border-radius: 999px;
@@ -141,11 +142,13 @@ button {
 
 .search-box input {
 	flex: 1;
+	min-width: 0;
 	border: 0;
 	outline: none;
 	background: transparent;
 	color: var(--text);
-	padding: 10px 16px;
+	padding: 0 16px;
+	height: 100%;
 }
 
 .search-box button {
@@ -153,11 +156,54 @@ button {
 	background: transparent;
 	color: var(--text-muted);
 	padding: 0 14px;
-	height: 40px;
+	height: 100%;
+	display: grid;
+	place-items: center;
 }
 
 .search-box button:hover {
 	color: var(--accent-strong);
+}
+
+.browse-search {
+	display: flex;
+	align-items: stretch;
+	flex: 0 0 auto;
+	height: 42px;
+	margin: 14px 18px 0;
+	background: #101014;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	overflow: hidden;
+}
+
+.browse-search input {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	outline: none;
+	background: transparent;
+	color: var(--text);
+	padding: 0 16px;
+	height: 100%;
+	line-height: 42px;
+}
+
+.browse-search-btn {
+	flex: 0 0 auto;
+	width: 48px;
+	border: 0;
+	border-left: 1px solid var(--border);
+	background: #1a1a1f;
+	color: var(--text-muted);
+	display: grid;
+	place-items: center;
+	cursor: pointer;
+}
+
+.browse-search-btn:hover {
+	color: var(--accent-strong);
+	background: #222228;
 }
 
 .content {
@@ -263,16 +309,6 @@ button {
 	accent-color: var(--accent);
 	width: 15px;
 	height: 15px;
-}
-
-.version-search {
-	width: 100%;
-	margin-bottom: 10px;
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	background: #101014;
-	color: var(--text);
-	padding: 8px 10px;
 }
 
 .main-pane {
