@@ -20,7 +20,12 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 					install.label,
 					cache.addons.len()
 				);
-				return Ok(sanitize_installed_list(cache.addons));
+				let before = cache.addons.len();
+				let filtered = filter_unsupported_addons(install, cache.addons);
+				if filtered.len() != before {
+					let _ = save_scan_cache(&addons_path, &filtered);
+				}
+				return Ok(filtered);
 			}
 		}
 	}
@@ -92,6 +97,33 @@ fn sanitize_installed_list(mut addons: Vec<InstalledAddon>) -> Vec<InstalledAddo
 	addons
 }
 
+/// Drop addons whose TOC marks them unsupported for this client (also cleans titles).
+fn filter_unsupported_addons(
+	install: &WowInstall,
+	addons: Vec<InstalledAddon>,
+) -> Vec<InstalledAddon> {
+	let addons_path = PathBuf::from(&install.addons_path);
+	let game_version = install.game_version.as_deref();
+	sanitize_installed_list(addons)
+		.into_iter()
+		.filter(|addon| {
+			let Some(meta) = crate::wow::toc::read_folder_toc(&addons_path, &addon.folder_name)
+			else {
+				return true;
+			};
+			if let Some(issue) = crate::wow::toc::client_unsupported_reason(&meta, game_version) {
+				log::info!(
+					"缓存中跳过不兼容插件 folder={} reason={}",
+					addon.folder_name,
+					issue.reason
+				);
+				return false;
+			}
+			true
+		})
+		.collect()
+}
+
 fn scan_cache_path(addons_path: &Path) -> PathBuf {
 	addons_path.join(SCAN_CACHE_FILE)
 }
@@ -153,17 +185,33 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 		if folder_name.starts_with('.') {
 			continue;
 		}
-		let toc = find_toc(&path, &folder_name);
-		let meta = toc.as_ref().map(|p| parse_toc(p)).unwrap_or_default();
-		let tracked = stored_map.get(&folder_name);
+		let toc_path = crate::wow::toc::preferred_toc(&path, &folder_name);
+		let meta = toc_path
+			.as_ref()
+			.map(|p| crate::wow::toc::parse_toc_file(p))
+			.unwrap_or_default();
 
+		if let Some(issue) =
+			crate::wow::toc::client_unsupported_reason(&meta, install.game_version.as_deref())
+		{
+			log::info!(
+				"跳过不兼容插件 folder={folder_name} reason={}",
+				issue.reason
+			);
+			continue;
+		}
+
+		let tracked = stored_map.get(&folder_name);
 		let raw_title = tracked
 			.and_then(|t| t.name.clone())
-			.or(meta.title)
+			.or(meta.title.clone())
 			.unwrap_or_else(|| folder_name.clone());
-		let raw_author = tracked.and_then(|t| t.author.clone()).or(meta.author);
+		let raw_author = tracked
+			.and_then(|t| t.author.clone())
+			.or(meta.author.clone());
 		let raw_notes = meta
 			.notes
+			.clone()
 			.or_else(|| tracked.and_then(|t| t.summary.clone()));
 
 		results.push(InstalledAddon {
@@ -246,60 +294,6 @@ async fn check_update(
 	}
 }
 
-#[derive(Default)]
-struct TocMeta {
-	title: Option<String>,
-	author: Option<String>,
-	notes: Option<String>,
-	version: Option<String>,
-	interface: Option<String>,
-}
-
-fn find_toc(dir: &Path, folder_name: &str) -> Option<PathBuf> {
-	let preferred = dir.join(format!("{folder_name}.toc"));
-	if preferred.exists() {
-		return Some(preferred);
-	}
-	for entry in fs::read_dir(dir).ok()?.flatten() {
-		let path = entry.path();
-		if path.extension().and_then(|s| s.to_str()) == Some("toc") {
-			return Some(path);
-		}
-	}
-	None
-}
-
-fn parse_toc(path: &Path) -> TocMeta {
-	let content = fs::read_to_string(path).unwrap_or_default();
-	let mut meta = TocMeta::default();
-	for line in content.lines() {
-		let line = line.trim();
-		if let Some(rest) = line.strip_prefix("## Title:") {
-			let cleaned = crate::wow::toc::clean_toc_title(rest);
-			if !cleaned.is_empty() {
-				meta.title = Some(cleaned);
-			}
-		} else if let Some(rest) = line.strip_prefix("## Author:") {
-			let cleaned = crate::wow::toc::clean_toc_text(rest);
-			if !cleaned.is_empty() {
-				meta.author = Some(cleaned);
-			}
-		} else if let Some(rest) = line.strip_prefix("## Notes:") {
-			let cleaned = crate::wow::toc::clean_toc_text(rest);
-			if !cleaned.is_empty() {
-				meta.notes = Some(cleaned);
-			}
-		} else if let Some(rest) = line.strip_prefix("## Version:") {
-			let cleaned = crate::wow::toc::clean_toc_text(rest);
-			if !cleaned.is_empty() {
-				meta.version = Some(cleaned);
-			}
-		} else if let Some(rest) = line.strip_prefix("## Interface:") {
-			meta.interface = Some(rest.trim().to_string());
-		}
-	}
-	meta
-}
 
 #[cfg(test)]
 mod tests {
@@ -349,6 +343,26 @@ mod tests {
 		let cached = load_scan_cache(Path::new(&install.addons_path)).unwrap();
 		assert!(cached.scanned_at.is_some());
 		assert_eq!(cached.addons.len(), 1);
+
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn scan_skips_game_client_not_supported() {
+		let (dir, mut install) = temp_install();
+		install.game_version = Some("12.1.5.70783".into());
+		let bad = PathBuf::from(&install.addons_path).join("Questie");
+		fs::create_dir_all(&bad).unwrap();
+		fs::write(
+			bad.join("Questie.toc"),
+			"## Interface: 11507\n## Title: Questie|cFFFF0000 game client not supported|r\n## Notes: Questie only supports Classic official servers.\n## Author: Questie Team\n## Version: 1.0\n",
+		)
+		.unwrap();
+
+		let listed = scan_disk_only(&install).unwrap();
+		assert!(listed.iter().all(|a| a.folder_name != "Questie"));
+		assert_eq!(listed.len(), 1);
+		assert_eq!(listed[0].folder_name, "CachedAddon");
 
 		let _ = fs::remove_dir_all(dir);
 	}

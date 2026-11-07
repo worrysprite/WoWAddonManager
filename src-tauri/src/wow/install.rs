@@ -30,13 +30,44 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 		}
 	};
 
-	let primary = folders
+	let mut accepted = Vec::new();
+	let mut reject_reason: Option<String> = None;
+
+	for folder in &folders {
+		if let Some(meta) = crate::wow::toc::read_folder_toc(&addons_path, folder) {
+			if let Some(issue) =
+				crate::wow::toc::client_unsupported_reason(&meta, install.game_version.as_deref())
+			{
+				let target = addons_path.join(folder);
+				let _ = fs::remove_dir_all(&target);
+				let _ = manifest::remove(&addons_path, folder);
+				reject_reason = Some(issue.reason);
+				log::warn!(
+					"拒绝安装不兼容插件 folder={folder} addon={}",
+					addon.name
+				);
+				continue;
+			}
+		}
+		accepted.push(folder.clone());
+	}
+
+	if accepted.is_empty() {
+		let _ = scan::refresh_local_cache(&install);
+		return Err(format!(
+			"安装失败：{} 与当前客户端不兼容。{}",
+			addon.name,
+			reject_reason.unwrap_or_else(|| "TOC 标记为 game client not supported".into())
+		));
+	}
+
+	let primary = accepted
 		.first()
 		.cloned()
 		.unwrap_or_else(|| sanitize_folder(&addon.slug));
 	let now = Utc::now().to_rfc3339();
 
-	for folder in &folders {
+	for folder in &accepted {
 		let entry = ManifestAddon {
 			folder_name: folder.clone(),
 			curseforge_id: Some(addon.id),
@@ -87,8 +118,34 @@ pub async fn install_from_archive(
 		.unwrap_or("archive")
 		.to_string();
 
+	let mut accepted = Vec::new();
+	let mut rejected = Vec::new();
+
 	for folder in &folders {
-		let (title, author, notes, version) = archive::read_toc_meta(&addons_path, folder);
+		let meta = crate::wow::toc::read_folder_toc(&addons_path, folder);
+		if let Some(meta) = &meta {
+			if let Some(issue) =
+				crate::wow::toc::client_unsupported_reason(meta, install.game_version.as_deref())
+			{
+				let target = addons_path.join(folder);
+				let _ = fs::remove_dir_all(&target);
+				let _ = manifest::remove(&addons_path, folder);
+				rejected.push(format!(
+					"{folder}（{}）",
+					meta.title.as_deref().unwrap_or(folder.as_str())
+				));
+				log::warn!(
+					"拒绝安装不兼容插件 folder={folder} reason={}",
+					issue.reason
+				);
+				continue;
+			}
+		}
+
+		let title = meta.as_ref().and_then(|m| m.title.clone());
+		let author = meta.as_ref().and_then(|m| m.author.clone());
+		let notes = meta.as_ref().and_then(|m| m.notes.clone());
+		let version = meta.as_ref().and_then(|m| m.version.clone());
 		let entry = ManifestAddon {
 			folder_name: folder.clone(),
 			curseforge_id: None,
@@ -110,18 +167,34 @@ pub async fn install_from_archive(
 			archive_name: Some(archive_name.clone()),
 		};
 		manifest::upsert(&addons_path, entry)?;
+		accepted.push(folder.clone());
 	}
 
 	let list = scan::refresh_local_cache(&install)?;
 	let installed = list
 		.into_iter()
-		.filter(|a| folders.iter().any(|f| f == &a.folder_name))
+		.filter(|a| accepted.iter().any(|f| f == &a.folder_name))
 		.collect::<Vec<_>>();
-	if installed.is_empty() {
-		Err("安装完成但未能读取插件信息".into())
-	} else {
-		Ok(installed)
+
+	if accepted.is_empty() {
+		return Err(format!(
+			"安装失败：压缩包内插件与当前客户端不兼容。{}",
+			if rejected.is_empty() {
+				String::new()
+			} else {
+				format!("已跳过：{}", rejected.join("；"))
+			}
+		));
 	}
+
+	if !rejected.is_empty() {
+		log::warn!(
+			"部分插件因客户端不兼容已跳过：{}",
+			rejected.join("；")
+		);
+	}
+
+	Ok(installed)
 }
 
 pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<InstalledAddon, String> {
