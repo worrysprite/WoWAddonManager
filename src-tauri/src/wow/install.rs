@@ -60,7 +60,7 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 		manifest::upsert(&addons_path, entry)?;
 	}
 
-	let list = scan::list_installed(&install).await?;
+	let list = scan::refresh_local_cache(&install)?;
 	list.into_iter()
 		.find(|a| a.folder_name == primary)
 		.ok_or_else(|| "安装完成但未能读取插件信息".to_string())
@@ -112,7 +112,7 @@ pub async fn install_from_archive(
 		manifest::upsert(&addons_path, entry)?;
 	}
 
-	let list = scan::list_installed(&install).await?;
+	let list = scan::refresh_local_cache(&install)?;
 	let installed = list
 		.into_iter()
 		.filter(|a| folders.iter().any(|f| f == &a.folder_name))
@@ -194,6 +194,7 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 			manifest::save(&addons_path, &manifest)?;
 			installed.installed_at = Some(installed_at);
 		}
+		let _ = scan::refresh_local_cache(&install);
 	}
 	Ok(installed)
 }
@@ -206,6 +207,7 @@ pub async fn delete_addon(install_id: &str, folder_name: &str) -> Result<(), Str
 		fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
 	}
 	manifest::remove(&addons_path, folder_name)?;
+	scan::remove_from_cache(&install, folder_name)?;
 	Ok(())
 }
 

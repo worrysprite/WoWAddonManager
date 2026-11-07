@@ -38,6 +38,10 @@ export function listInstalledAddons(installId: string) {
 	return invoke<InstalledAddon[]>("list_installed_addons", { installId });
 }
 
+export function rescanInstalledAddons(installId: string) {
+	return invoke<InstalledAddon[]>("rescan_installed_addons", { installId });
+}
+
 export function installAddon(installId: string, addon: AddonSummary) {
 	return invoke<InstalledAddon>("install_addon", {
 		request: { installId, addon },

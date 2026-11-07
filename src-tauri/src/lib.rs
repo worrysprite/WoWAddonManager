@@ -69,16 +69,23 @@ async fn rescan_wow_installs() -> Result<SettingsView, String> {
 
 #[tauri::command]
 async fn list_installed_addons(install_id: String) -> Result<Vec<InstalledAddon>, String> {
-	let install = run_blocking({
-		let install_id = install_id.clone();
-		move || {
-			let cfg = config::load();
-			let report = detect::detect_with_extra_roots(&cfg.extra_wow_roots);
-			install::find_install_in(&report.installs, &install_id)
-		}
+	let install = resolve_install_async(install_id).await?;
+	scan::list_installed(&install, false).await
+}
+
+#[tauri::command]
+async fn rescan_installed_addons(install_id: String) -> Result<Vec<InstalledAddon>, String> {
+	let install = resolve_install_async(install_id).await?;
+	scan::list_installed(&install, true).await
+}
+
+async fn resolve_install_async(install_id: String) -> Result<WowInstall, String> {
+	run_blocking(move || {
+		let cfg = config::load();
+		let report = detect::detect_with_extra_roots(&cfg.extra_wow_roots);
+		install::find_install_in(&report.installs, &install_id)
 	})
-	.await?;
-	scan::list_installed(&install).await
+	.await
 }
 
 #[tauri::command]
@@ -134,6 +141,7 @@ pub fn run() {
 			remove_wow_path,
 			rescan_wow_installs,
 			list_installed_addons,
+			rescan_installed_addons,
 			install_addon,
 			install_from_archive,
 			update_addon,
