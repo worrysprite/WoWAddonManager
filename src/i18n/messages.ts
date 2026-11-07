@@ -42,6 +42,7 @@ export type MessageKey =
 	| "card.unknownAuthor"
 	| "card.noDescription"
 	| "card.needWowPath"
+	| "card.noCompatibleInstall"
 	| "card.installTo"
 	| "card.installedAddon"
 	| "card.installedAt"
@@ -159,6 +160,7 @@ export const en: Messages = {
 	"card.unknownAuthor": "Unknown",
 	"card.noDescription": "No description",
 	"card.needWowPath": "Add a WoW install path first",
+	"card.noCompatibleInstall": "No compatible local client for this addon",
 	"card.installTo": "Install to {label}",
 	"card.installedAddon": "Installed addon",
 	"card.installedAt": "Installed {date}",
@@ -278,6 +280,7 @@ export const zhCN: Messages = {
 	"card.unknownAuthor": "Unknown",
 	"card.noDescription": "No description",
 	"card.needWowPath": "请先添加魔兽安装目录",
+	"card.noCompatibleInstall": "当前已检测到的客户端均不支持该插件",
 	"card.installTo": "安装到 {label}",
 	"card.installedAddon": "已安装插件",
 	"card.installedAt": "安装于 {date}",

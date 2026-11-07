@@ -157,7 +157,10 @@ export default function App() {
 					/>
 				) : null}
 
-				<div style={{ display: tab === "browse" ? undefined : "none" }}>
+				<div
+					className="tab-panel"
+					style={{ display: tab === "browse" ? undefined : "none" }}
+				>
 					<BrowseTab
 						key={browseNonce}
 						installs={installs}
@@ -172,11 +175,13 @@ export default function App() {
 					? (() => {
 							const install = installs.find((i) => i.id === tab);
 							return install ? (
-								<InstalledTab
-									key={install.id}
-									install={install}
-									refreshKey={refreshKey}
-								/>
+								<div className="tab-panel">
+									<InstalledTab
+										key={install.id}
+										install={install}
+										refreshKey={refreshKey}
+									/>
+								</div>
 							) : (
 								<div className="empty">{t("installed.clientMissing")}</div>
 							);
