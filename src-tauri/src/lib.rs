@@ -23,32 +23,26 @@ fn get_filter_catalog() -> FilterCatalog {
 
 #[tauri::command]
 fn detect_wow_installs() -> Result<Vec<WowInstall>, String> {
-	let mut installs = detect::detect_installs();
 	let cfg = config::load();
-	for root in cfg.extra_wow_roots {
-		if let Ok(extra) = detect::install_from_path(&root) {
-			for item in extra {
-				if !installs.iter().any(|i| i.id == item.id) {
-					installs.push(item);
-				}
-			}
-		}
-	}
-	installs.sort_by(|a, b| a.label.cmp(&b.label));
-	Ok(installs)
+	let report = detect::detect_with_extra_roots(&cfg.extra_wow_roots);
+	Ok(report.installs)
 }
 
 #[tauri::command]
-fn add_wow_path(path: String) -> Result<Vec<WowInstall>, String> {
-	let found = detect::install_from_path(&path)?;
+fn add_wow_path(path: String) -> Result<SettingsView, String> {
 	config::add_wow_root(&path)?;
-	let mut all = detect_wow_installs()?;
-	for item in found {
-		if !all.iter().any(|i| i.id == item.id) {
-			all.push(item);
-		}
-	}
-	Ok(all)
+	Ok(config::settings_view())
+}
+
+#[tauri::command]
+fn remove_wow_path(path: String) -> Result<SettingsView, String> {
+	config::remove_wow_root(&path)?;
+	Ok(config::settings_view())
+}
+
+#[tauri::command]
+fn rescan_wow_installs() -> Result<SettingsView, String> {
+	Ok(config::settings_view())
 }
 
 #[tauri::command]
@@ -103,6 +97,8 @@ pub fn run() {
 			get_filter_catalog,
 			detect_wow_installs,
 			add_wow_path,
+			remove_wow_path,
+			rescan_wow_installs,
 			list_installed_addons,
 			install_addon,
 			update_addon,

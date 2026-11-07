@@ -1,3 +1,5 @@
+use crate::types::WowInstall;
+use crate::wow::detect;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -17,12 +19,18 @@ pub struct SettingsView {
 	pub has_api_key: bool,
 	pub apply_url: String,
 	pub docs_url: String,
+	pub wow_roots: Vec<String>,
+	pub detected_installs: Vec<WowInstall>,
+	pub invalid_wow_roots: Vec<String>,
+	pub has_wow_install: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveSettingsRequest {
 	pub curseforge_api_key: String,
+	#[serde(default)]
+	pub wow_roots: Option<Vec<String>>,
 }
 
 fn config_path() -> Result<PathBuf, String> {
@@ -50,11 +58,30 @@ pub fn save(config: &AppConfig) -> Result<(), String> {
 }
 
 pub fn add_wow_root(path: &str) -> Result<AppConfig, String> {
+	let trimmed = path.trim();
+	if trimmed.is_empty() {
+		return Err("路径不能为空".into());
+	}
+	// Validate before saving.
+	detect::install_from_path(trimmed)?;
 	let mut config = load();
-	if !config.extra_wow_roots.iter().any(|p| p == path) {
-		config.extra_wow_roots.push(path.to_string());
+	if !config
+		.extra_wow_roots
+		.iter()
+		.any(|p| p.eq_ignore_ascii_case(trimmed))
+	{
+		config.extra_wow_roots.push(trimmed.to_string());
 		save(&config)?;
 	}
+	Ok(config)
+}
+
+pub fn remove_wow_root(path: &str) -> Result<AppConfig, String> {
+	let mut config = load();
+	config
+		.extra_wow_roots
+		.retain(|p| !p.eq_ignore_ascii_case(path));
+	save(&config)?;
 	Ok(config)
 }
 
@@ -66,13 +93,24 @@ pub fn api_key() -> Option<String> {
 }
 
 pub fn settings_view() -> SettingsView {
-	let key = api_key().unwrap_or_default();
+	let config = load();
+	let key = config
+		.curseforge_api_key
+		.clone()
+		.unwrap_or_default()
+		.trim()
+		.to_string();
+	let report = detect::detect_with_extra_roots(&config.extra_wow_roots);
 	SettingsView {
 		has_api_key: !key.is_empty(),
 		curseforge_api_key: key,
 		apply_url: "https://forms.monday.com/forms/dce5ccb7afda9a1c21dab1a1aa1d84eb?r=use1"
 			.into(),
 		docs_url: "https://docs.curseforge.com/rest-api/".into(),
+		wow_roots: config.extra_wow_roots,
+		has_wow_install: !report.installs.is_empty(),
+		detected_installs: report.installs,
+		invalid_wow_roots: report.invalid_roots,
 	}
 }
 
@@ -84,6 +122,20 @@ pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, Strin
 	} else {
 		Some(trimmed)
 	};
+	if let Some(roots) = request.wow_roots {
+		let mut cleaned = Vec::new();
+		for root in roots {
+			let root = root.trim().to_string();
+			if root.is_empty() {
+				continue;
+			}
+			if cleaned.iter().any(|p: &String| p.eq_ignore_ascii_case(&root)) {
+				continue;
+			}
+			cleaned.push(root);
+		}
+		config.extra_wow_roots = cleaned;
+	}
 	save(&config)?;
 	Ok(settings_view())
 }

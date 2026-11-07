@@ -96,4 +96,8 @@ export interface SettingsView {
 	hasApiKey: boolean;
 	applyUrl: string;
 	docsUrl: string;
+	wowRoots: string[];
+	detectedInstalls: WowInstall[];
+	invalidWowRoots: string[];
+	hasWowInstall: boolean;
 }

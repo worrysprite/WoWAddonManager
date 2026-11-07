@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import * as api from "./api";
 import { BrowseTab } from "./components/BrowseTab";
 import { InstalledTab } from "./components/InstalledTab";
@@ -19,39 +18,31 @@ export default function App() {
 	const [settings, setSettings] = useState<SettingsView | null>(null);
 	const [status, setStatus] = useState<string | null>(null);
 
-	async function refreshInstalls() {
+	async function applySettings(next: SettingsView) {
+		setSettings(next);
+		setInstalls(next.detectedInstalls);
+		if (
+			tab !== "browse" &&
+			tab !== "settings" &&
+			!next.detectedInstalls.some((i) => i.id === tab)
+		) {
+			setTab("browse");
+		}
+	}
+
+	async function refreshAll() {
 		try {
-			const list = await api.detectWowInstalls();
-			setInstalls(list);
-			if (tab !== "browse" && tab !== "settings" && !list.some((i) => i.id === tab)) {
-				setTab("browse");
-			}
+			const next = await api.getSettings();
+			await applySettings(next);
 		} catch (err) {
 			setStatus(String(err));
 		}
 	}
 
 	useEffect(() => {
-		refreshInstalls();
+		refreshAll();
 		api.getApiHelp().then(setApiHelp).catch(console.error);
-		api.getSettings().then(setSettings).catch(console.error);
 	}, []);
-
-	async function handleAddPath() {
-		try {
-			const selected = await open({
-				directory: true,
-				multiple: false,
-				title: "选择 World of Warcraft 安装目录",
-			});
-			if (!selected || Array.isArray(selected)) return;
-			const list = await api.addWowPath(selected);
-			setInstalls(list);
-			setStatus(`已添加：${selected}`);
-		} catch (err) {
-			setStatus(String(err));
-		}
-	}
 
 	function openSettings() {
 		if (tab !== "settings") {
@@ -59,6 +50,10 @@ export default function App() {
 		}
 		setTab("settings");
 	}
+
+	const showApiWarning = Boolean(apiHelp && !settings?.hasApiKey);
+	const showWowWarning = Boolean(settings && !settings.hasWowInstall);
+	const showInvalidWowWarning = Boolean(settings?.invalidWowRoots?.length);
 
 	return (
 		<div className="app-shell">
@@ -87,10 +82,7 @@ export default function App() {
 				</nav>
 
 				<div className="toolbar-actions">
-					<button className="btn" onClick={handleAddPath}>
-						添加安装目录
-					</button>
-					<button className="btn" onClick={refreshInstalls}>
+					<button className="btn" onClick={refreshAll}>
 						重新扫描
 					</button>
 					<button
@@ -105,24 +97,50 @@ export default function App() {
 			</header>
 
 			{status ? <div className="banner">{status}</div> : null}
-			{apiHelp && tab === "browse" && !settings?.hasApiKey ? (
+
+			{showApiWarning ? (
 				<div className="banner">
-					尚未配置 API Key，当前使用网页 GET / 演示数据。点击右上角
+					尚未配置 API Key，当前使用网页 GET / 演示数据。请到
 					<button className="linkish" onClick={openSettings}>
 						设置
 					</button>
 					填写 Key 后改用官方接口。
-					<a href={apiHelp.apply} target="_blank" rel="noreferrer">
-						申请表
-					</a>
-					{" · "}
-					<a href={apiHelp.docs} target="_blank" rel="noreferrer">
-						文档
-					</a>
+					{apiHelp ? (
+						<>
+							<a href={apiHelp.apply} target="_blank" rel="noreferrer">
+								申请表
+							</a>
+							{" · "}
+							<a href={apiHelp.docs} target="_blank" rel="noreferrer">
+								文档
+							</a>
+						</>
+					) : null}
 				</div>
 			) : null}
-			{tab === "browse" && settings?.hasApiKey ? (
+
+			{settings?.hasApiKey ? (
 				<div className="banner ok-banner">已启用 CurseForge 官方 API。</div>
+			) : null}
+
+			{showWowWarning ? (
+				<div className="banner">
+					未检测到魔兽世界安装目录。请到
+					<button className="linkish" onClick={openSettings}>
+						设置
+					</button>
+					手动添加「World of Warcraft」根目录，或点击右上角「重新扫描」。
+				</div>
+			) : null}
+
+			{showInvalidWowWarning ? (
+				<div className="banner">
+					部分手动设置的安装目录无效：{settings?.invalidWowRoots.join("；")}。请到
+					<button className="linkish" onClick={openSettings}>
+						设置
+					</button>
+					修正或移除。
+				</div>
 			) : null}
 
 			<main className="content">
@@ -130,7 +148,7 @@ export default function App() {
 					<SettingsPage
 						onBack={() => setTab(previousTab === "settings" ? "browse" : previousTab)}
 						onSaved={(next) => {
-							setSettings(next);
+							applySettings(next);
 							setBrowseNonce((v) => v + 1);
 						}}
 					/>

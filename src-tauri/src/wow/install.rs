@@ -8,18 +8,9 @@ use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
 fn resolve_install(install_id: &str) -> Result<WowInstall, String> {
-	let mut installs = detect::detect_installs();
 	let cfg = crate::config::load();
-	for root in cfg.extra_wow_roots {
-		if let Ok(extra) = detect::install_from_path(&root) {
-			for item in extra {
-				if !installs.iter().any(|i| i.id == item.id) {
-					installs.push(item);
-				}
-			}
-		}
-	}
-	find_install_in(&installs, install_id)
+	let report = detect::detect_with_extra_roots(&cfg.extra_wow_roots);
+	find_install_in(&report.installs, install_id)
 }
 
 pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<InstalledAddon, String> {

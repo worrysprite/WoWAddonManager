@@ -23,7 +23,15 @@ export function detectWowInstalls() {
 }
 
 export function addWowPath(path: string) {
-	return invoke<WowInstall[]>("add_wow_path", { path });
+	return invoke<SettingsView>("add_wow_path", { path });
+}
+
+export function removeWowPath(path: string) {
+	return invoke<SettingsView>("remove_wow_path", { path });
+}
+
+export function rescanWowInstalls() {
+	return invoke<SettingsView>("rescan_wow_installs");
 }
 
 export function listInstalledAddons(installId: string) {
@@ -56,8 +64,8 @@ export function getSettings() {
 	return invoke<SettingsView>("get_settings");
 }
 
-export function saveSettings(curseforgeApiKey: string) {
+export function saveSettings(curseforgeApiKey: string, wowRoots?: string[]) {
 	return invoke<SettingsView>("save_settings", {
-		request: { curseforgeApiKey },
+		request: { curseforgeApiKey, wowRoots },
 	});
 }
