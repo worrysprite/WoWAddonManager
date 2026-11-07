@@ -73,6 +73,7 @@ pub fn add_wow_root(path: &str) -> Result<AppConfig, String> {
 		config.extra_wow_roots.push(trimmed.to_string());
 		save(&config)?;
 	}
+	detect::invalidate_cache();
 	Ok(config)
 }
 
@@ -82,6 +83,7 @@ pub fn remove_wow_root(path: &str) -> Result<AppConfig, String> {
 		.extra_wow_roots
 		.retain(|p| !p.eq_ignore_ascii_case(path));
 	save(&config)?;
+	detect::invalidate_cache();
 	Ok(config)
 }
 
@@ -93,6 +95,14 @@ pub fn api_key() -> Option<String> {
 }
 
 pub fn settings_view() -> SettingsView {
+	settings_view_with_depth(false)
+}
+
+pub fn settings_view_deep() -> SettingsView {
+	settings_view_with_depth(true)
+}
+
+fn settings_view_with_depth(deep: bool) -> SettingsView {
 	let config = load();
 	let key = config
 		.curseforge_api_key
@@ -100,7 +110,11 @@ pub fn settings_view() -> SettingsView {
 		.unwrap_or_default()
 		.trim()
 		.to_string();
-	let report = detect::detect_with_extra_roots(&config.extra_wow_roots);
+	let report = if deep {
+		detect::detect_with_extra_roots_deep(&config.extra_wow_roots)
+	} else {
+		detect::detect_with_extra_roots(&config.extra_wow_roots)
+	};
 	SettingsView {
 		has_api_key: !key.is_empty(),
 		curseforge_api_key: key,
@@ -137,5 +151,6 @@ pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, Strin
 		config.extra_wow_roots = cleaned;
 	}
 	save(&config)?;
+	detect::invalidate_cache();
 	Ok(settings_view())
 }

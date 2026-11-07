@@ -11,6 +11,16 @@ use types::{
 };
 use wow::{detect, install, scan};
 
+async fn run_blocking<T, F>(f: F) -> Result<T, String>
+where
+	T: Send + 'static,
+	F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+	tokio::task::spawn_blocking(f)
+		.await
+		.map_err(|e| format!("后台任务失败: {e}"))?
+}
+
 #[tauri::command]
 async fn search_addons(params: SearchParams) -> Result<SearchResult, String> {
 	Ok(curseforge::search_addons(params).await)
@@ -22,33 +32,52 @@ fn get_filter_catalog() -> FilterCatalog {
 }
 
 #[tauri::command]
-fn detect_wow_installs() -> Result<Vec<WowInstall>, String> {
-	let cfg = config::load();
-	let report = detect::detect_with_extra_roots(&cfg.extra_wow_roots);
-	Ok(report.installs)
+async fn detect_wow_installs() -> Result<Vec<WowInstall>, String> {
+	run_blocking(|| {
+		let cfg = config::load();
+		Ok(detect::detect_with_extra_roots(&cfg.extra_wow_roots).installs)
+	})
+	.await
 }
 
 #[tauri::command]
-fn add_wow_path(path: String) -> Result<SettingsView, String> {
-	config::add_wow_root(&path)?;
-	Ok(config::settings_view())
+async fn add_wow_path(path: String) -> Result<SettingsView, String> {
+	run_blocking(move || {
+		config::add_wow_root(&path)?;
+		Ok(config::settings_view())
+	})
+	.await
 }
 
 #[tauri::command]
-fn remove_wow_path(path: String) -> Result<SettingsView, String> {
-	config::remove_wow_root(&path)?;
-	Ok(config::settings_view())
+async fn remove_wow_path(path: String) -> Result<SettingsView, String> {
+	run_blocking(move || {
+		config::remove_wow_root(&path)?;
+		Ok(config::settings_view())
+	})
+	.await
 }
 
 #[tauri::command]
-fn rescan_wow_installs() -> Result<SettingsView, String> {
-	Ok(config::settings_view())
+async fn rescan_wow_installs() -> Result<SettingsView, String> {
+	run_blocking(|| {
+		detect::invalidate_cache();
+		Ok(config::settings_view_deep())
+	})
+	.await
 }
 
 #[tauri::command]
 async fn list_installed_addons(install_id: String) -> Result<Vec<InstalledAddon>, String> {
-	let installs = detect_wow_installs()?;
-	let install = install::find_install_in(&installs, &install_id)?;
+	let install = run_blocking({
+		let install_id = install_id.clone();
+		move || {
+			let cfg = config::load();
+			let report = detect::detect_with_extra_roots(&cfg.extra_wow_roots);
+			install::find_install_in(&report.installs, &install_id)
+		}
+	})
+	.await?;
 	scan::list_installed(&install).await
 }
 
@@ -73,13 +102,13 @@ async fn install_from_archive(request: ManualInstallRequest) -> Result<Vec<Insta
 }
 
 #[tauri::command]
-fn get_settings() -> SettingsView {
-	config::settings_view()
+async fn get_settings() -> Result<SettingsView, String> {
+	run_blocking(|| Ok(config::settings_view())).await
 }
 
 #[tauri::command]
-fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, String> {
-	config::save_settings(request)
+async fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, String> {
+	run_blocking(move || config::save_settings(request)).await
 }
 
 #[tauri::command]
