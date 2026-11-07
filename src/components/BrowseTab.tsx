@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api";
+import { useI18n } from "../i18n";
 import type { AddonSummary, FilterCatalog, SearchResult, WowInstall } from "../types";
 import { AddonCard } from "./AddonCard";
 import { FilterSidebar } from "./FilterSidebar";
@@ -10,6 +11,7 @@ type Props = {
 };
 
 export function BrowseTab({ installs, onInstalled }: Props) {
+	const { t } = useI18n();
 	const [catalog, setCatalog] = useState<FilterCatalog | null>(null);
 	const [result, setResult] = useState<SearchResult | null>(null);
 	const [search, setSearch] = useState("");
@@ -115,9 +117,13 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 						<input
 							value={draftSearch}
 							onChange={(e) => setDraftSearch(e.target.value)}
-							placeholder="Search for World of Warcraft addons..."
+							placeholder={t("browse.searchPlaceholder")}
 						/>
-						<button type="submit" className="browse-search-btn" aria-label="Search">
+						<button
+							type="submit"
+							className="browse-search-btn"
+							aria-label={t("browse.searchAria")}
+						>
 							<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
 								<circle
 									cx="11"
@@ -142,9 +148,9 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 						className="btn browse-refresh-btn"
 						disabled={loading}
 						onClick={() => load(true)}
-						title="忽略缓存，重新请求"
+						title={t("browse.refreshTitle")}
 					>
-						{loading ? "加载中…" : "刷新"}
+						{loading ? t("browse.loading") : t("browse.refresh")}
 					</button>
 				</div>
 
@@ -152,7 +158,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 				{error ? <div className="banner">{error}</div> : null}
 
 				<div className="list-pane">
-					{loading && !result ? <div className="empty">正在加载插件列表…</div> : null}
+					{loading && !result ? <div className="empty">{t("browse.loadingList")}</div> : null}
 					{result?.items.map((addon) => (
 						<AddonCard
 							key={addon.id}
@@ -165,8 +171,8 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 					))}
 					{result && result.items.length === 0 ? (
 						<div className="empty">
-							<strong>没有匹配的插件</strong>
-							试试调整关键词或过滤器
+							<strong>{t("browse.noMatchTitle")}</strong>
+							{t("browse.noMatchHint")}
 						</div>
 					) : null}
 				</div>
@@ -177,11 +183,11 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 						disabled={page <= 1 || loading}
 						onClick={() => setPage((p) => Math.max(1, p - 1))}
 					>
-						上一页
+						{t("browse.prevPage")}
 					</button>
 					<div className="page-info">
-						第 {page} / {totalPages} 页
-						{result ? ` · ${result.total} 个结果` : ""}
+						{t("browse.pageInfo", { page, totalPages })}
+						{result ? ` · ${t("browse.results", { total: result.total })}` : ""}
 						{result ? ` · ${result.source}` : ""}
 					</div>
 					<button
@@ -189,7 +195,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 						disabled={page >= totalPages || loading}
 						onClick={() => setPage((p) => p + 1)}
 					>
-						下一页
+						{t("browse.nextPage")}
 					</button>
 				</div>
 			</section>

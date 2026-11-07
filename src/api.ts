@@ -75,9 +75,13 @@ export function getSettings() {
 	return invoke<SettingsView>("get_settings");
 }
 
-export function saveSettings(curseforgeApiKey: string, wowRoots?: string[]) {
+export function saveSettings(
+	curseforgeApiKey: string,
+	wowRoots?: string[],
+	locale?: string,
+) {
 	return invoke<SettingsView>("save_settings", {
-		request: { curseforgeApiKey, wowRoots },
+		request: { curseforgeApiKey, wowRoots, locale },
 	});
 }
 

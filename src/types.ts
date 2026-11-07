@@ -100,6 +100,8 @@ export interface SettingsView {
 	detectedInstalls: WowInstall[];
 	invalidWowRoots: string[];
 	hasWowInstall: boolean;
+	locale: string;
+	systemLocale: string;
 }
 
 export interface LogEntry {

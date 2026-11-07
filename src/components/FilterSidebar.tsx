@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import type { FilterCatalog } from "../types";
 
 type Props = {
@@ -17,24 +18,25 @@ export function FilterSidebar({
 	onToggleFlavor,
 	onClear,
 }: Props) {
+	const { t } = useI18n();
 	const activeCount = categories.length + flavors.length;
 
 	return (
 		<aside className="filters">
 			<div className="filters-header">
 				<h2>
-					Filters
+					{t("filters.title")}
 					{activeCount > 0 ? <span className="filter-count">{activeCount}</span> : null}
 				</h2>
 				{activeCount > 0 ? (
 					<button className="clear-btn" onClick={onClear}>
-						Clear all
+						{t("filters.clearAll")}
 					</button>
 				) : null}
 			</div>
 
 			<details className="filter-section" open>
-				<summary>Categories</summary>
+				<summary>{t("filters.categories")}</summary>
 				<div className="filter-list">
 					{(catalog?.categories ?? []).map((item) => (
 						<label key={item.id} className="filter-item">
@@ -50,7 +52,7 @@ export function FilterSidebar({
 			</details>
 
 			<details className="filter-section" open>
-				<summary>Flavor</summary>
+				<summary>{t("filters.flavor")}</summary>
 				<div className="filter-list">
 					{(catalog?.flavors ?? []).map((item) => (
 						<label key={item.id} className="filter-item">
@@ -66,7 +68,7 @@ export function FilterSidebar({
 			</details>
 
 			<details className="filter-section" open>
-				<summary>Game Version</summary>
+				<summary>{t("filters.gameVersion")}</summary>
 				<div className="filter-list">
 					{(catalog?.gameVersions ?? []).map((item) => (
 						<label key={item.id} className="filter-item">

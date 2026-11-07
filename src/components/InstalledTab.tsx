@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
+import { useI18n } from "../i18n";
 import type { InstalledAddon, WowInstall } from "../types";
 import { AddonCard } from "./AddonCard";
 
@@ -10,6 +11,7 @@ type Props = {
 };
 
 export function InstalledTab({ install, refreshKey }: Props) {
+	const { t } = useI18n();
 	const [addons, setAddons] = useState<InstalledAddon[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [scanning, setScanning] = useState(false);
@@ -61,7 +63,7 @@ export function InstalledTab({ install, refreshKey }: Props) {
 			const list = await api.rescanInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
 			setAddons(list);
-			setStatus(`已重新扫描，共 ${list.length} 个插件`);
+			setStatus(t("installed.rescanDone", { count: list.length }));
 		} catch (err) {
 			if (!isCurrent(forInstallId, seq)) return;
 			setError(String(err));
@@ -73,7 +75,6 @@ export function InstalledTab({ install, refreshKey }: Props) {
 	}
 
 	useEffect(() => {
-		// Drop any in-flight result from the previous client immediately.
 		requestSeq.current += 1;
 		setAddons([]);
 		setError(null);
@@ -103,7 +104,7 @@ export function InstalledTab({ install, refreshKey }: Props) {
 	}
 
 	async function handleDelete(folderName: string) {
-		if (!window.confirm(`确定删除插件 ${folderName}？`)) return;
+		if (!window.confirm(t("installed.deleteConfirm", { name: folderName }))) return;
 		const forInstallId = install.id;
 		setBusy(folderName);
 		setStatus(null);
@@ -128,10 +129,10 @@ export function InstalledTab({ install, refreshKey }: Props) {
 		try {
 			const selected = await open({
 				multiple: false,
-				title: "选择插件压缩包",
+				title: t("installed.pickArchive"),
 				filters: [
 					{
-						name: "Addon Archive",
+						name: t("installed.archiveFilter"),
 						extensions: ["zip", "7z", "rar", "tar", "gz", "tgz"],
 					},
 				],
@@ -144,7 +145,7 @@ export function InstalledTab({ install, refreshKey }: Props) {
 			await loadCached(forInstallId);
 			if (installIdRef.current !== forInstallId) return;
 			const names = installed.map((item) => item.title).join("、");
-			setStatus(`已手动安装：${names || selected}`);
+			setStatus(t("installed.manualDone", { names: names || selected }));
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			setError(String(err));
@@ -161,7 +162,7 @@ export function InstalledTab({ install, refreshKey }: Props) {
 		<section className="installed-layout">
 			<div className="installed-toolbar">
 				<div>
-					<h2>{install.label} 已安装插件</h2>
+					<h2>{t("installed.title", { label: install.label })}</h2>
 					<div className="muted">
 						{install.installPath}
 						{install.gameVersion ? ` · ${install.gameVersion}` : ""}
@@ -173,10 +174,10 @@ export function InstalledTab({ install, refreshKey }: Props) {
 						onClick={handleManualInstall}
 						disabled={blocked}
 					>
-						手动安装
+						{t("installed.manual")}
 					</button>
 					<button className="btn" onClick={handleRescan} disabled={blocked}>
-						{scanning ? "扫描中…" : "重新扫描"}
+						{scanning ? t("installed.scanning") : t("installed.rescan")}
 					</button>
 				</div>
 			</div>
@@ -187,7 +188,7 @@ export function InstalledTab({ install, refreshKey }: Props) {
 			<div className="list-pane">
 				{(loading || scanning) && addons.length === 0 ? (
 					<div className="empty">
-						{scanning ? "正在重新扫描插件目录…" : "正在读取插件列表…"}
+						{scanning ? t("installed.rescanning") : t("installed.loadingList")}
 					</div>
 				) : null}
 				{addons.map((addon) => (
@@ -202,8 +203,8 @@ export function InstalledTab({ install, refreshKey }: Props) {
 				))}
 				{!loading && !scanning && addons.length === 0 ? (
 					<div className="empty">
-						<strong>还没有已安装插件</strong>
-						可从 Browse All 安装，或点击右上角「手动安装」选择压缩包。
+						<strong>{t("installed.emptyTitle")}</strong>
+						{t("installed.emptyHint")}
 					</div>
 				) : null}
 			</div>

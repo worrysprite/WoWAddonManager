@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
+import { useI18n, type LocalePreference } from "../i18n";
 import type { LogEntry, SettingsView } from "../types";
 
 type Props = {
@@ -11,8 +12,10 @@ type Props = {
 const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
 
 export function SettingsPage({ onBack, onSaved }: Props) {
+	const { t, preference, setPreference } = useI18n();
 	const [settings, setSettings] = useState<SettingsView | null>(null);
 	const [apiKey, setApiKey] = useState("");
+	const [localeDraft, setLocaleDraft] = useState<LocalePreference>("system");
 	const [saving, setSaving] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
@@ -27,6 +30,8 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 		const data = await api.getSettings();
 		setSettings(data);
 		setApiKey(data.curseforgeApiKey);
+		const pref = (data.locale || "system") as LocalePreference;
+		setLocaleDraft(pref === "zh-CN" || pref === "en" ? pref : "system");
 		onSaved(data);
 		return data;
 	}
@@ -35,25 +40,47 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 		reload().catch((err) => setError(String(err)));
 	}, []);
 
+	useEffect(() => {
+		setLocaleDraft(preference);
+	}, [preference]);
+
 	async function handleSaveApiKey(e: React.FormEvent) {
 		e.preventDefault();
 		setSaving(true);
 		setError(null);
 		setMessage(null);
 		try {
-			const next = await api.saveSettings(apiKey, settings?.wowRoots);
+			const next = await api.saveSettings(apiKey, settings?.wowRoots, localeDraft);
 			setSettings(next);
 			setApiKey(next.curseforgeApiKey);
-			setMessage(
-				next.hasApiKey
-					? "已保存 API Key。浏览与下载将使用 CurseForge 官方 API。"
-					: "已清空 API Key。将回退到网页 GET / 演示数据。",
-			);
+			setMessage(next.hasApiKey ? t("settings.apiSaved") : t("settings.apiCleared"));
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
 		} finally {
 			setSaving(false);
+		}
+	}
+
+	async function handleSaveLocale(nextLocale: LocalePreference) {
+		setLocaleDraft(nextLocale);
+		setBusy(true);
+		setError(null);
+		setMessage(null);
+		try {
+			const next = await api.saveSettings(
+				apiKey || settings?.curseforgeApiKey || "",
+				settings?.wowRoots,
+				nextLocale,
+			);
+			setSettings(next);
+			setPreference(nextLocale);
+			setMessage(t("settings.languageSaved"));
+			onSaved(next);
+		} catch (err) {
+			setError(String(err));
+		} finally {
+			setBusy(false);
 		}
 	}
 
@@ -65,12 +92,12 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 			const selected = await open({
 				directory: true,
 				multiple: false,
-				title: "选择 World of Warcraft 安装目录",
+				title: t("settings.pickWowDir"),
 			});
 			if (!selected || Array.isArray(selected)) return;
 			const next = await api.addWowPath(selected);
 			setSettings(next);
-			setMessage(`已添加安装目录：${selected}`);
+			setMessage(t("settings.pathAdded", { path: selected }));
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
@@ -86,7 +113,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 		try {
 			const next = await api.removeWowPath(path);
 			setSettings(next);
-			setMessage(`已移除：${path}`);
+			setMessage(t("settings.pathRemoved", { path }));
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
@@ -104,8 +131,8 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 			setSettings(next);
 			setMessage(
 				next.hasWowInstall
-					? `重新扫描完成，检测到 ${next.detectedInstalls.length} 个客户端。`
-					: "重新扫描完成，仍未检测到魔兽世界客户端。",
+					? t("settings.rescanDoneFound", { count: next.detectedInstalls.length })
+					: t("settings.rescanDoneNone"),
 			);
 			onSaved(next);
 		} catch (err) {
@@ -141,7 +168,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 			const applied = await api.setLogLevel(nextLevel);
 			setLogLevel(applied);
 			await refreshLogs();
-			setMessage(`日志级别已设为 ${applied.toUpperCase()}`);
+			setMessage(t("settings.logLevelSet", { level: applied.toUpperCase() }));
 		} catch (err) {
 			setError(String(err));
 		} finally {
@@ -155,7 +182,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 		try {
 			await api.clearLogs();
 			await refreshLogs();
-			setMessage("日志已清空");
+			setMessage(t("settings.logsCleared"));
 		} catch (err) {
 			setError(String(err));
 		} finally {
@@ -170,13 +197,13 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 		try {
 			const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 			const selected = await save({
-				title: "保存日志文件",
+				title: t("settings.saveLogTitle"),
 				defaultPath: `wow-addon-manager-${stamp}.log`,
 				filters: [{ name: "Log", extensions: ["log", "txt"] }],
 			});
 			if (!selected) return;
 			await api.saveLogs(selected);
-			setMessage(`日志已保存：${selected}`);
+			setMessage(t("settings.logsSaved", { path: selected }));
 			await refreshLogs();
 		} catch (err) {
 			setError(String(err));
@@ -202,46 +229,62 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 		<section className="settings-page">
 			<div className="settings-header">
 				<button className="btn" onClick={onBack}>
-					← 返回
+					{t("settings.back")}
 				</button>
 				<div>
-					<h2>设置</h2>
-					<p className="muted">配置 API Key、魔兽世界安装目录与日志</p>
+					<h2>{t("settings.title")}</h2>
+					<p className="muted">{t("settings.subtitle")}</p>
 				</div>
 			</div>
 
 			{error ? <div className="banner">{error}</div> : null}
 			{message ? <div className="banner ok-banner">{message}</div> : null}
 
-			<form className="settings-card" onSubmit={handleSaveApiKey}>
-				<h3 className="settings-card-title">CurseForge API</h3>
+			<div className="settings-card">
+				<h3 className="settings-card-title">{t("settings.language")}</h3>
+				<p className="muted settings-hint">{t("settings.languageHint")}</p>
 				<label className="settings-field">
-					<span>CurseForge API Key</span>
+					<span>{t("settings.language")}</span>
+					<select
+						value={localeDraft}
+						disabled={busy}
+						onChange={(e) => handleSaveLocale(e.target.value as LocalePreference)}
+					>
+						<option value="system">{t("settings.languageSystem")}</option>
+						<option value="zh-CN">{t("settings.languageZh")}</option>
+						<option value="en">{t("settings.languageEn")}</option>
+					</select>
+				</label>
+			</div>
+
+			<form className="settings-card" onSubmit={handleSaveApiKey}>
+				<h3 className="settings-card-title">{t("settings.apiTitle")}</h3>
+				<label className="settings-field">
+					<span>{t("settings.apiKey")}</span>
 					<input
 						type="password"
 						autoComplete="off"
 						spellCheck={false}
-						placeholder="粘贴 x-api-key"
+						placeholder={t("settings.apiPlaceholder")}
 						value={apiKey}
 						onChange={(e) => setApiKey(e.target.value)}
 					/>
 				</label>
 
 				<p className="muted settings-hint">
-					填写后，搜索与下载走官方 API（`api.curseforge.com`）。清空并保存则恢复网页 GET /
-					演示数据模式。
-					{settings?.hasApiKey ? " 当前已启用官方 API。" : " 当前未配置 Key。"}
+					{t("settings.apiHint")}
+					{settings?.hasApiKey ? t("settings.apiEnabled") : t("settings.apiDisabled")}
 				</p>
 
 				<div className="settings-links muted">
 					{settings ? (
 						<>
 							<a href={settings.applyUrl} target="_blank" rel="noreferrer">
-								申请 API Key
+								{t("settings.applyKey")}
 							</a>
 							<span>·</span>
 							<a href={settings.docsUrl} target="_blank" rel="noreferrer">
-								API 文档
+								{t("settings.apiDocs")}
 							</a>
 						</>
 					) : null}
@@ -249,7 +292,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 
 				<div className="card-actions">
 					<button className="btn primary" type="submit" disabled={saving}>
-						{saving ? "保存中…" : "保存 API Key"}
+						{saving ? t("settings.saving") : t("settings.saveApiKey")}
 					</button>
 					<button
 						className="btn"
@@ -257,30 +300,27 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 						disabled={saving || !apiKey}
 						onClick={() => setApiKey("")}
 					>
-						清空输入
+						{t("settings.clearInput")}
 					</button>
 				</div>
 			</form>
 
 			<div className="settings-card">
-				<h3 className="settings-card-title">魔兽世界安装目录</h3>
-				<p className="muted settings-hint">
-					启动时会自动扫描注册表、Battle.net Agent、常见盘符路径。若未找到，可在此手动添加
-					「World of Warcraft」根目录，或其中的 `_retail_` / `_classic_` 等版本目录。
-				</p>
+				<h3 className="settings-card-title">{t("settings.wowTitle")}</h3>
+				<p className="muted settings-hint">{t("settings.wowHint")}</p>
 
 				<div className="card-actions">
 					<button className="btn primary" type="button" disabled={busy} onClick={handleAddWowPath}>
-						添加安装目录
+						{t("settings.addWowPath")}
 					</button>
 					<button className="btn" type="button" disabled={busy} onClick={handleRescan}>
-						重新扫描
+						{t("settings.rescan")}
 					</button>
 				</div>
 
 				{settings?.detectedInstalls?.length ? (
 					<div className="settings-list">
-						<div className="settings-list-label">已检测到的客户端</div>
+						<div className="settings-list-label">{t("settings.detectedClients")}</div>
 						{settings.detectedInstalls.map((install) => (
 							<div key={install.id} className="settings-list-item">
 								<div>
@@ -288,18 +328,18 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 									<div className="muted">{install.installPath}</div>
 								</div>
 								<span className="muted">
-									{install.gameVersion || "版本未知"}
+									{install.gameVersion || t("settings.versionUnknown")}
 								</span>
 							</div>
 						))}
 					</div>
 				) : (
-					<div className="banner">尚未检测到魔兽世界客户端。</div>
+					<div className="banner">{t("settings.noClients")}</div>
 				)}
 
 				{settings?.wowRoots?.length ? (
 					<div className="settings-list">
-						<div className="settings-list-label">手动添加的路径</div>
+						<div className="settings-list-label">{t("settings.manualPaths")}</div>
 						{settings.wowRoots.map((root) => (
 							<div key={root} className="settings-list-item">
 								<div className="muted">{root}</div>
@@ -309,7 +349,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 									disabled={busy}
 									onClick={() => handleRemoveWowPath(root)}
 								>
-									移除
+									{t("settings.remove")}
 								</button>
 							</div>
 						))}
@@ -318,17 +358,15 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 
 				{settings?.invalidWowRoots?.length ? (
 					<div className="banner">
-						以下手动路径无效或不包含可识别的客户端：
+						{t("settings.invalidPaths")}
 						{settings.invalidWowRoots.join("；")}
 					</div>
 				) : null}
 			</div>
 
 			<div className="settings-card">
-				<h3 className="settings-card-title">日志</h3>
-				<p className="muted settings-hint">
-					默认级别为 WARN。打开后可查看内存中的运行日志，并保存为文件。
-				</p>
+				<h3 className="settings-card-title">{t("settings.logsTitle")}</h3>
+				<p className="muted settings-hint">{t("settings.logsHint")}</p>
 				<div className="card-actions">
 					<button
 						className="btn primary"
@@ -336,7 +374,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 						disabled={logsBusy}
 						onClick={logsOpen ? () => setLogsOpen(false) : handleOpenLogs}
 					>
-						{logsOpen ? "收起日志" : "打开日志"}
+						{logsOpen ? t("settings.closeLogs") : t("settings.openLogs")}
 					</button>
 					<button
 						className="btn"
@@ -344,7 +382,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 						disabled={logsBusy || !logsOpen}
 						onClick={handleSaveLogs}
 					>
-						保存日志文件
+						{t("settings.saveLogs")}
 					</button>
 					<button
 						className="btn"
@@ -352,14 +390,14 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 						disabled={logsBusy || !logsOpen}
 						onClick={handleClearLogs}
 					>
-						清空
+						{t("settings.clearLogs")}
 					</button>
 				</div>
 
 				{logsOpen ? (
 					<>
 						<label className="settings-field">
-							<span>日志级别</span>
+							<span>{t("settings.logLevel")}</span>
 							<select
 								value={logLevel}
 								disabled={logsBusy}
@@ -374,7 +412,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 						</label>
 						<pre className="log-pane" ref={logPaneRef}>
 							{logEntries.length === 0
-								? "（暂无日志）"
+								? t("settings.noLogs")
 								: logEntries
 										.map(
 											(entry) =>
