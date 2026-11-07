@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { ask, open } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
 import { useI18n } from "../i18n";
 import type { InstalledAddon, WowInstall } from "../types";
@@ -20,6 +20,7 @@ export function InstalledTab({ install, refreshKey }: Props) {
 	const [status, setStatus] = useState<string | null>(null);
 	const requestSeq = useRef(0);
 	const installIdRef = useRef(install.id);
+	const prevInstallIdRef = useRef(install.id);
 	installIdRef.current = install.id;
 
 	function beginRequest(forInstallId: string): number | null {
@@ -75,12 +76,18 @@ export function InstalledTab({ install, refreshKey }: Props) {
 	}
 
 	useEffect(() => {
+		const switched = prevInstallIdRef.current !== install.id;
+		prevInstallIdRef.current = install.id;
 		requestSeq.current += 1;
-		setAddons([]);
-		setError(null);
-		setStatus(null);
-		setBusy(null);
-		setScanning(false);
+		// Only wipe the list when switching client tabs. Clearing on every
+		// refresh (or while a modal is open) makes the list flash empty.
+		if (switched) {
+			setAddons([]);
+			setError(null);
+			setStatus(null);
+			setBusy(null);
+			setScanning(false);
+		}
 		setLoading(false);
 		loadCached(install.id);
 	}, [install.id, refreshKey]);
@@ -104,17 +111,32 @@ export function InstalledTab({ install, refreshKey }: Props) {
 	}
 
 	async function handleDelete(folderName: string) {
-		if (!window.confirm(t("installed.deleteConfirm", { name: folderName }))) return;
 		const forInstallId = install.id;
+		const title =
+			addons.find((a) => a.folderName === folderName)?.title || folderName;
+		// Native async dialog — window.confirm blocks the WebView and the list
+		// appears empty behind the dialog until the user dismisses it.
+		const confirmed = await ask(
+			t("installed.deleteConfirm", { name: title }),
+			{
+				title: t("installed.deleteTitle"),
+				kind: "warning",
+				okLabel: t("installed.deleteOk"),
+				cancelLabel: t("installed.deleteCancel"),
+			},
+		);
+		if (!confirmed) return;
+		if (installIdRef.current !== forInstallId) return;
 		setBusy(folderName);
 		setStatus(null);
 		try {
 			await api.deleteAddon(forInstallId, folderName);
 			if (installIdRef.current !== forInstallId) return;
-			await loadCached(forInstallId);
+			setAddons((list) => list.filter((a) => a.folderName !== folderName));
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			setError(String(err));
+			await loadCached(forInstallId);
 		} finally {
 			if (installIdRef.current === forInstallId) {
 				setBusy(null);
@@ -156,6 +178,21 @@ export function InstalledTab({ install, refreshKey }: Props) {
 		}
 	}
 
+	function interfaceDirFromAddonsPath(addonsPath: string): string {
+		const trimmed = addonsPath.replace(/[\\/]+$/, "");
+		return trimmed.replace(/[\\/]+AddOns$/i, "");
+	}
+
+	async function handleOpenInterface() {
+		setError(null);
+		try {
+			const interfaceDir = interfaceDirFromAddonsPath(install.addonsPath);
+			await api.openDir(interfaceDir);
+		} catch (err) {
+			setError(String(err));
+		}
+	}
+
 	const blocked = loading || scanning || busy !== null;
 
 	return (
@@ -176,8 +213,21 @@ export function InstalledTab({ install, refreshKey }: Props) {
 					>
 						{t("installed.manual")}
 					</button>
-					<button className="btn" onClick={handleRescan} disabled={blocked}>
+					<button
+						className="btn"
+						onClick={handleRescan}
+						disabled={blocked}
+						title={t("installed.rescan")}
+					>
 						{scanning ? t("installed.scanning") : t("installed.rescan")}
+					</button>
+					<button
+						className="btn"
+						onClick={handleOpenInterface}
+						disabled={blocked}
+						title={t("installed.openInterface")}
+					>
+						{t("installed.openInterface")}
 					</button>
 				</div>
 			</div>

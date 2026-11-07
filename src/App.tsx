@@ -44,21 +44,6 @@ export default function App() {
 		}
 	}
 
-	async function handleRescanClients() {
-		setStatus(t("banner.rescanningClients"));
-		try {
-			const next = await api.rescanWowInstalls();
-			await applySettings(next);
-			setStatus(
-				next.hasWowInstall
-					? t("banner.rescanClientsFound", { count: next.detectedInstalls.length })
-					: t("banner.rescanClientsNone"),
-			);
-		} catch (err) {
-			setStatus(String(err));
-		}
-	}
-
 	useEffect(() => {
 		refreshAll();
 		api.getApiHelp().then(setApiHelp).catch(console.error);
@@ -102,9 +87,6 @@ export default function App() {
 				</nav>
 
 				<div className="toolbar-actions">
-					<button className="btn" onClick={handleRescanClients}>
-						{t("nav.rescan")}
-					</button>
 					<button
 						className={`btn settings-btn ${tab === "settings" ? "active-settings" : ""}`}
 						onClick={openSettings}

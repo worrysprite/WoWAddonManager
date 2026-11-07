@@ -18,6 +18,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 	const [localeDraft, setLocaleDraft] = useState<LocalePreference>("system");
 	const [saving, setSaving] = useState(false);
 	const [busy, setBusy] = useState(false);
+	const [ready, setReady] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [logLevel, setLogLevel] = useState("warn");
@@ -25,6 +26,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 	const [logsOpen, setLogsOpen] = useState(false);
 	const [logsBusy, setLogsBusy] = useState(false);
 	const logPaneRef = useRef<HTMLPreElement | null>(null);
+	const saveChain = useRef(Promise.resolve());
 
 	async function reload() {
 		const data = await api.getSettings();
@@ -32,6 +34,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 		setApiKey(data.curseforgeApiKey);
 		const pref = (data.locale || "system") as LocalePreference;
 		setLocaleDraft(pref === "zh-CN" || pref === "en" ? pref : "system");
+		setReady(true);
 		onSaved(data);
 		return data;
 	}
@@ -44,13 +47,28 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 		setLocaleDraft(preference);
 	}, [preference]);
 
+	function enqueueSave<T>(work: () => Promise<T>): Promise<T> {
+		const run = saveChain.current.then(work, work);
+		saveChain.current = run.then(
+			() => undefined,
+			() => undefined,
+		);
+		return run;
+	}
+
 	async function handleSaveApiKey(e: React.FormEvent) {
 		e.preventDefault();
 		setSaving(true);
 		setError(null);
 		setMessage(null);
 		try {
-			const next = await api.saveSettings(apiKey, settings?.wowRoots, localeDraft);
+			const next = await enqueueSave(() =>
+				api.saveSettings({
+					curseforgeApiKey: apiKey,
+					wowRoots: settings?.wowRoots,
+					locale: localeDraft,
+				}),
+			);
 			setSettings(next);
 			setApiKey(next.curseforgeApiKey);
 			setMessage(next.hasApiKey ? t("settings.apiSaved") : t("settings.apiCleared"));
@@ -63,15 +81,17 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 	}
 
 	async function handleSaveLocale(nextLocale: LocalePreference) {
+		if (!ready || !settings) return;
 		setLocaleDraft(nextLocale);
 		setBusy(true);
 		setError(null);
 		setMessage(null);
 		try {
-			const next = await api.saveSettings(
-				apiKey || settings?.curseforgeApiKey || "",
-				settings?.wowRoots,
-				nextLocale,
+			// Only patch locale — never send an empty API key draft.
+			const next = await enqueueSave(() =>
+				api.saveSettings({
+					locale: nextLocale,
+				}),
 			);
 			setSettings(next);
 			setPreference(nextLocale);
@@ -247,7 +267,7 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 					<span>{t("settings.language")}</span>
 					<select
 						value={localeDraft}
-						disabled={busy}
+						disabled={!ready || busy || saving}
 						onChange={(e) => handleSaveLocale(e.target.value as LocalePreference)}
 					>
 						<option value="system">{t("settings.languageSystem")}</option>

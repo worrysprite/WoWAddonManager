@@ -75,13 +75,17 @@ export function getSettings() {
 	return invoke<SettingsView>("get_settings");
 }
 
-export function saveSettings(
-	curseforgeApiKey: string,
-	wowRoots?: string[],
-	locale?: string,
-) {
+export function saveSettings(options: {
+	curseforgeApiKey?: string;
+	wowRoots?: string[];
+	locale?: string;
+}) {
 	return invoke<SettingsView>("save_settings", {
-		request: { curseforgeApiKey, wowRoots, locale },
+		request: {
+			curseforgeApiKey: options.curseforgeApiKey,
+			wowRoots: options.wowRoots,
+			locale: options.locale,
+		},
 	});
 }
 
@@ -99,4 +103,8 @@ export function clearLogs() {
 
 export function saveLogs(path: string) {
 	return invoke<void>("save_logs", { path });
+}
+
+export function openDir(path: string) {
+	return invoke<void>("open_dir", { path });
 }

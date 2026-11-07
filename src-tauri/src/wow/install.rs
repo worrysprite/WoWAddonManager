@@ -30,13 +30,47 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 		}
 	};
 
-	let primary = folders
+	let mut accepted = Vec::new();
+	let mut reject_reason: Option<String> = None;
+
+	for folder in &folders {
+		if let Some(meta) = crate::wow::toc::read_folder_toc(&addons_path, folder) {
+			if let Some(issue) =
+				crate::wow::toc::client_unsupported_reason(&meta, install.game_version.as_deref())
+			{
+				reject_reason = Some(issue.reason);
+				log::warn!(
+					"拒绝安装不兼容插件 folder={folder} addon={}",
+					addon.name
+				);
+				continue;
+			}
+		}
+		accepted.push(folder.clone());
+	}
+
+	// CurseForge packages are one unit: any incompatible folder fails the whole install.
+	if reject_reason.is_some() || accepted.is_empty() {
+		for folder in &folders {
+			let target = addons_path.join(folder);
+			let _ = fs::remove_dir_all(&target);
+			let _ = manifest::remove(&addons_path, folder);
+		}
+		let _ = scan::refresh_local_cache(&install);
+		return Err(format!(
+			"安装失败：{} 与当前客户端不兼容。{}",
+			addon.name,
+			reject_reason.unwrap_or_else(|| "TOC 标记为 game client not supported".into())
+		));
+	}
+
+	let primary = accepted
 		.first()
 		.cloned()
 		.unwrap_or_else(|| sanitize_folder(&addon.slug));
 	let now = Utc::now().to_rfc3339();
 
-	for folder in &folders {
+	for folder in &accepted {
 		let entry = ManifestAddon {
 			folder_name: folder.clone(),
 			curseforge_id: Some(addon.id),
@@ -87,8 +121,54 @@ pub async fn install_from_archive(
 		.unwrap_or("archive")
 		.to_string();
 
+	let mut pending = Vec::new();
+	let mut rejected = Vec::new();
+
 	for folder in &folders {
-		let (title, author, notes, version) = archive::read_toc_meta(&addons_path, folder);
+		let meta = crate::wow::toc::read_folder_toc(&addons_path, folder);
+		if let Some(meta) = &meta {
+			if let Some(issue) =
+				crate::wow::toc::client_unsupported_reason(meta, install.game_version.as_deref())
+			{
+				rejected.push(format!(
+					"{folder}（{}）: {}",
+					meta.title.as_deref().unwrap_or(folder.as_str()),
+					issue.reason
+				));
+				log::warn!(
+					"拒绝安装不兼容插件 folder={folder} reason={}",
+					issue.reason
+				);
+				continue;
+			}
+		}
+		pending.push((folder.clone(), meta));
+	}
+
+	// Treat the archive as one package: any incompatible folder rolls back all.
+	if !rejected.is_empty() || pending.is_empty() {
+		for folder in &folders {
+			let target = addons_path.join(folder);
+			let _ = fs::remove_dir_all(&target);
+			let _ = manifest::remove(&addons_path, folder);
+		}
+		let _ = scan::refresh_local_cache(&install);
+		return Err(format!(
+			"安装失败：压缩包内插件与当前客户端不兼容。{}",
+			if rejected.is_empty() {
+				String::new()
+			} else {
+				format!("详情：{}", rejected.join("；"))
+			}
+		));
+	}
+
+	let mut accepted = Vec::new();
+	for (folder, meta) in pending {
+		let title = meta.as_ref().and_then(|m| m.title.clone());
+		let author = meta.as_ref().and_then(|m| m.author.clone());
+		let notes = meta.as_ref().and_then(|m| m.notes.clone());
+		let version = meta.as_ref().and_then(|m| m.version.clone());
 		let entry = ManifestAddon {
 			folder_name: folder.clone(),
 			curseforge_id: None,
@@ -110,18 +190,16 @@ pub async fn install_from_archive(
 			archive_name: Some(archive_name.clone()),
 		};
 		manifest::upsert(&addons_path, entry)?;
+		accepted.push(folder);
 	}
 
 	let list = scan::refresh_local_cache(&install)?;
 	let installed = list
 		.into_iter()
-		.filter(|a| folders.iter().any(|f| f == &a.folder_name))
+		.filter(|a| accepted.iter().any(|f| f == &a.folder_name))
 		.collect::<Vec<_>>();
-	if installed.is_empty() {
-		Err("安装完成但未能读取插件信息".into())
-	} else {
-		Ok(installed)
-	}
+
+	Ok(installed)
 }
 
 pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<InstalledAddon, String> {
@@ -183,23 +261,49 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 	};
 
 	let installed_at = tracked.installed_at.clone();
-	delete_addon(install_id, folder_name).await?;
-	let mut installed = install_addon(install_id, summary).await?;
-	if let Some(installed_at) = installed_at {
-		let addons_path = PathBuf::from(&install.addons_path);
-		let mut manifest = manifest::load(&addons_path);
-		if let Some(entry) = manifest
-			.addons
-			.iter_mut()
-			.find(|a| a.folder_name == installed.folder_name)
-		{
-			entry.installed_at = Some(installed_at.clone());
-			manifest::save(&addons_path, &manifest)?;
-			installed.installed_at = Some(installed_at);
-		}
-		let _ = scan::refresh_local_cache(&install);
+	let addons_path = PathBuf::from(&install.addons_path);
+	let target = addons_path.join(folder_name);
+	let backup = addons_path.join(format!(
+		".wam-backup-{}-{}",
+		folder_name,
+		Utc::now().timestamp_millis()
+	));
+
+	// Move aside the live folder so a failed/rejected install can restore it.
+	if target.exists() {
+		fs::rename(&target, &backup).map_err(|e| e.to_string())?;
 	}
-	Ok(installed)
+
+	let install_result = install_addon(install_id, summary).await;
+	match install_result {
+		Ok(mut installed) => {
+			let _ = fs::remove_dir_all(&backup);
+			if let Some(installed_at) = installed_at {
+				let mut manifest = manifest::load(&addons_path);
+				if let Some(entry) = manifest
+					.addons
+					.iter_mut()
+					.find(|a| a.folder_name == installed.folder_name)
+				{
+					entry.installed_at = Some(installed_at.clone());
+					manifest::save(&addons_path, &manifest)?;
+					installed.installed_at = Some(installed_at);
+				}
+				let _ = scan::refresh_local_cache(&install);
+			}
+			Ok(installed)
+		}
+		Err(err) => {
+			if backup.exists() {
+				if target.exists() {
+					let _ = fs::remove_dir_all(&target);
+				}
+				let _ = fs::rename(&backup, &target);
+			}
+			let _ = scan::refresh_local_cache(&install);
+			Err(err)
+		}
+	}
 }
 
 pub async fn delete_addon(install_id: &str, folder_name: &str) -> Result<(), String> {

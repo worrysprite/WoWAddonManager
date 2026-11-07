@@ -47,7 +47,9 @@ pub struct SettingsView {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveSettingsRequest {
-	pub curseforge_api_key: String,
+	/// `None` leaves the stored key unchanged; `Some("")` clears it.
+	#[serde(default)]
+	pub curseforge_api_key: Option<String>,
 	#[serde(default)]
 	pub wow_roots: Option<Vec<String>>,
 	#[serde(default)]
@@ -194,12 +196,17 @@ fn settings_view_with_depth(deep: bool) -> SettingsView {
 
 pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, String> {
 	let mut config = load();
-	let trimmed = request.curseforge_api_key.trim().to_string();
-	config.curseforge_api_key = if trimmed.is_empty() {
-		None
-	} else {
-		Some(trimmed)
-	};
+	let mut api_key_changed = false;
+	if let Some(raw_key) = request.curseforge_api_key {
+		let trimmed = raw_key.trim().to_string();
+		let next = if trimmed.is_empty() {
+			None
+		} else {
+			Some(trimmed)
+		};
+		api_key_changed = config.curseforge_api_key != next;
+		config.curseforge_api_key = next;
+	}
 	if let Some(roots) = request.wow_roots {
 		let mut cleaned = Vec::new();
 		for root in roots {
@@ -219,6 +226,8 @@ pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, Strin
 	}
 	save(&config)?;
 	detect::invalidate_cache();
-	crate::curseforge::browse_cache::invalidate();
+	if api_key_changed {
+		crate::curseforge::browse_cache::invalidate();
+	}
 	Ok(settings_view())
 }
