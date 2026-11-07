@@ -125,6 +125,13 @@ pub struct DeleteRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ManualInstallRequest {
+	pub install_id: String,
+	pub archive_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ManifestAddon {
 	pub folder_name: String,
 	pub curseforge_id: Option<i64>,
@@ -142,6 +149,10 @@ pub struct ManifestAddon {
 	pub installed_at: Option<String>,
 	pub updated_at: Option<String>,
 	pub version: Option<String>,
+	#[serde(default)]
+	pub install_source: Option<String>,
+	#[serde(default)]
+	pub archive_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

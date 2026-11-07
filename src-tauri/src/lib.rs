@@ -6,8 +6,8 @@ mod wow;
 use config::{SaveSettingsRequest, SettingsView};
 use curseforge::catalog;
 use types::{
-	DeleteRequest, FilterCatalog, InstallRequest, InstalledAddon, SearchParams, SearchResult,
-	UpdateRequest, WowInstall,
+	DeleteRequest, FilterCatalog, InstallRequest, InstalledAddon, ManualInstallRequest,
+	SearchParams, SearchResult, UpdateRequest, WowInstall,
 };
 use wow::{detect, install, scan};
 
@@ -68,6 +68,11 @@ async fn delete_addon(request: DeleteRequest) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn install_from_archive(request: ManualInstallRequest) -> Result<Vec<InstalledAddon>, String> {
+	install::install_from_archive(&request.install_id, &request.archive_path).await
+}
+
+#[tauri::command]
 fn get_settings() -> SettingsView {
 	config::settings_view()
 }
@@ -101,6 +106,7 @@ pub fn run() {
 			rescan_wow_installs,
 			list_installed_addons,
 			install_addon,
+			install_from_archive,
 			update_addon,
 			delete_addon,
 			get_settings,

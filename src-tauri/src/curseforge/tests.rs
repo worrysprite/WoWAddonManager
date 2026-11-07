@@ -48,3 +48,31 @@ mod tests {
 		);
 	}
 }
+
+	#[test]
+	fn extracts_manual_zip_addon() {
+		use std::io::Write;
+		use zip::write::SimpleFileOptions;
+
+		let dir = tempfile_dir();
+		let zip_path = dir.join("DemoZipAddon.zip");
+		{
+			let file = std::fs::File::create(&zip_path).unwrap();
+			let mut zip = zip::ZipWriter::new(file);
+			let opts = SimpleFileOptions::default();
+			zip.start_file("DemoZipAddon/DemoZipAddon.toc", opts).unwrap();
+			zip.write_all(b"## Interface: 120100\n## Title: Demo Zip Addon\n## Author: Tester\n").unwrap();
+			zip.finish().unwrap();
+		}
+		let addons = dir.join("AddOns");
+		let folders = crate::wow::archive::extract_archive(&zip_path, &addons).unwrap();
+		assert_eq!(folders, vec!["DemoZipAddon".to_string()]);
+		assert!(addons.join("DemoZipAddon/DemoZipAddon.toc").exists());
+	}
+
+	fn tempfile_dir() -> std::path::PathBuf {
+		let dir = std::env::temp_dir().join(format!("wam-test-{}", std::process::id()));
+		let _ = std::fs::remove_dir_all(&dir);
+		std::fs::create_dir_all(&dir).unwrap();
+		dir
+	}

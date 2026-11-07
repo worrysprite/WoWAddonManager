@@ -56,6 +56,12 @@ export function deleteAddon(installId: string, folderName: string) {
 	});
 }
 
+export function installFromArchive(installId: string, archivePath: string) {
+	return invoke<InstalledAddon[]>("install_from_archive", {
+		request: { installId, archivePath },
+	});
+}
+
 export function getApiHelp() {
 	return invoke<ApiHelp>("get_api_help");
 }
