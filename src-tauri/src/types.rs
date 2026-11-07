@@ -161,3 +161,12 @@ pub struct AddonManifest {
 	pub version: u32,
 	pub addons: Vec<ManifestAddon>,
 }
+
+/// Cached result of an AddOns folder scan (disk + optional update checks).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AddonScanCache {
+	pub version: u32,
+	pub scanned_at: Option<String>,
+	pub addons: Vec<InstalledAddon>,
+}

@@ -1,4 +1,5 @@
 pub mod api;
+pub mod browse_cache;
 pub mod catalog;
 pub mod mock;
 pub mod web;
@@ -10,7 +11,20 @@ mod tests;
 use crate::config;
 use crate::types::{SearchParams, SearchResult};
 
-pub async fn search_addons(params: SearchParams) -> SearchResult {
+pub async fn search_addons(params: SearchParams, force_refresh: bool) -> SearchResult {
+	let has_api_key = config::api_key().is_some();
+	if !force_refresh {
+		if let Some(cached) = browse_cache::get(&params, has_api_key) {
+			return cached;
+		}
+	}
+
+	let result = fetch_search(params.clone()).await;
+	browse_cache::put(&params, has_api_key, &result);
+	result
+}
+
+async fn fetch_search(params: SearchParams) -> SearchResult {
 	if let Some(api_key) = config::api_key() {
 		match api::search(&api_key, &params).await {
 			Ok(result) => result,

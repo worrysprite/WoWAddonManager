@@ -2,6 +2,18 @@ use crate::types::WowInstall;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+struct DetectionCache {
+	at: Instant,
+	extra_roots: Vec<String>,
+	deep: bool,
+	report: DetectionReport,
+}
+
+static DETECTION_CACHE: Mutex<Option<DetectionCache>> = Mutex::new(None);
+const CACHE_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy)]
 struct FlavorMeta {
@@ -87,16 +99,64 @@ pub struct DetectionReport {
 	pub invalid_roots: Vec<String>,
 }
 
+#[cfg(test)]
 pub fn detect_installs() -> Vec<WowInstall> {
 	detect_with_extra_roots(&[]).installs
 }
 
+pub fn invalidate_cache() {
+	if let Ok(mut guard) = DETECTION_CACHE.lock() {
+		*guard = None;
+	}
+}
+
 pub fn detect_with_extra_roots(extra_roots: &[String]) -> DetectionReport {
+	detect_cached(extra_roots, false)
+}
+
+pub fn detect_with_extra_roots_deep(extra_roots: &[String]) -> DetectionReport {
+	detect_cached(extra_roots, true)
+}
+
+fn detect_cached(extra_roots: &[String], deep: bool) -> DetectionReport {
+	if let Ok(guard) = DETECTION_CACHE.lock() {
+		if let Some(cache) = guard.as_ref() {
+			if cache.extra_roots == extra_roots && cache.at.elapsed() < CACHE_TTL {
+				// A deep scan result also satisfies shallow callers.
+				if cache.deep == deep || (cache.deep && !deep) {
+					return cache.report.clone();
+				}
+			}
+		}
+	}
+
+	let report = detect_uncached(extra_roots, deep);
+	if let Ok(mut guard) = DETECTION_CACHE.lock() {
+		// Don't let a shallow result overwrite a still-fresh deep cache.
+		let keep_deep = guard.as_ref().is_some_and(|existing| {
+			existing.deep
+				&& !deep
+				&& existing.extra_roots == extra_roots
+				&& existing.at.elapsed() < CACHE_TTL
+		});
+		if !keep_deep {
+			*guard = Some(DetectionCache {
+				at: Instant::now(),
+				extra_roots: extra_roots.to_vec(),
+				deep,
+				report: report.clone(),
+			});
+		}
+	}
+	report
+}
+
+fn detect_uncached(extra_roots: &[String], deep: bool) -> DetectionReport {
 	let mut found: BTreeMap<String, WowInstall> = BTreeMap::new();
 	let mut scanned = BTreeSet::new();
 	let mut invalid = Vec::new();
 
-	for root in candidate_roots() {
+	for root in candidate_roots(deep) {
 		let key = normalize_path_key(&root);
 		if !scanned.insert(key) {
 			continue;
@@ -108,6 +168,8 @@ pub fn detect_with_extra_roots(extra_roots: &[String]) -> DetectionReport {
 		let path = PathBuf::from(root);
 		let key = normalize_path_key(&path);
 		scanned.insert(key);
+		// User-configured roots are probed even on network/UNC drives (already on a worker thread).
+		// Auto-scan candidates still skip those drives via path_exists_fast / candidate_roots.
 		match install_from_path(root) {
 			Ok(items) if !items.is_empty() => {
 				for item in items {
@@ -136,6 +198,7 @@ pub fn detect_with_extra_roots(extra_roots: &[String]) -> DetectionReport {
 
 pub fn install_from_path(path: &str) -> Result<Vec<WowInstall>, String> {
 	let path = PathBuf::from(path);
+	// Manual paths may be on any drive the user chose; do not filter by drive type.
 	if !path.exists() {
 		return Err("路径不存在".into());
 	}
@@ -191,7 +254,7 @@ pub fn install_from_path(path: &str) -> Result<Vec<WowInstall>, String> {
 }
 
 fn collect_from_root(root: &Path, found: &mut BTreeMap<String, WowInstall>) {
-	if !root.exists() {
+	if !path_exists_fast(root) {
 		return;
 	}
 
@@ -357,9 +420,10 @@ fn parse_build_info_version(path: &Path) -> Option<String> {
 	None
 }
 
-fn candidate_roots() -> Vec<PathBuf> {
+fn candidate_roots(deep: bool) -> Vec<PathBuf> {
 	let mut roots = BTreeSet::new();
 
+	// Fast sources first: registry / Battle.net / known local paths.
 	for path in registry_install_paths() {
 		push_root_candidate(&mut roots, path);
 	}
@@ -372,15 +436,19 @@ fn candidate_roots() -> Vec<PathBuf> {
 	for path in well_known_paths() {
 		push_root_candidate(&mut roots, path);
 	}
-	for path in drive_scan_wow_folders() {
-		push_root_candidate(&mut roots, path);
+
+	// Deep scan is opt-in (manual rescan). Never touch network/CDROM drives.
+	if deep {
+		for path in drive_scan_wow_folders() {
+			push_root_candidate(&mut roots, path);
+		}
 	}
 
 	roots.into_iter().collect()
 }
 
 fn push_root_candidate(out: &mut BTreeSet<PathBuf>, path: PathBuf) {
-	if !path.exists() {
+	if !path_exists_fast(&path) {
 		return;
 	}
 	if is_flavor_dir(&path) {
@@ -391,6 +459,64 @@ fn push_root_candidate(out: &mut BTreeSet<PathBuf>, path: PathBuf) {
 	}
 	if is_wow_root(&path) {
 		out.insert(path);
+	}
+}
+
+/// Avoid hanging on network/optical/unavailable drives.
+fn path_exists_fast(path: &Path) -> bool {
+	if is_skipped_autoscan_path(path) {
+		return false;
+	}
+	path.exists()
+}
+
+fn is_skipped_autoscan_path(path: &Path) -> bool {
+	let raw = path.to_string_lossy();
+	// UNC shares hang easily on exists()/read_dir.
+	if raw.starts_with(r"\\") || raw.starts_with("//") {
+		return true;
+	}
+	if let Some(letter) = drive_letter(path) {
+		return !is_local_fixed_drive(letter);
+	}
+	false
+}
+
+fn drive_letter(path: &Path) -> Option<char> {
+	let raw = path.to_string_lossy();
+	let bytes = raw.as_bytes();
+	if bytes.len() >= 2 && bytes[1] == b':' {
+		let c = bytes[0].to_ascii_uppercase() as char;
+		if c.is_ascii_alphabetic() {
+			return Some(c);
+		}
+	}
+	None
+}
+
+fn is_local_fixed_drive(letter: char) -> bool {
+	#[cfg(windows)]
+	{
+		use std::os::windows::ffi::OsStrExt;
+		#[link(name = "kernel32")]
+		extern "system" {
+			fn GetDriveTypeW(lp_root_path_name: *const u16) -> u32;
+		}
+		const DRIVE_REMOVABLE: u32 = 2;
+		const DRIVE_FIXED: u32 = 3;
+		let root = format!("{}:\\", letter.to_ascii_uppercase());
+		let wide: Vec<u16> = std::ffi::OsString::from(root)
+			.encode_wide()
+			.chain(std::iter::once(0))
+			.collect();
+		let dtype = unsafe { GetDriveTypeW(wide.as_ptr()) };
+		// Skip network/CDROM/unknown drives — their exists() can hang for ~minutes.
+		dtype == DRIVE_FIXED || dtype == DRIVE_REMOVABLE
+	}
+	#[cfg(not(windows))]
+	{
+		let _ = letter;
+		true
 	}
 }
 
@@ -445,17 +571,19 @@ fn drive_scan_wow_folders() -> Vec<PathBuf> {
 		let mut found = Vec::new();
 		for drive in b'C'..=b'Z' {
 			let letter = drive as char;
+			if !is_local_fixed_drive(letter) {
+				continue;
+			}
 			let root = PathBuf::from(format!(r"{letter}:\"));
 			if !root.exists() {
 				continue;
 			}
-			// Shallow scan: drive root and a few common parents.
-			scan_dir_for_wow_name(&root, 0, 1, &mut found);
-			for child_name in ["Games", "Battle.net", "Blizzard", "Program Files", "Program Files (x86)"]
-			{
+			// Shallow only: avoid walking huge trees under Program Files.
+			scan_dir_for_wow_name(&root, 0, 0, &mut found);
+			for child_name in ["Games", "Battle.net", "Blizzard"] {
 				let child = root.join(child_name);
 				if child.is_dir() {
-					scan_dir_for_wow_name(&child, 0, 2, &mut found);
+					scan_dir_for_wow_name(&child, 0, 1, &mut found);
 				}
 			}
 		}

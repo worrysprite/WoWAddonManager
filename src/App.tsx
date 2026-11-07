@@ -39,6 +39,21 @@ export default function App() {
 		}
 	}
 
+	async function handleRescanClients() {
+		setStatus("正在重新扫描魔兽客户端…");
+		try {
+			const next = await api.rescanWowInstalls();
+			await applySettings(next);
+			setStatus(
+				next.hasWowInstall
+					? `已重新扫描，发现 ${next.detectedInstalls.length} 个客户端`
+					: "已重新扫描，未发现客户端",
+			);
+		} catch (err) {
+			setStatus(String(err));
+		}
+	}
+
 	useEffect(() => {
 		refreshAll();
 		api.getApiHelp().then(setApiHelp).catch(console.error);
@@ -82,7 +97,7 @@ export default function App() {
 				</nav>
 
 				<div className="toolbar-actions">
-					<button className="btn" onClick={refreshAll}>
+					<button className="btn" onClick={handleRescanClients}>
 						重新扫描
 					</button>
 					<button
@@ -149,10 +164,14 @@ export default function App() {
 						onBack={() => setTab(previousTab === "settings" ? "browse" : previousTab)}
 						onSaved={(next) => {
 							applySettings(next);
+							// Remount browse so it refetches after API key / cache invalidation.
 							setBrowseNonce((v) => v + 1);
 						}}
 					/>
-				) : tab === "browse" ? (
+				) : null}
+
+				{/* Keep browse mounted across tab switches to avoid re-requesting the same query. */}
+				<div style={{ display: tab === "browse" ? undefined : "none" }}>
 					<BrowseTab
 						key={browseNonce}
 						installs={installs}
@@ -161,16 +180,18 @@ export default function App() {
 							setStatus("插件已安装（或写入占位目录）");
 						}}
 					/>
-				) : (
-					(() => {
-						const install = installs.find((i) => i.id === tab);
-						return install ? (
-							<InstalledTab install={install} refreshKey={refreshKey} />
-						) : (
-							<div className="empty">未找到该客户端</div>
-						);
-					})()
-				)}
+				</div>
+
+				{tab !== "settings" && tab !== "browse"
+					? (() => {
+							const install = installs.find((i) => i.id === tab);
+							return install ? (
+								<InstalledTab install={install} refreshKey={refreshKey} />
+							) : (
+								<div className="empty">未找到该客户端</div>
+							);
+						})()
+					: null}
 			</main>
 		</div>
 	);

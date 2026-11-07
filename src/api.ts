@@ -10,8 +10,8 @@ import type {
 	WowInstall,
 } from "./types";
 
-export function searchAddons(params: SearchParams) {
-	return invoke<SearchResult>("search_addons", { params });
+export function searchAddons(params: SearchParams, forceRefresh = false) {
+	return invoke<SearchResult>("search_addons", { params, forceRefresh });
 }
 
 export function getFilterCatalog() {
@@ -36,6 +36,10 @@ export function rescanWowInstalls() {
 
 export function listInstalledAddons(installId: string) {
 	return invoke<InstalledAddon[]>("list_installed_addons", { installId });
+}
+
+export function rescanInstalledAddons(installId: string) {
+	return invoke<InstalledAddon[]>("rescan_installed_addons", { installId });
 }
 
 export function installAddon(installId: string, addon: AddonSummary) {

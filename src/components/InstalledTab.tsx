@@ -12,11 +12,12 @@ type Props = {
 export function InstalledTab({ install, refreshKey }: Props) {
 	const [addons, setAddons] = useState<InstalledAddon[]>([]);
 	const [loading, setLoading] = useState(false);
+	const [scanning, setScanning] = useState(false);
 	const [busy, setBusy] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [status, setStatus] = useState<string | null>(null);
 
-	async function reload() {
+	async function loadCached() {
 		setLoading(true);
 		setError(null);
 		try {
@@ -29,8 +30,23 @@ export function InstalledTab({ install, refreshKey }: Props) {
 		}
 	}
 
+	async function handleRescan() {
+		setScanning(true);
+		setError(null);
+		setStatus(null);
+		try {
+			const list = await api.rescanInstalledAddons(install.id);
+			setAddons(list);
+			setStatus(`已重新扫描，共 ${list.length} 个插件`);
+		} catch (err) {
+			setError(String(err));
+		} finally {
+			setScanning(false);
+		}
+	}
+
 	useEffect(() => {
-		reload();
+		loadCached();
 	}, [install.id, refreshKey]);
 
 	async function handleUpdate(folderName: string) {
@@ -38,7 +54,7 @@ export function InstalledTab({ install, refreshKey }: Props) {
 		setStatus(null);
 		try {
 			await api.updateAddon(install.id, folderName);
-			await reload();
+			await loadCached();
 		} catch (err) {
 			setError(String(err));
 		} finally {
@@ -52,7 +68,7 @@ export function InstalledTab({ install, refreshKey }: Props) {
 		setStatus(null);
 		try {
 			await api.deleteAddon(install.id, folderName);
-			await reload();
+			await loadCached();
 		} catch (err) {
 			setError(String(err));
 		} finally {
@@ -77,7 +93,7 @@ export function InstalledTab({ install, refreshKey }: Props) {
 			if (!selected || Array.isArray(selected)) return;
 			setBusy("__manual__");
 			const installed = await api.installFromArchive(install.id, selected);
-			await reload();
+			await loadCached();
 			const names = installed.map((item) => item.title).join("、");
 			setStatus(`已手动安装：${names || selected}`);
 		} catch (err) {
@@ -86,6 +102,8 @@ export function InstalledTab({ install, refreshKey }: Props) {
 			setBusy(null);
 		}
 	}
+
+	const blocked = loading || scanning || busy !== null;
 
 	return (
 		<section className="installed-layout">
@@ -101,12 +119,12 @@ export function InstalledTab({ install, refreshKey }: Props) {
 					<button
 						className="btn primary"
 						onClick={handleManualInstall}
-						disabled={loading || busy !== null}
+						disabled={blocked}
 					>
 						手动安装
 					</button>
-					<button className="btn" onClick={reload} disabled={loading || busy !== null}>
-						刷新
+					<button className="btn" onClick={handleRescan} disabled={blocked}>
+						{scanning ? "扫描中…" : "重新扫描"}
 					</button>
 				</div>
 			</div>
@@ -115,8 +133,10 @@ export function InstalledTab({ install, refreshKey }: Props) {
 			{status ? <div className="banner ok-banner">{status}</div> : null}
 
 			<div className="list-pane">
-				{loading && addons.length === 0 ? (
-					<div className="empty">正在扫描插件目录…</div>
+				{(loading || scanning) && addons.length === 0 ? (
+					<div className="empty">
+						{scanning ? "正在重新扫描插件目录…" : "正在读取插件列表…"}
+					</div>
 				) : null}
 				{addons.map((addon) => (
 					<AddonCard
@@ -128,10 +148,10 @@ export function InstalledTab({ install, refreshKey }: Props) {
 						onDelete={() => handleDelete(addon.folderName)}
 					/>
 				))}
-				{!loading && addons.length === 0 ? (
+				{!loading && !scanning && addons.length === 0 ? (
 					<div className="empty">
 						<strong>还没有已安装插件</strong>
-						可从 Browse All 安装，或点击右上角「手动安装」选择压缩包
+						可从 Browse All 安装，或点击右上角「手动安装」选择压缩包。首次打开会扫描一次并写入本地缓存。
 					</div>
 				) : null}
 			</div>

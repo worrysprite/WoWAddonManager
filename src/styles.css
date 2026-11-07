@@ -165,16 +165,28 @@ button {
 	color: var(--accent-strong);
 }
 
+.browse-search-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 14px 18px 0;
+}
+
 .browse-search {
 	display: flex;
 	align-items: stretch;
-	flex: 0 0 auto;
+	flex: 1 1 auto;
+	min-width: 0;
 	height: 42px;
-	margin: 14px 18px 0;
 	background: #101014;
 	border: 1px solid var(--border);
 	border-radius: 999px;
 	overflow: hidden;
+}
+
+.browse-refresh-btn {
+	flex: 0 0 auto;
+	height: 42px;
 }
 
 .browse-search input {
