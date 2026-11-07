@@ -317,7 +317,7 @@ fn build_install(path: &Path) -> Option<WowInstall> {
 		flavor_key: name.trim_matches('_').to_string(),
 		install_path: path.display().to_string(),
 		addons_path: path.join("Interface").join("AddOns").display().to_string(),
-		game_version: read_game_version(path, root),
+		game_version: read_game_version(path, root, None),
 		game_version_type_id: None,
 	})
 }
@@ -337,7 +337,7 @@ fn build_install_with_meta(path: &Path, meta: &FlavorMeta, root: &Path) -> Optio
 		flavor_key: meta.flavor_key.to_string(),
 		install_path: path.display().to_string(),
 		addons_path: addons_path.display().to_string(),
-		game_version: read_game_version(path, root),
+		game_version: read_game_version(path, root, Some(meta.flavor_key)),
 		game_version_type_id: Some(meta.game_version_type_id),
 	})
 }
@@ -394,7 +394,7 @@ fn normalize_path_key(path: &Path) -> String {
 	path.display().to_string().replace('\\', "/").to_lowercase()
 }
 
-fn read_game_version(client_path: &Path, root: &Path) -> Option<String> {
+fn read_game_version(client_path: &Path, root: &Path, flavor_key: Option<&str>) -> Option<String> {
 	for candidate in [
 		client_path.join(".build.info"),
 		root.join(".build.info"),
@@ -403,27 +403,76 @@ fn read_game_version(client_path: &Path, root: &Path) -> Option<String> {
 			.map(|p| p.join(".build.info"))
 			.unwrap_or_default(),
 	] {
-		if let Some(version) = parse_build_info_version(&candidate) {
+		if let Some(version) = parse_build_info_version(&candidate, flavor_key) {
 			return Some(version);
 		}
 	}
 	None
 }
 
-fn parse_build_info_version(path: &Path) -> Option<String> {
+fn flavor_build_products(flavor_key: &str) -> &'static [&'static str] {
+	match flavor_key {
+		"retail" | "ptr" | "xptr" => &["wow", "wowt", "wowxptr", "wow_beta"],
+		"classic" => &["wow_classic_era", "wow_classic_era_ptr"],
+		"mop-classic" | "classic-beta" | "classic-ptr" => {
+			&["wow_classic", "wow_classic_ptr", "wow_classic_beta"]
+		}
+		"classic-tbc" => &["wow_classic_tbc", "wowtbc"],
+		"forever" => &["wow_forever", "wowforever", "wow_classic_forever"],
+		_ => &[],
+	}
+}
+
+fn parse_build_info_version(path: &Path, flavor_key: Option<&str>) -> Option<String> {
 	let content = fs::read_to_string(path).ok()?;
 	let mut lines = content.lines();
 	let header = lines.next()?;
 	let cols: Vec<_> = header.split('|').map(|s| s.trim().to_lowercase()).collect();
 	let version_idx = cols.iter().position(|c| c.starts_with("version"))?;
+	let product_idx = cols.iter().position(|c| c.starts_with("product"));
+
+	let mut fallback: Option<String> = None;
+	let wanted: Vec<String> = flavor_key
+		.map(flavor_build_products)
+		.unwrap_or(&[])
+		.iter()
+		.map(|s| s.to_ascii_lowercase())
+		.collect();
+
 	for line in lines {
 		let fields: Vec<_> = line.split('|').collect();
-		if let Some(version) = fields.get(version_idx).map(|s| s.trim()).filter(|s| !s.is_empty())
-		{
-			return Some(version.to_string());
+		let version = fields
+			.get(version_idx)
+			.map(|s| s.trim())
+			.filter(|s| !s.is_empty())
+			.map(|s| s.to_string());
+		let Some(version) = version else {
+			continue;
+		};
+
+		if let (Some(idx), true) = (product_idx, !wanted.is_empty()) {
+			let product = fields
+				.get(idx)
+				.map(|s| s.trim().to_ascii_lowercase())
+				.unwrap_or_default();
+			if wanted.iter().any(|p| product == *p || product.contains(p)) {
+				return Some(version);
+			}
+			if fallback.is_none() {
+				fallback = Some(version);
+			}
+			continue;
 		}
+
+		return Some(version);
 	}
-	None
+
+	// Only use an unmatched product row when we have no flavor filter.
+	if wanted.is_empty() {
+		fallback
+	} else {
+		None
+	}
 }
 
 fn candidate_roots(deep: bool) -> Vec<PathBuf> {
