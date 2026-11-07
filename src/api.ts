@@ -10,8 +10,8 @@ import type {
 	WowInstall,
 } from "./types";
 
-export function searchAddons(params: SearchParams) {
-	return invoke<SearchResult>("search_addons", { params });
+export function searchAddons(params: SearchParams, forceRefresh = false) {
+	return invoke<SearchResult>("search_addons", { params, forceRefresh });
 }
 
 export function getFilterCatalog() {

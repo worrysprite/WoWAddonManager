@@ -22,8 +22,8 @@ where
 }
 
 #[tauri::command]
-async fn search_addons(params: SearchParams) -> Result<SearchResult, String> {
-	Ok(curseforge::search_addons(params).await)
+async fn search_addons(params: SearchParams, force_refresh: Option<bool>) -> Result<SearchResult, String> {
+	Ok(curseforge::search_addons(params, force_refresh.unwrap_or(false)).await)
 }
 
 #[tauri::command]

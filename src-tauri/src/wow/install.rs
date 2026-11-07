@@ -140,14 +140,17 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 		.curseforge_slug
 		.clone()
 		.ok_or_else(|| "缺少 slug".to_string())?;
-	let remote = crate::curseforge::search_addons(crate::types::SearchParams {
-		search: Some(slug.clone()),
-		page: Some(1),
-		page_size: Some(5),
-		categories: None,
-		game_version_type_ids: None,
-		sort_by: Some("relevancy".into()),
-	})
+	let remote = crate::curseforge::search_addons(
+		crate::types::SearchParams {
+			search: Some(slug.clone()),
+			page: Some(1),
+			page_size: Some(5),
+			categories: None,
+			game_version_type_ids: None,
+			sort_by: Some("relevancy".into()),
+		},
+		false,
+	)
 	.await
 	.items
 	.into_iter()

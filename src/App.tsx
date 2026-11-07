@@ -149,10 +149,14 @@ export default function App() {
 						onBack={() => setTab(previousTab === "settings" ? "browse" : previousTab)}
 						onSaved={(next) => {
 							applySettings(next);
+							// Remount browse so it refetches after API key / cache invalidation.
 							setBrowseNonce((v) => v + 1);
 						}}
 					/>
-				) : tab === "browse" ? (
+				) : null}
+
+				{/* Keep browse mounted across tab switches to avoid re-requesting the same query. */}
+				<div style={{ display: tab === "browse" ? undefined : "none" }}>
 					<BrowseTab
 						key={browseNonce}
 						installs={installs}
@@ -161,16 +165,18 @@ export default function App() {
 							setStatus("插件已安装（或写入占位目录）");
 						}}
 					/>
-				) : (
-					(() => {
-						const install = installs.find((i) => i.id === tab);
-						return install ? (
-							<InstalledTab install={install} refreshKey={refreshKey} />
-						) : (
-							<div className="empty">未找到该客户端</div>
-						);
-					})()
-				)}
+				</div>
+
+				{tab !== "settings" && tab !== "browse"
+					? (() => {
+							const install = installs.find((i) => i.id === tab);
+							return install ? (
+								<InstalledTab install={install} refreshKey={refreshKey} />
+							) : (
+								<div className="empty">未找到该客户端</div>
+							);
+						})()
+					: null}
 			</main>
 		</div>
 	);

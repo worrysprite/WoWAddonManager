@@ -152,5 +152,6 @@ pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, Strin
 	}
 	save(&config)?;
 	detect::invalidate_cache();
+	crate::curseforge::browse_cache::invalidate();
 	Ok(settings_view())
 }

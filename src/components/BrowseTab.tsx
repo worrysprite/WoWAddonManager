@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api";
 import type { AddonSummary, FilterCatalog, SearchResult, WowInstall } from "../types";
 import { AddonCard } from "./AddonCard";
@@ -20,36 +20,44 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 	const [loading, setLoading] = useState(false);
 	const [busyId, setBusyId] = useState<number | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const requestSeq = useRef(0);
 
 	useEffect(() => {
 		api.getFilterCatalog().then(setCatalog).catch(console.error);
 	}, []);
 
-	useEffect(() => {
-		let cancelled = false;
+	async function load(forceRefresh: boolean) {
+		const seq = ++requestSeq.current;
 		setLoading(true);
 		setError(null);
-		api
-			.searchAddons({
-				search,
-				page,
-				pageSize: 20,
-				categories,
-				gameVersionTypeIds: flavors,
-				sortBy: "relevancy",
-			})
-			.then((data) => {
-				if (!cancelled) setResult(data);
-			})
-			.catch((err) => {
-				if (!cancelled) setError(String(err));
-			})
-			.finally(() => {
-				if (!cancelled) setLoading(false);
-			});
-		return () => {
-			cancelled = true;
-		};
+		try {
+			const data = await api.searchAddons(
+				{
+					search,
+					page,
+					pageSize: 20,
+					categories,
+					gameVersionTypeIds: flavors,
+					sortBy: "relevancy",
+				},
+				forceRefresh,
+			);
+			if (seq === requestSeq.current) {
+				setResult(data);
+			}
+		} catch (err) {
+			if (seq === requestSeq.current) {
+				setError(String(err));
+			}
+		} finally {
+			if (seq === requestSeq.current) {
+				setLoading(false);
+			}
+		}
+	}
+
+	useEffect(() => {
+		load(false);
 	}, [search, page, categories, flavors]);
 
 	const totalPages = useMemo(() => {
@@ -95,39 +103,50 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 			/>
 
 			<section className="main-pane">
-				<form
-					className="browse-search"
-					onSubmit={(e) => {
-						e.preventDefault();
-						setPage(1);
-						setSearch(draftSearch.trim());
-					}}
-				>
-					<input
-						value={draftSearch}
-						onChange={(e) => setDraftSearch(e.target.value)}
-						placeholder="Search for World of Warcraft addons..."
-					/>
-					<button type="submit" className="browse-search-btn" aria-label="Search">
-						<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-							<circle
-								cx="11"
-								cy="11"
-								r="7"
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="2"
-							/>
-							<path
-								d="M20 20l-3.5-3.5"
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="2"
-								strokeLinecap="round"
-							/>
-						</svg>
+				<div className="browse-search-row">
+					<form
+						className="browse-search"
+						onSubmit={(e) => {
+							e.preventDefault();
+							setPage(1);
+							setSearch(draftSearch.trim());
+						}}
+					>
+						<input
+							value={draftSearch}
+							onChange={(e) => setDraftSearch(e.target.value)}
+							placeholder="Search for World of Warcraft addons..."
+						/>
+						<button type="submit" className="browse-search-btn" aria-label="Search">
+							<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+								<circle
+									cx="11"
+									cy="11"
+									r="7"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+								/>
+								<path
+									d="M20 20l-3.5-3.5"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+									strokeLinecap="round"
+								/>
+							</svg>
+						</button>
+					</form>
+					<button
+						type="button"
+						className="btn browse-refresh-btn"
+						disabled={loading}
+						onClick={() => load(true)}
+						title="忽略缓存，重新请求"
+					>
+						{loading ? "加载中…" : "刷新"}
 					</button>
-				</form>
+				</div>
 
 				{result?.message ? <div className="banner">{result.message}</div> : null}
 				{error ? <div className="banner">{error}</div> : null}

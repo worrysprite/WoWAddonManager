@@ -165,14 +165,17 @@ async fn check_update(addon: &InstalledAddon) -> Option<(Option<String>, Option<
 		.curseforge_slug
 		.clone()
 		.or_else(|| Some(addon.title.clone()))?;
-	let result = curseforge::search_addons(SearchParams {
-		search: Some(search_term),
-		page: Some(1),
-		page_size: Some(5),
-		categories: None,
-		game_version_type_ids: None,
-		sort_by: Some("relevancy".into()),
-	})
+	let result = curseforge::search_addons(
+		SearchParams {
+			search: Some(search_term),
+			page: Some(1),
+			page_size: Some(5),
+			categories: None,
+			game_version_type_ids: None,
+			sort_by: Some("relevancy".into()),
+		},
+		false,
+	)
 	.await;
 
 	let remote = result.items.into_iter().find(|item| {
