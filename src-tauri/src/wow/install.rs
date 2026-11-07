@@ -30,21 +30,23 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 		}
 	};
 
+	let toc_ctx = crate::wow::toc::ClientContext::from_install(
+		&install.flavor_key,
+		install.game_version.as_deref(),
+	);
 	let mut accepted = Vec::new();
 	let mut reject_reason: Option<String> = None;
 
 	for folder in &folders {
-		if let Some(meta) = crate::wow::toc::read_folder_toc(&addons_path, folder) {
-			if let Some(issue) =
-				crate::wow::toc::client_unsupported_reason(&meta, install.game_version.as_deref())
-			{
-				reject_reason = Some(issue.reason);
-				log::warn!(
-					"拒绝安装不兼容插件 folder={folder} addon={}",
-					addon.name
-				);
-				continue;
-			}
+		if let Some(issue) =
+			crate::wow::toc::folder_unsupported_reason(&addons_path, folder, &toc_ctx)
+		{
+			reject_reason = Some(issue.reason);
+			log::warn!(
+				"拒绝安装不兼容插件 folder={folder} addon={}",
+				addon.name
+			);
+			continue;
 		}
 		accepted.push(folder.clone());
 	}
@@ -121,27 +123,28 @@ pub async fn install_from_archive(
 		.unwrap_or("archive")
 		.to_string();
 
+	let toc_ctx = crate::wow::toc::ClientContext::from_install(
+		&install.flavor_key,
+		install.game_version.as_deref(),
+	);
 	let mut pending = Vec::new();
 	let mut rejected = Vec::new();
 
 	for folder in &folders {
-		let meta = crate::wow::toc::read_folder_toc(&addons_path, folder);
-		if let Some(meta) = &meta {
-			if let Some(issue) =
-				crate::wow::toc::client_unsupported_reason(meta, install.game_version.as_deref())
-			{
-				rejected.push(format!(
-					"{folder}（{}）: {}",
-					meta.title.as_deref().unwrap_or(folder.as_str()),
-					issue.reason
-				));
-				log::warn!(
-					"拒绝安装不兼容插件 folder={folder} reason={}",
-					issue.reason
-				);
-				continue;
-			}
+		if let Some(issue) =
+			crate::wow::toc::folder_unsupported_reason(&addons_path, folder, &toc_ctx)
+		{
+			let title = crate::wow::toc::read_folder_toc_for_client(&addons_path, folder, &toc_ctx)
+				.and_then(|m| m.title)
+				.unwrap_or_else(|| folder.clone());
+			rejected.push(format!("{folder}（{title}）: {}", issue.reason));
+			log::warn!(
+				"拒绝安装不兼容插件 folder={folder} reason={}",
+				issue.reason
+			);
+			continue;
 		}
+		let meta = crate::wow::toc::read_folder_toc_for_client(&addons_path, folder, &toc_ctx);
 		pending.push((folder.clone(), meta));
 	}
 

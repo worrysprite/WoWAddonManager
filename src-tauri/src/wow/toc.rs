@@ -70,6 +70,9 @@ pub struct TocMeta {
 	pub interface: Option<String>,
 	/// All Interface numbers declared in the TOC (multi-value / multi-line).
 	pub interfaces: Vec<u32>,
+	/// TOC file stem suffix after `{Folder}_`, e.g. `Forever` for `Questie_Forever.toc`.
+	pub flavor_suffix: Option<String>,
+	pub path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -77,7 +80,22 @@ pub struct CompatibilityIssue {
 	pub reason: String,
 }
 
-/// Detect TOC markers that mean this addon is not for the current client.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClientContext<'a> {
+	pub flavor_key: Option<&'a str>,
+	pub game_version: Option<&'a str>,
+}
+
+impl<'a> ClientContext<'a> {
+	pub fn from_install(flavor_key: &'a str, game_version: Option<&'a str>) -> Self {
+		Self {
+			flavor_key: Some(flavor_key),
+			game_version,
+		}
+	}
+}
+
+/// Detect TOC markers that mean this single TOC is not for the current client.
 pub fn client_unsupported_reason(meta: &TocMeta, game_version: Option<&str>) -> Option<CompatibilityIssue> {
 	let title_raw = meta.title_raw.as_deref().unwrap_or("");
 	let notes_raw = meta.notes_raw.as_deref().unwrap_or("");
@@ -85,7 +103,7 @@ pub fn client_unsupported_reason(meta: &TocMeta, game_version: Option<&str>) -> 
 	let notes_l = notes_raw.to_ascii_lowercase();
 	let title_plain = clean_toc_text(title_raw).to_ascii_lowercase();
 
-	// Prefer explicit wrong-client title markers (e.g. Questie).
+	// Prefer explicit wrong-client title markers (e.g. Questie stub TOC).
 	if title_l.contains("game client not supported")
 		|| title_l.contains("client not supported")
 		|| title_plain.contains("game client not supported")
@@ -137,7 +155,7 @@ fn parse_interface_numbers(raw: &str) -> Vec<u32> {
 	raw.split(|c: char| !c.is_ascii_digit())
 		.filter(|p| !p.is_empty())
 		.filter_map(|p| p.parse::<u32>().ok())
-		.filter(|&n| n >= 100) // ignore tiny tokens
+		.filter(|&n| n >= 100) // ignore tiny tokens / Interface: 00000 stubs
 		.collect()
 }
 
@@ -165,21 +183,140 @@ fn interface_mismatch_reason(meta: &TocMeta, game_version: &str) -> Option<Strin
 	))
 }
 
-pub fn preferred_toc(dir: &Path, folder: &str) -> Option<PathBuf> {
-	let preferred = dir.join(format!("{folder}.toc"));
-	if preferred.exists() {
-		return Some(preferred);
+fn interfaces_match_game_version(meta: &TocMeta, game_version: Option<&str>) -> bool {
+	let Some(gv) = game_version else {
+		return false;
+	};
+	let Some(expected) = game_version_to_interface(gv) else {
+		return false;
+	};
+	let exp_major = expected / 10000;
+	!meta.interfaces.is_empty() && meta.interfaces.iter().any(|n| n / 10000 == exp_major)
+}
+
+/// TOC filename suffixes commonly used for each flavor key.
+fn flavor_toc_suffixes(flavor_key: &str) -> &'static [&'static str] {
+	match flavor_key {
+		"forever" => &["Forever"],
+		"classic" => &["Vanilla", "Classic", "Era", "ClassicEra"],
+		"mop-classic" | "classic-beta" | "classic-ptr" => &["Mists", "MoP", "Mist", "Pandaria"],
+		"classic-tbc" => &["TBC", "BurningCrusade", "BCC", "Burning"],
+		"cataclysm" => &["Cata", "Cataclysm"],
+		"wotlk" => &["Wrath", "WotLK", "WLK", "Lich"],
+		"retail" | "ptr" | "xptr" => &["Mainline", "Retail", "Standard"],
+		_ => &[],
 	}
-	fs::read_dir(dir)
-		.ok()?
+}
+
+fn toc_suffix_matches_flavor(suffix: &str, flavor_key: &str) -> bool {
+	let suffix_l = suffix.to_ascii_lowercase();
+	flavor_toc_suffixes(flavor_key)
+		.iter()
+		.any(|alias| suffix_l == alias.to_ascii_lowercase())
+}
+
+/// Root-level `{Folder}.toc` / `{Folder}_*.toc` only (skip Libs nested TOCs).
+pub fn list_addon_tocs(dir: &Path, folder: &str) -> Vec<PathBuf> {
+	let Ok(entries) = fs::read_dir(dir) else {
+		return Vec::new();
+	};
+	let folder_l = folder.to_ascii_lowercase();
+	let mut tocs: Vec<PathBuf> = entries
 		.flatten()
 		.map(|e| e.path())
-		.find(|p| p.extension().and_then(|s| s.to_str()) == Some("toc"))
+		.filter(|p| {
+			p.extension().and_then(|s| s.to_str()) == Some("toc")
+				&& p.file_stem()
+					.and_then(|s| s.to_str())
+					.map(|stem| {
+						let stem_l = stem.to_ascii_lowercase();
+						stem_l == folder_l || stem_l.starts_with(&format!("{folder_l}_"))
+					})
+					.unwrap_or(false)
+		})
+		.collect();
+	tocs.sort();
+	tocs
+}
+
+fn toc_flavor_suffix(path: &Path, folder: &str) -> Option<String> {
+	let stem = path.file_stem()?.to_str()?;
+	let folder_l = folder.to_ascii_lowercase();
+	let stem_l = stem.to_ascii_lowercase();
+	if stem_l == folder_l {
+		return None;
+	}
+	let prefix_l = format!("{folder_l}_");
+	if !stem_l.starts_with(&prefix_l) {
+		return None;
+	}
+	let suffix = &stem[folder.len() + 1..];
+	(!suffix.is_empty()).then(|| suffix.to_string())
+}
+
+fn score_toc_for_client(meta: &TocMeta, ctx: &ClientContext<'_>) -> i32 {
+	// Explicit stub / wrong-client TOC should never win when alternatives exist.
+	if client_unsupported_reason(meta, None).is_some() {
+		return -1000;
+	}
+
+	let mut score = 10; // real TOC baseline
+	if let (Some(suffix), Some(flavor_key)) = (meta.flavor_suffix.as_deref(), ctx.flavor_key) {
+		if toc_suffix_matches_flavor(suffix, flavor_key) {
+			score += 100;
+		}
+	} else if meta.flavor_suffix.is_none() {
+		// Plain Addon.toc — ok for single-TOC addons, weak for multi-TOC packs.
+		score += 5;
+	}
+
+	if interfaces_match_game_version(meta, ctx.game_version) {
+		score += 50;
+	} else if ctx.game_version.is_some() && !meta.interfaces.is_empty() {
+		// Has interfaces but none match this client.
+		score -= 20;
+	}
+
+	score
+}
+
+/// Pick the best TOC for this client. Skips Questie-style unsupported stubs when a
+/// flavor-specific TOC (e.g. `Questie_Forever.toc`) is available.
+pub fn preferred_toc(dir: &Path, folder: &str) -> Option<PathBuf> {
+	preferred_toc_for_client(dir, folder, &ClientContext::default())
+}
+
+pub fn preferred_toc_for_client(
+	dir: &Path,
+	folder: &str,
+	ctx: &ClientContext<'_>,
+) -> Option<PathBuf> {
+	let tocs = list_addon_tocs(dir, folder);
+	if tocs.is_empty() {
+		// Fallback: any .toc in the folder root.
+		return fs::read_dir(dir).ok()?.flatten().map(|e| e.path()).find(|p| {
+			p.extension().and_then(|s| s.to_str()) == Some("toc")
+		});
+	}
+
+	let mut best: Option<(i32, PathBuf)> = None;
+	for path in tocs {
+		let mut meta = parse_toc_file(&path);
+		meta.flavor_suffix = toc_flavor_suffix(&path, folder);
+		meta.path = Some(path.clone());
+		let score = score_toc_for_client(&meta, ctx);
+		match &best {
+			Some((best_score, _)) if *best_score >= score => {}
+			_ => best = Some((score, path)),
+		}
+	}
+	best.map(|(_, path)| path)
 }
 
 pub fn parse_toc_file(path: &Path) -> TocMeta {
 	let content = fs::read_to_string(path).unwrap_or_default();
 	let mut meta = TocMeta::default();
+	meta.path = Some(path.to_path_buf());
 	for line in content.lines() {
 		let line = line.trim();
 		if let Some(rest) = line.strip_prefix("## Title:") {
@@ -212,14 +349,92 @@ pub fn parse_toc_file(path: &Path) -> TocMeta {
 }
 
 pub fn read_folder_toc(addons_path: &Path, folder: &str) -> Option<TocMeta> {
+	read_folder_toc_for_client(addons_path, folder, &ClientContext::default())
+}
+
+pub fn read_folder_toc_for_client(
+	addons_path: &Path,
+	folder: &str,
+	ctx: &ClientContext<'_>,
+) -> Option<TocMeta> {
 	let dir = addons_path.join(folder);
-	let toc = preferred_toc(&dir, folder)?;
-	Some(parse_toc_file(&toc))
+	let toc = preferred_toc_for_client(&dir, folder, ctx)?;
+	let mut meta = parse_toc_file(&toc);
+	meta.flavor_suffix = toc_flavor_suffix(&toc, folder);
+	Some(meta)
+}
+
+/// True unsupported only when no TOC is usable for this client.
+pub fn folder_unsupported_reason(
+	addons_path: &Path,
+	folder: &str,
+	ctx: &ClientContext<'_>,
+) -> Option<CompatibilityIssue> {
+	let dir = addons_path.join(folder);
+	let tocs = list_addon_tocs(&dir, folder);
+	if tocs.is_empty() {
+		return None;
+	}
+
+	let metas: Vec<TocMeta> = tocs
+		.into_iter()
+		.map(|path| {
+			let mut meta = parse_toc_file(&path);
+			meta.flavor_suffix = toc_flavor_suffix(&path, folder);
+			meta
+		})
+		.collect();
+
+	// If any TOC is a positive match for this flavor/client, allow install.
+	let mut best_score = i32::MIN;
+	let mut best_meta: Option<&TocMeta> = None;
+	for meta in &metas {
+		let score = score_toc_for_client(meta, ctx);
+		if score > best_score {
+			best_score = score;
+			best_meta = Some(meta);
+		}
+	}
+
+	if best_score >= 0 {
+		if let Some(meta) = best_meta {
+			let flavor_matched = meta
+				.flavor_suffix
+				.as_deref()
+				.zip(ctx.flavor_key)
+				.is_some_and(|(suffix, key)| toc_suffix_matches_flavor(suffix, key));
+			// Flavor-specific TOC (Questie_Forever.toc) wins even if .build.info
+			// game version major doesn't line up with Interface.
+			if flavor_matched {
+				return None;
+			}
+			if let Some(issue) = client_unsupported_reason(meta, ctx.game_version) {
+				return Some(issue);
+			}
+		}
+		return None;
+	}
+
+	// No usable TOC. Prefer a clear stub reason if present.
+	if let Some(stub) = metas.iter().find(|m| {
+		client_unsupported_reason(m, None).is_some()
+	}) {
+		return client_unsupported_reason(stub, ctx.game_version)
+			.or_else(|| client_unsupported_reason(stub, None));
+	}
+
+	best_meta.and_then(|m| client_unsupported_reason(m, ctx.game_version))
+		.or_else(|| {
+			Some(CompatibilityIssue {
+				reason: "未找到适用于当前客户端的 TOC".into(),
+			})
+		})
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::time::{SystemTime, UNIX_EPOCH};
 
 	#[test]
 	fn strips_questie_unsupported_title() {
@@ -293,5 +508,65 @@ mod tests {
 	fn game_version_to_interface_works() {
 		assert_eq!(game_version_to_interface("12.1.5.70783"), Some(120105));
 		assert_eq!(game_version_to_interface("1.15.7"), Some(11507));
+	}
+
+	fn temp_questie_dir() -> PathBuf {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-questie-toc-{}-{}",
+			std::process::id(),
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addon = dir.join("Questie");
+		fs::create_dir_all(&addon).unwrap();
+		fs::write(
+			addon.join("Questie.toc"),
+			"## Interface: 00000\n## Title: Questie|cFFFF0000 game client not supported|r\n## Notes: Questie only supports Classic official servers.\n",
+		)
+		.unwrap();
+		fs::write(
+			addon.join("Questie_Forever.toc"),
+			"## Interface: 16001\n## Title: Questie|cFF00FF00 v12.6.2|r\n## Notes: A standalone Classic QuestHelper\n## Version: 12.6.2\n",
+		)
+		.unwrap();
+		fs::write(
+			addon.join("Questie_Vanilla.toc"),
+			"## Interface: 11508, 11509\n## Title: Questie|cFF00FF00 v12.6.2|r\n## Notes: A standalone Classic QuestHelper\n## Version: 12.6.2\n",
+		)
+		.unwrap();
+		dir
+	}
+
+	#[test]
+	fn prefers_forever_toc_over_unsupported_stub() {
+		let dir = temp_questie_dir();
+		let ctx = ClientContext::from_install("forever", Some("1.16.0"));
+		let meta = read_folder_toc_for_client(&dir, "Questie", &ctx).unwrap();
+		assert_eq!(meta.flavor_suffix.as_deref(), Some("Forever"));
+		assert!(meta.title.as_deref().unwrap_or("").contains("Questie"));
+		assert!(folder_unsupported_reason(&dir, "Questie", &ctx).is_none());
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn rejects_retail_when_only_stub_matches() {
+		let dir = temp_questie_dir();
+		let ctx = ClientContext::from_install("retail", Some("12.1.5.70783"));
+		let issue = folder_unsupported_reason(&dir, "Questie", &ctx);
+		assert!(issue.is_some());
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn prefers_vanilla_toc_for_classic_era() {
+		let dir = temp_questie_dir();
+		let ctx = ClientContext::from_install("classic", Some("1.15.7"));
+		let meta = read_folder_toc_for_client(&dir, "Questie", &ctx).unwrap();
+		assert_eq!(meta.flavor_suffix.as_deref(), Some("Vanilla"));
+		assert!(folder_unsupported_reason(&dir, "Questie", &ctx).is_none());
+		let _ = fs::remove_dir_all(dir);
 	}
 }

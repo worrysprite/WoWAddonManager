@@ -103,15 +103,18 @@ fn filter_unsupported_addons(
 	addons: Vec<InstalledAddon>,
 ) -> Vec<InstalledAddon> {
 	let addons_path = PathBuf::from(&install.addons_path);
-	let game_version = install.game_version.as_deref();
+	let toc_ctx = crate::wow::toc::ClientContext::from_install(
+		&install.flavor_key,
+		install.game_version.as_deref(),
+	);
 	sanitize_installed_list(addons)
 		.into_iter()
 		.filter(|addon| {
-			let Some(meta) = crate::wow::toc::read_folder_toc(&addons_path, &addon.folder_name)
-			else {
-				return true;
-			};
-			if let Some(issue) = crate::wow::toc::client_unsupported_reason(&meta, game_version) {
+			if let Some(issue) = crate::wow::toc::folder_unsupported_reason(
+				&addons_path,
+				&addon.folder_name,
+				&toc_ctx,
+			) {
 				log::info!(
 					"缓存中跳过不兼容插件 folder={} reason={}",
 					addon.folder_name,
@@ -185,14 +188,12 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 		if folder_name.starts_with('.') {
 			continue;
 		}
-		let toc_path = crate::wow::toc::preferred_toc(&path, &folder_name);
-		let meta = toc_path
-			.as_ref()
-			.map(|p| crate::wow::toc::parse_toc_file(p))
-			.unwrap_or_default();
-
+		let toc_ctx = crate::wow::toc::ClientContext::from_install(
+			&install.flavor_key,
+			install.game_version.as_deref(),
+		);
 		if let Some(issue) =
-			crate::wow::toc::client_unsupported_reason(&meta, install.game_version.as_deref())
+			crate::wow::toc::folder_unsupported_reason(&addons_path, &folder_name, &toc_ctx)
 		{
 			log::info!(
 				"跳过不兼容插件 folder={folder_name} reason={}",
@@ -200,6 +201,8 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 			);
 			continue;
 		}
+		let meta = crate::wow::toc::read_folder_toc_for_client(&addons_path, &folder_name, &toc_ctx)
+			.unwrap_or_default();
 
 		let tracked = stored_map.get(&folder_name);
 		let raw_title = tracked
