@@ -121,23 +121,32 @@ pub fn detect_with_extra_roots_deep(extra_roots: &[String]) -> DetectionReport {
 fn detect_cached(extra_roots: &[String], deep: bool) -> DetectionReport {
 	if let Ok(guard) = DETECTION_CACHE.lock() {
 		if let Some(cache) = guard.as_ref() {
-			if cache.deep == deep
-				&& cache.extra_roots == extra_roots
-				&& cache.at.elapsed() < CACHE_TTL
-			{
-				return cache.report.clone();
+			if cache.extra_roots == extra_roots && cache.at.elapsed() < CACHE_TTL {
+				// A deep scan result also satisfies shallow callers.
+				if cache.deep == deep || (cache.deep && !deep) {
+					return cache.report.clone();
+				}
 			}
 		}
 	}
 
 	let report = detect_uncached(extra_roots, deep);
 	if let Ok(mut guard) = DETECTION_CACHE.lock() {
-		*guard = Some(DetectionCache {
-			at: Instant::now(),
-			extra_roots: extra_roots.to_vec(),
-			deep,
-			report: report.clone(),
+		// Don't let a shallow result overwrite a still-fresh deep cache.
+		let keep_deep = guard.as_ref().is_some_and(|existing| {
+			existing.deep
+				&& !deep
+				&& existing.extra_roots == extra_roots
+				&& existing.at.elapsed() < CACHE_TTL
 		});
+		if !keep_deep {
+			*guard = Some(DetectionCache {
+				at: Instant::now(),
+				extra_roots: extra_roots.to_vec(),
+				deep,
+				report: report.clone(),
+			});
+		}
 	}
 	report
 }
@@ -159,11 +168,8 @@ fn detect_uncached(extra_roots: &[String], deep: bool) -> DetectionReport {
 		let path = PathBuf::from(root);
 		let key = normalize_path_key(&path);
 		scanned.insert(key);
-		// Never call exists() on network/UNC paths during auto-detect — it can freeze for ~1 min.
-		if is_skipped_autoscan_path(&path) {
-			invalid.push(format!("{root}（网络/不可用盘已跳过，避免启动卡死）"));
-			continue;
-		}
+		// User-configured roots are probed even on network/UNC drives (already on a worker thread).
+		// Auto-scan candidates still skip those drives via path_exists_fast / candidate_roots.
 		match install_from_path(root) {
 			Ok(items) if !items.is_empty() => {
 				for item in items {
@@ -171,7 +177,7 @@ fn detect_uncached(extra_roots: &[String], deep: bool) -> DetectionReport {
 				}
 			}
 			_ => {
-				if path_exists_fast(&path) {
+				if path.exists() {
 					invalid.push(root.clone());
 				} else {
 					invalid.push(format!("{root}（路径不存在）"));

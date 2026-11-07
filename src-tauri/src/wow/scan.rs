@@ -20,7 +20,7 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 		}
 	}
 
-	let results = scan_disk_with_updates(install).await?;
+	let results = scan_disk_with_updates(install, force_rescan).await?;
 	save_scan_cache(&addons_path, &results)?;
 	Ok(results)
 }
@@ -87,10 +87,13 @@ fn write_scan_cache(addons_path: &Path, cache: &AddonScanCache) -> Result<(), St
 	fs::write(scan_cache_path(addons_path), content).map_err(|e| e.to_string())
 }
 
-async fn scan_disk_with_updates(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
+async fn scan_disk_with_updates(
+	install: &WowInstall,
+	force_refresh: bool,
+) -> Result<Vec<InstalledAddon>, String> {
 	let mut results = scan_disk_only(install)?;
 	for addon in &mut results {
-		if let Some(update) = check_update(addon).await {
+		if let Some(update) = check_update(addon, force_refresh).await {
 			addon.has_update = true;
 			addon.remote_version = update.0;
 			addon.remote_file_id = update.1;
@@ -160,7 +163,10 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 	Ok(results)
 }
 
-async fn check_update(addon: &InstalledAddon) -> Option<(Option<String>, Option<i64>)> {
+async fn check_update(
+	addon: &InstalledAddon,
+	force_refresh: bool,
+) -> Option<(Option<String>, Option<i64>)> {
 	let search_term = addon
 		.curseforge_slug
 		.clone()
@@ -174,7 +180,7 @@ async fn check_update(addon: &InstalledAddon) -> Option<(Option<String>, Option<
 			game_version_type_ids: None,
 			sort_by: Some("relevancy".into()),
 		},
-		false,
+		force_refresh,
 	)
 	.await;
 
