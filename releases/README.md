@@ -1,16 +1,20 @@
 # Windows 预编译包
 
-当前版本：**0.4.0**
+当前版本：**0.4.1**
 
-- `WoW-Addon-Manager_0.4.0_x64-setup.exe`：安装包（推荐）
+- `WoW-Addon-Manager_0.4.1_x64-setup.exe`：安装包（推荐）
 - `WoW-Addon-Manager.exe`：免安装便携版
 
 首次运行若被 SmartScreen 拦截，选择“仍要运行”。需已安装 WebView2（Win10/11 通常自带）。
 
 下载：
 
-- 安装包：https://github.com/worrysprite/WoWAddonManager/raw/main/releases/WoW-Addon-Manager_0.4.0_x64-setup.exe
+- 安装包：https://github.com/worrysprite/WoWAddonManager/raw/main/releases/WoW-Addon-Manager_0.4.1_x64-setup.exe
 - 便携版：https://github.com/worrysprite/WoWAddonManager/raw/main/releases/WoW-Addon-Manager.exe
+
+## 0.4.1 更新
+- 备份/恢复改为内置本地镜像同步，不再调用 Cygwin/系统 rsync（修复 Windows 盘符路径报错）
+- 未变更文件跳过复制；浏览页移除演示数据回退
 
 ## 0.4.0 更新
 - 备份 / 恢复不再闪出终端窗口（Windows 无控制台后台同步）
