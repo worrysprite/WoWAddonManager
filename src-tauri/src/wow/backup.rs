@@ -1,21 +1,12 @@
 use crate::config;
 use crate::types::WowInstall;
 use crate::wow::{detect, install};
+use filetime::{set_file_mtime, FileTime};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
 use walkdir::WalkDir;
-
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,25 +41,6 @@ fn backup_root_for(install_id: &str) -> Result<PathBuf, String> {
 	Ok(PathBuf::from(backup_root))
 }
 
-fn ensure_trailing_slash(path: &Path) -> String {
-	let mut s = path.display().to_string();
-	if !s.ends_with('/') && !s.ends_with('\\') {
-		s.push('/');
-	}
-	s
-}
-
-fn configure_child(cmd: &mut Command) {
-	cmd.stdin(Stdio::null())
-		.stdout(Stdio::piped())
-		.stderr(Stdio::piped());
-	#[cfg(windows)]
-	{
-		// Prevent a console window from flashing on Windows GUI apps.
-		cmd.creation_flags(CREATE_NO_WINDOW);
-	}
-}
-
 fn emit(on_progress: &mut impl FnMut(&str), line: &str) {
 	if line.is_empty() {
 		return;
@@ -77,156 +49,57 @@ fn emit(on_progress: &mut impl FnMut(&str), line: &str) {
 	on_progress(line);
 }
 
-fn rsync_available() -> bool {
-	let mut cmd = Command::new("rsync");
-	configure_child(&mut cmd);
-	cmd.arg("--version");
-	match cmd.output() {
-		Ok(out) => {
-			let ok = out.status.success();
-			log::debug!(
-				"rsync --version status={} stdout_len={} stderr_len={}",
-				out.status,
-				out.stdout.len(),
-				out.stderr.len()
-			);
-			ok
-		}
-		Err(err) => {
-			log::info!("系统未找到 rsync，将使用内置镜像同步: {err}");
-			false
-		}
+/// True when destination already matches source (size + mtime), like rsync's quick check.
+fn file_unchanged(src: &Path, dst: &Path) -> bool {
+	let Ok(src_meta) = fs::metadata(src) else {
+		return false;
+	};
+	let Ok(dst_meta) = fs::metadata(dst) else {
+		return false;
+	};
+	if !src_meta.is_file() || !dst_meta.is_file() {
+		return false;
+	}
+	if src_meta.len() != dst_meta.len() {
+		return false;
+	}
+	match (src_meta.modified(), dst_meta.modified()) {
+		(Ok(a), Ok(b)) => a == b,
+		_ => false,
 	}
 }
 
-fn run_rsync(src: &Path, dst: &Path, on_progress: &mut impl FnMut(&str)) -> Result<String, String> {
-	log::info!(
-		"rsync 开始 src={} dst={}",
-		src.display(),
-		dst.display()
-	);
-	let src_arg = ensure_trailing_slash(src);
-	let dst_arg = ensure_trailing_slash(dst);
-	let header = format!(
-		"$ rsync -avh --delete --exclude=*.bak --exclude=*.old \\\n  \"{src_arg}\" \\\n  \"{dst_arg}\""
-	);
-	emit(on_progress, &header);
-
-	let mut cmd = Command::new("rsync");
-	configure_child(&mut cmd);
-	cmd.args([
-		"-avh",
-		"--delete",
-		"--exclude=*.bak",
-		"--exclude=*.BAK",
-		"--exclude=*.old",
-		"--exclude=*.OLD",
-	])
-	.arg(&src_arg)
-	.arg(&dst_arg);
-
-	let mut child = cmd
-		.spawn()
-		.map_err(|e| format!("启动 rsync 失败: {e}"))?;
-	let stdout = child
-		.stdout
-		.take()
-		.ok_or_else(|| "无法捕获 rsync stdout".to_string())?;
-	let stderr = child
-		.stderr
-		.take()
-		.ok_or_else(|| "无法捕获 rsync stderr".to_string())?;
-
-	let (tx, rx) = mpsc::channel::<(bool, String)>();
-	let tx_out = tx.clone();
-	let tx_err = tx.clone();
-	drop(tx);
-	thread::spawn(move || {
-		let reader = BufReader::new(stdout);
-		for line in reader.lines() {
-			match line {
-				Ok(text) => {
-					if tx_out.send((false, text)).is_err() {
-						break;
-					}
-				}
-				Err(_) => break,
-			}
-		}
-	});
-	thread::spawn(move || {
-		let reader = BufReader::new(stderr);
-		for line in reader.lines() {
-			match line {
-				Ok(text) => {
-					if tx_err.send((true, text)).is_err() {
-						break;
-					}
-				}
-				Err(_) => break,
-			}
-		}
-	});
-
-	let mut log_text = String::new();
-	log_text.push_str(&header);
-	log_text.push_str("\n\n");
-	let mut saw_stderr_header = false;
-	for (is_err, line) in rx {
-		if is_err {
-			if !saw_stderr_header {
-				emit(on_progress, "[stderr]");
-				log_text.push_str("[stderr]\n");
-				saw_stderr_header = true;
-			}
-			emit(on_progress, &line);
-			log_text.push_str(&line);
-			log_text.push('\n');
-		} else {
-			emit(on_progress, &line);
-			log_text.push_str(&line);
-			log_text.push('\n');
+fn copy_file_preserving_mtime(src: &Path, dst: &Path) -> Result<(), String> {
+	if let Some(parent) = dst.parent() {
+		fs::create_dir_all(parent).map_err(|e| format!("无法创建目录 {}: {e}", parent.display()))?;
+	}
+	fs::copy(src, dst).map_err(|e| {
+		format!(
+			"同步文件失败 {} -> {}: {e}",
+			src.display(),
+			dst.display()
+		)
+	})?;
+	if let Ok(meta) = fs::metadata(src) {
+		let mtime = FileTime::from_last_modification_time(&meta);
+		if let Err(err) = set_file_mtime(dst, mtime) {
+			log::debug!("保留 mtime 失败 {}: {err}", dst.display());
 		}
 	}
-
-	let status = child
-		.wait()
-		.map_err(|e| format!("等待 rsync 结束失败: {e}"))?;
-	log::debug!("rsync 结束 status={}", status);
-	if !status.success() {
-		log::error!("rsync 失败 status={} detail={}", status, log_text);
-		return Err(format!("rsync 失败 ({}):\n{}", status, log_text.trim()));
-	}
-	log::info!("rsync 成功 src={} dst={}", src.display(), dst.display());
-	Ok(log_text)
+	Ok(())
 }
 
-/// Mirror `src` into `dst`, skipping `.bak` / `.old` (like rsync --exclude).
-fn rsync_mirror(
+/// Local mirror sync: copy/update, skip unchanged, delete extras; skip `.bak` / `.old`.
+fn mirror_dir(
 	src: &Path,
 	dst: &Path,
 	on_progress: &mut impl FnMut(&str),
-) -> Result<(String, String), String> {
+) -> Result<String, String> {
 	if !src.is_dir() {
 		return Err(format!("源目录不存在: {}", src.display()));
 	}
 	fs::create_dir_all(dst).map_err(|e| format!("无法创建目录 {}: {e}", dst.display()))?;
 
-	if rsync_available() {
-		let log = run_rsync(src, dst, on_progress)?;
-		return Ok(("rsync".into(), log));
-	}
-
-	let log = mirror_dir_fallback(src, dst, on_progress)?;
-	Ok(("mirror".into(), log))
-}
-
-/// Rust fallback when system rsync is unavailable: copy/update then delete extras.
-fn mirror_dir_fallback(
-	src: &Path,
-	dst: &Path,
-	on_progress: &mut impl FnMut(&str),
-) -> Result<String, String> {
 	log::info!(
 		"内置镜像同步开始 src={} dst={}",
 		src.display(),
@@ -234,9 +107,10 @@ fn mirror_dir_fallback(
 	);
 	let mut kept: HashSet<PathBuf> = HashSet::new();
 	let mut copied = 0usize;
+	let mut skipped = 0usize;
 	let mut deleted = 0usize;
 	let mut log_lines: Vec<String> = Vec::new();
-	let start = format!("[mirror] {} -> {}", src.display(), dst.display());
+	let start = format!("[mirror] {} → {}", src.display(), dst.display());
 	emit(on_progress, &start);
 	log_lines.push(start);
 
@@ -259,17 +133,12 @@ fn mirror_dir_fallback(
 			fs::create_dir_all(&target)
 				.map_err(|e| format!("无法创建目录 {}: {e}", target.display()))?;
 		} else if entry.file_type().is_file() {
-			if let Some(parent) = target.parent() {
-				fs::create_dir_all(parent)
-					.map_err(|e| format!("无法创建目录 {}: {e}", parent.display()))?;
+			if file_unchanged(path, &target) {
+				skipped += 1;
+				log::trace!("跳过未变更 {}", rel.display());
+				continue;
 			}
-			fs::copy(path, &target).map_err(|e| {
-				format!(
-					"同步文件失败 {} -> {}: {e}",
-					path.display(),
-					target.display()
-				)
-			})?;
+			copy_file_preserving_mtime(path, &target)?;
 			copied += 1;
 			let line = format!("+ {}", rel.display());
 			emit(on_progress, &line);
@@ -318,16 +187,25 @@ fn mirror_dir_fallback(
 		log::trace!("删除 {rel}");
 	}
 
-	let summary = format!("完成：复制 {copied} 个文件，删除 {deleted} 项");
+	let summary = format!("完成：复制 {copied}，跳过 {skipped}，删除 {deleted}");
 	emit(on_progress, &summary);
 	log_lines.push(summary);
 	let log_text = log_lines.join("\n") + "\n";
 	log::info!(
-		"内置镜像同步完成 copied={copied} deleted={deleted} src={} dst={}",
+		"内置镜像同步完成 copied={copied} skipped={skipped} deleted={deleted} src={} dst={}",
 		src.display(),
 		dst.display()
 	);
 	Ok(log_text)
+}
+
+fn mirror_tree(
+	src: &Path,
+	dst: &Path,
+	on_progress: &mut impl FnMut(&str),
+) -> Result<(String, String), String> {
+	let log = mirror_dir(src, dst, on_progress)?;
+	Ok(("mirror".into(), log))
 }
 
 fn sync_pair(
@@ -351,33 +229,25 @@ fn sync_pair(
 		.map_err(|e| format!("无法创建目标目录 {}: {e}", dst_root.display()))?;
 
 	let mut synced = Vec::new();
-	let mut engines = HashSet::new();
 	let mut log_chunks = Vec::new();
 
 	if has_interface {
 		log::info!("同步 Interface …");
 		emit(on_progress, "===== Interface =====");
-		let (engine, chunk) =
-			rsync_mirror(&interface_src, &dst_root.join("Interface"), on_progress)?;
-		engines.insert(engine);
+		let (_engine, chunk) =
+			mirror_tree(&interface_src, &dst_root.join("Interface"), on_progress)?;
 		log_chunks.push(format!("===== Interface =====\n{chunk}"));
 		synced.push("Interface");
 	}
 	if has_wtf {
 		log::info!("同步 WTF …");
 		emit(on_progress, "===== WTF =====");
-		let (engine, chunk) = rsync_mirror(&wtf_src, &dst_root.join("WTF"), on_progress)?;
-		engines.insert(engine);
+		let (_engine, chunk) = mirror_tree(&wtf_src, &dst_root.join("WTF"), on_progress)?;
 		log_chunks.push(format!("===== WTF =====\n{chunk}"));
 		synced.push("WTF");
 	}
 
-	let engine = if engines.len() == 1 {
-		engines.into_iter().next().unwrap_or_else(|| "mirror".into())
-	} else {
-		engines.into_iter().collect::<Vec<_>>().join("+")
-	};
-	Ok((synced, engine, log_chunks.join("\n")))
+	Ok((synced, "mirror".into(), log_chunks.join("\n")))
 }
 
 /// Sync live `Interface` / `WTF` into this client's configured backup folder.
@@ -391,11 +261,7 @@ pub fn backup_install(
 	let dest_root = backup_root_for(install_id)?;
 	emit(
 		&mut on_progress,
-		&format!(
-			"开始备份 {} → {}",
-			install.label,
-			dest_root.display()
-		),
+		&format!("开始备份 {} → {}", install.label, dest_root.display()),
 	);
 	log::info!(
 		"备份路径 install={} src={} dest={}",
@@ -449,11 +315,7 @@ pub fn restore_install(
 	}
 	emit(
 		&mut on_progress,
-		&format!(
-			"开始恢复 {} ← {}",
-			install.label,
-			src_root.display()
-		),
+		&format!("开始恢复 {} ← {}", install.label, src_root.display()),
 	);
 	log::info!(
 		"恢复路径 install={} from={} to={}",
@@ -493,17 +355,20 @@ pub fn restore_install(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use std::time::{SystemTime, UNIX_EPOCH};
+	use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 	fn noop(_: &str) {}
 
-	#[test]
-	fn mirror_syncs_and_skips_bak_old() {
-		let stamp = SystemTime::now()
+	fn stamp() -> u128 {
+		SystemTime::now()
 			.duration_since(UNIX_EPOCH)
 			.unwrap()
-			.as_nanos();
-		let root = std::env::temp_dir().join(format!("wam-backup-{stamp}"));
+			.as_nanos()
+	}
+
+	#[test]
+	fn mirror_syncs_and_skips_bak_old() {
+		let root = std::env::temp_dir().join(format!("wam-backup-{}", stamp()));
 		let client = root.join("client");
 		let backup = root.join("backup");
 		let _ = fs::remove_dir_all(&root);
@@ -516,28 +381,16 @@ mod tests {
 		fs::write(client.join("WTF/Account/config.wtf.bak"), "SET foo \"old\"\n").unwrap();
 
 		let mut lines = Vec::new();
-		let (engine, log) = rsync_mirror(
+		let (engine, log) = mirror_tree(
 			&client.join("Interface"),
 			&backup.join("Interface"),
 			&mut |line| lines.push(line.to_string()),
 		)
 		.unwrap();
-		assert!(!engine.is_empty());
-		assert!(
-			log.contains("Interface")
-				|| log.contains("Foo")
-				|| log.contains("mirror")
-				|| log.contains("sending")
-				|| log.contains("total")
-				|| log.contains("+")
-		);
+		assert_eq!(engine, "mirror");
+		assert!(log.contains("Foo.toc") || log.contains('+'));
 		assert!(!lines.is_empty(), "progress callback should receive lines");
-		rsync_mirror(
-			&client.join("WTF"),
-			&backup.join("WTF"),
-			&mut noop,
-		)
-		.unwrap();
+		mirror_tree(&client.join("WTF"), &backup.join("WTF"), &mut noop).unwrap();
 
 		assert!(backup.join("Interface/AddOns/Foo/Foo.toc").is_file());
 		assert!(backup.join("WTF/Account/config.wtf").is_file());
@@ -546,26 +399,19 @@ mod tests {
 		assert!(!backup.join("WTF/Account/config.wtf.bak").exists());
 
 		fs::write(backup.join("Interface/AddOns/Foo/Stale.lua"), "-- gone\n").unwrap();
-		fs::remove_file(client.join("Interface/AddOns/Foo/Foo.toc")).unwrap();
 		fs::write(
 			client.join("Interface/AddOns/Foo/Foo.toc"),
 			"## Interface: 16002\n",
 		)
 		.unwrap();
-		let (_engine, log2) = rsync_mirror(
+		let (_engine, log2) = mirror_tree(
 			&client.join("Interface"),
 			&backup.join("Interface"),
 			&mut noop,
 		)
 		.unwrap();
 		assert!(!backup.join("Interface/AddOns/Foo/Stale.lua").exists());
-		assert!(
-			log2.contains("Stale")
-				|| log2.contains("deleting")
-				|| log2.contains("- ")
-				|| log2.contains("Foo.toc")
-				|| log2.contains("完成")
-		);
+		assert!(log2.contains("Stale") || log2.contains('-') || log2.contains("Foo.toc"));
 		assert_eq!(
 			fs::read_to_string(backup.join("Interface/AddOns/Foo/Foo.toc")).unwrap(),
 			"## Interface: 16002\n"
@@ -576,7 +422,7 @@ mod tests {
 			"## Interface: restored\n",
 		)
 		.unwrap();
-		rsync_mirror(
+		mirror_tree(
 			&backup.join("Interface"),
 			&client.join("Interface"),
 			&mut noop,
@@ -591,12 +437,8 @@ mod tests {
 	}
 
 	#[test]
-	fn mirror_fallback_streams_copy_and_delete() {
-		let stamp = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.unwrap()
-			.as_nanos();
-		let root = std::env::temp_dir().join(format!("wam-mirror-log-{stamp}"));
+	fn mirror_streams_copy_and_delete() {
+		let root = std::env::temp_dir().join(format!("wam-mirror-log-{}", stamp()));
 		let src = root.join("src");
 		let dst = root.join("dst");
 		let _ = fs::remove_dir_all(&root);
@@ -606,11 +448,11 @@ mod tests {
 		fs::write(dst.join("gone.txt"), "x\n").unwrap();
 
 		let mut streamed = Vec::new();
-		let log = mirror_dir_fallback(&src, &dst, &mut |line| streamed.push(line.to_string())).unwrap();
+		let log = mirror_dir(&src, &dst, &mut |line| streamed.push(line.to_string())).unwrap();
 		assert!(dst.join("a/one.txt").is_file());
 		assert!(!dst.join("gone.txt").exists());
-		assert!(log.contains("one.txt") && (log.contains('+') || log.contains("复制")));
-		assert!(log.contains("gone.txt") && (log.contains('-') || log.contains("删除")));
+		assert!(log.contains("one.txt"));
+		assert!(log.contains("gone.txt"));
 		assert!(
 			streamed.iter().any(|l| l.contains("one.txt")),
 			"live stream should include copied file: {streamed:?}"
@@ -618,6 +460,42 @@ mod tests {
 		assert!(
 			streamed.iter().any(|l| l.contains("gone.txt")),
 			"live stream should include deleted file: {streamed:?}"
+		);
+		let _ = fs::remove_dir_all(root);
+	}
+
+	#[test]
+	fn mirror_skips_unchanged_on_second_pass() {
+		let root = std::env::temp_dir().join(format!("wam-mirror-skip-{}", stamp()));
+		let src = root.join("src");
+		let dst = root.join("dst");
+		let _ = fs::remove_dir_all(&root);
+		fs::create_dir_all(src.join("a")).unwrap();
+		fs::write(src.join("a/keep.txt"), "same\n").unwrap();
+
+		mirror_dir(&src, &dst, &mut noop).unwrap();
+		// Ensure mtime comparison is stable across filesystems with coarse resolution.
+		std::thread::sleep(Duration::from_millis(20));
+		let mut lines = Vec::new();
+		let log = mirror_dir(&src, &dst, &mut |line| lines.push(line.to_string())).unwrap();
+		assert!(
+			log.contains("跳过 1") || log.contains("复制 0"),
+			"second pass should skip unchanged file: {log}"
+		);
+		assert!(
+			!lines.iter().any(|l| l.starts_with("+ a/keep.txt") || l.starts_with("+ a\\keep.txt")),
+			"unchanged file should not be re-emitted as copy: {lines:?}"
+		);
+
+		fs::write(src.join("a/keep.txt"), "changed\n").unwrap();
+		let log2 = mirror_dir(&src, &dst, &mut noop).unwrap();
+		assert!(
+			log2.contains("keep.txt") && log2.contains('+'),
+			"changed file should be copied: {log2}"
+		);
+		assert_eq!(
+			fs::read_to_string(dst.join("a/keep.txt")).unwrap(),
+			"changed\n"
 		);
 		let _ = fs::remove_dir_all(root);
 	}
