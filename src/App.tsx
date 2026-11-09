@@ -19,7 +19,9 @@ export default function App() {
 	const [apiHelp, setApiHelp] = useState<ApiHelp | null>(null);
 	const [settings, setSettings] = useState<SettingsView | null>(null);
 	const [status, setStatus] = useState<string | null>(null);
-	const [settingsFocus, setSettingsFocus] = useState<"backup" | null>(null);
+	const [settingsFocusInstallId, setSettingsFocusInstallId] = useState<string | null>(
+		null,
+	);
 
 	async function applySettings(next: SettingsView) {
 		setSettings(next);
@@ -50,16 +52,16 @@ export default function App() {
 		api.getApiHelp().then(setApiHelp).catch(console.error);
 	}, []);
 
-	function openSettings(focus: "backup" | null = null) {
+	function openSettings(focusInstallId: string | null = null) {
 		if (tab !== "settings") {
 			setPreviousTab(tab);
 		}
-		setSettingsFocus(focus);
+		setSettingsFocusInstallId(focusInstallId);
 		setTab("settings");
 	}
 
-	function openBackupSettings() {
-		openSettings("backup");
+	function openBackupSettings(installId: string) {
+		openSettings(installId);
 	}
 
 	const showApiWarning = Boolean(apiHelp && !settings?.hasApiKey);
@@ -156,8 +158,8 @@ export default function App() {
 				{tab === "settings" ? (
 					<SettingsPage
 						onBack={() => setTab(previousTab === "settings" ? "browse" : previousTab)}
-						focusSection={settingsFocus}
-						onFocusHandled={() => setSettingsFocus(null)}
+						focusInstallId={settingsFocusInstallId}
+						onFocusHandled={() => setSettingsFocusInstallId(null)}
 						onSaved={(next) => {
 							applySettings(next);
 							setBrowseNonce((v) => v + 1);
@@ -188,8 +190,7 @@ export default function App() {
 										key={install.id}
 										install={install}
 										refreshKey={refreshKey}
-										hasBackupPath={Boolean(settings?.hasBackupPath)}
-										onNeedBackupPath={openBackupSettings}
+										onNeedBackupPath={() => openBackupSettings(install.id)}
 									/>
 								</div>
 							) : (
