@@ -1,22 +1,8 @@
 #[cfg(test)]
 mod tests {
-	use crate::curseforge::{mock, web};
+	use crate::curseforge::web;
 	use crate::types::SearchParams;
 	use crate::wow::detect;
-
-	#[test]
-	fn mock_search_filters_by_keyword() {
-		let result = mock::search(&SearchParams {
-			search: Some("bartender".into()),
-			page: Some(1),
-			page_size: Some(20),
-			categories: None,
-			game_version_type_ids: None,
-			sort_by: None,
-		});
-		assert!(!result.items.is_empty());
-		assert!(result.items.iter().any(|a| a.slug.contains("bartender")));
-	}
 
 	#[test]
 	fn builds_expected_search_url() {

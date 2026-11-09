@@ -151,7 +151,7 @@ export const en: Messages = {
 	"app.brand": "WoW Addon Manager",
 	"nav.browse": "Browse All",
 	"nav.settings": "Settings",
-	"banner.noApiKey": "No API Key configured. Using web GET / demo data. Go to",
+	"banner.noApiKey": "No API Key configured. Using web GET. Go to",
 	"banner.goSettings": "Settings",
 	"banner.fillKey": "to enter a Key and switch to the official API.",
 	"banner.applyForm": "Application form",
@@ -249,7 +249,7 @@ export const en: Messages = {
 	"settings.apiKey": "CurseForge API Key",
 	"settings.apiPlaceholder": "Paste x-api-key",
 	"settings.apiHint":
-		"With a key, search and download use the official API (`api.curseforge.com`). Clear and save to fall back to web GET / demo data.",
+		"With a key, search and download use the official API (`api.curseforge.com`). Clear and save to fall back to web GET.",
 	"settings.apiEnabled": " Official API is currently enabled.",
 	"settings.apiDisabled": " No key configured.",
 	"settings.applyKey": "Apply for API Key",
@@ -258,7 +258,7 @@ export const en: Messages = {
 	"settings.saving": "Saving…",
 	"settings.clearInput": "Clear input",
 	"settings.apiSaved": "API Key saved. Browse and download will use the official CurseForge API.",
-	"settings.apiCleared": "API Key cleared. Falling back to web GET / demo data.",
+	"settings.apiCleared": "API Key cleared. Falling back to web GET.",
 	"settings.wowTitle": "World of Warcraft installs",
 	"settings.wowHint":
 		"Startup scans the registry, Battle.net Agent, and common drive paths. If nothing is found, add a World of Warcraft root or a `_retail_` / `_classic_` folder here.",
@@ -303,7 +303,7 @@ export const zhCN: Messages = {
 	"app.brand": "WoW Addon Manager",
 	"nav.browse": "Browse All",
 	"nav.settings": "设置",
-	"banner.noApiKey": "尚未配置 API Key，当前使用网页 GET / 演示数据。请到",
+	"banner.noApiKey": "尚未配置 API Key，当前使用网页 GET。请到",
 	"banner.goSettings": "设置",
 	"banner.fillKey": "填写 Key 后改用官方接口。",
 	"banner.applyForm": "申请表",
@@ -399,7 +399,7 @@ export const zhCN: Messages = {
 	"settings.apiKey": "CurseForge API Key",
 	"settings.apiPlaceholder": "粘贴 x-api-key",
 	"settings.apiHint":
-		"填写后，搜索与下载走官方 API（`api.curseforge.com`）。清空并保存则恢复网页 GET / 演示数据模式。",
+		"填写后，搜索与下载走官方 API（`api.curseforge.com`）。清空并保存则恢复网页 GET。",
 	"settings.apiEnabled": " 当前已启用官方 API。",
 	"settings.apiDisabled": " 当前未配置 Key。",
 	"settings.applyKey": "申请 API Key",
@@ -408,7 +408,7 @@ export const zhCN: Messages = {
 	"settings.saving": "保存中…",
 	"settings.clearInput": "清空输入",
 	"settings.apiSaved": "已保存 API Key。浏览与下载将使用 CurseForge 官方 API。",
-	"settings.apiCleared": "已清空 API Key。将回退到网页 GET / 演示数据。",
+	"settings.apiCleared": "已清空 API Key。将回退到网页 GET。",
 	"settings.wowTitle": "魔兽世界安装目录",
 	"settings.wowHint":
 		"启动时会自动扫描注册表、Battle.net Agent、常见盘符路径。若未找到，可在此手动添加「World of Warcraft」根目录，或其中的 `_retail_` / `_classic_` 等版本目录。",

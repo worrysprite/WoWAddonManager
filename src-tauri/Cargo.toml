@@ -23,6 +23,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 scraper = "0.23"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
+filetime = "0.2"
 walkdir = "2"
 regex = "1"
 zip = { version = "2", features = ["deflate"] }

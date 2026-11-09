@@ -16,7 +16,7 @@
 
 `https://www.curseforge.com/wow/search?class=addons&...`
 
-该站点有 Cloudflare 防护，失败时会自动回退演示数据。下载也会尝试网页直链，失败则写入占位插件目录便于联调。
+该站点有 Cloudflare 防护，失败时会提示错误（可在设置中填写 API Key 走官方接口）。下载也会尝试网页直链，失败则写入占位插件目录便于联调。
 
 正式接入请申请官方 API Key：
 
@@ -44,5 +44,5 @@ npm run tauri build
 ## 目录说明
 
 - `src/` 前端界面
-- `src-tauri/src/curseforge/` 搜索与下载（网页 GET + mock）
-- `src-tauri/src/wow/` 客户端检测、插件扫描、安装/更新/删除
+- `src-tauri/src/curseforge/` 搜索与下载（网页 GET / 官方 API）
+- `src-tauri/src/wow/` 客户端检测、插件扫描、安装/更新/删除、备份/恢复
