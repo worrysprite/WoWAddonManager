@@ -672,6 +672,12 @@ button {
 	display: flex;
 	flex-direction: column;
 	gap: 14px;
+	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.settings-card-focus {
+	border-color: var(--accent-strong);
+	box-shadow: 0 0 0 1px var(--accent-strong), var(--shadow);
 }
 
 .settings-field {

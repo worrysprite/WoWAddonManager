@@ -79,14 +79,20 @@ export function saveSettings(options: {
 	curseforgeApiKey?: string;
 	wowRoots?: string[];
 	locale?: string;
+	backupPath?: string;
 }) {
 	return invoke<SettingsView>("save_settings", {
 		request: {
 			curseforgeApiKey: options.curseforgeApiKey,
 			wowRoots: options.wowRoots,
 			locale: options.locale,
+			backupPath: options.backupPath,
 		},
 	});
+}
+
+export function backupInstall(installId: string) {
+	return invoke<string>("backup_install", { installId });
 }
 
 export function getLogs() {

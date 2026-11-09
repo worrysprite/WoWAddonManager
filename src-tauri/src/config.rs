@@ -13,6 +13,9 @@ pub struct AppConfig {
 	/// UI language preference: `system`, `zh-CN`, or `en`.
 	#[serde(default = "default_locale_preference")]
 	pub locale: String,
+	/// Destination root for Interface / WTF backups.
+	#[serde(default)]
+	pub backup_path: Option<String>,
 }
 
 fn default_locale_preference() -> String {
@@ -25,6 +28,7 @@ impl Default for AppConfig {
 			extra_wow_roots: Vec::new(),
 			curseforge_api_key: None,
 			locale: default_locale_preference(),
+			backup_path: None,
 		}
 	}
 }
@@ -42,6 +46,8 @@ pub struct SettingsView {
 	pub has_wow_install: bool,
 	pub locale: String,
 	pub system_locale: String,
+	pub backup_path: String,
+	pub has_backup_path: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +60,9 @@ pub struct SaveSettingsRequest {
 	pub wow_roots: Option<Vec<String>>,
 	#[serde(default)]
 	pub locale: Option<String>,
+	/// `None` leaves the path unchanged; `Some("")` clears it.
+	#[serde(default)]
+	pub backup_path: Option<String>,
 }
 
 fn config_path() -> Result<PathBuf, String> {
@@ -179,6 +188,12 @@ fn settings_view_with_depth(deep: bool) -> SettingsView {
 	} else {
 		detect::detect_with_extra_roots(&config.extra_wow_roots)
 	};
+	let backup_path = config
+		.backup_path
+		.clone()
+		.unwrap_or_default()
+		.trim()
+		.to_string();
 	SettingsView {
 		has_api_key: !key.is_empty(),
 		curseforge_api_key: key,
@@ -191,6 +206,8 @@ fn settings_view_with_depth(deep: bool) -> SettingsView {
 		invalid_wow_roots: report.invalid_roots,
 		locale: normalize_locale_preference(&config.locale),
 		system_locale: detect_system_locale(),
+		has_backup_path: !backup_path.is_empty(),
+		backup_path,
 	}
 }
 
@@ -223,6 +240,14 @@ pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, Strin
 	}
 	if let Some(locale) = request.locale {
 		config.locale = normalize_locale_preference(&locale);
+	}
+	if let Some(raw_path) = request.backup_path {
+		let trimmed = raw_path.trim().to_string();
+		config.backup_path = if trimmed.is_empty() {
+			None
+		} else {
+			Some(trimmed)
+		};
 	}
 	save(&config)?;
 	detect::invalidate_cache();

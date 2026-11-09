@@ -19,6 +19,7 @@ export default function App() {
 	const [apiHelp, setApiHelp] = useState<ApiHelp | null>(null);
 	const [settings, setSettings] = useState<SettingsView | null>(null);
 	const [status, setStatus] = useState<string | null>(null);
+	const [settingsFocus, setSettingsFocus] = useState<"backup" | null>(null);
 
 	async function applySettings(next: SettingsView) {
 		setSettings(next);
@@ -49,11 +50,16 @@ export default function App() {
 		api.getApiHelp().then(setApiHelp).catch(console.error);
 	}, []);
 
-	function openSettings() {
+	function openSettings(focus: "backup" | null = null) {
 		if (tab !== "settings") {
 			setPreviousTab(tab);
 		}
+		setSettingsFocus(focus);
 		setTab("settings");
+	}
+
+	function openBackupSettings() {
+		openSettings("backup");
 	}
 
 	const showApiWarning = Boolean(apiHelp && !settings?.hasApiKey);
@@ -89,7 +95,7 @@ export default function App() {
 				<div className="toolbar-actions">
 					<button
 						className={`btn settings-btn ${tab === "settings" ? "active-settings" : ""}`}
-						onClick={openSettings}
+						onClick={() => openSettings()}
 						title={t("nav.settings")}
 					>
 						{t("nav.settings")}
@@ -103,7 +109,7 @@ export default function App() {
 			{showApiWarning ? (
 				<div className="banner">
 					{t("banner.noApiKey")}
-					<button className="linkish" onClick={openSettings}>
+					<button className="linkish" onClick={() => openSettings()}>
 						{t("banner.goSettings")}
 					</button>
 					{t("banner.fillKey")}
@@ -128,7 +134,7 @@ export default function App() {
 			{showWowWarning ? (
 				<div className="banner">
 					{t("banner.noWow")}
-					<button className="linkish" onClick={openSettings}>
+					<button className="linkish" onClick={() => openSettings()}>
 						{t("banner.goSettings")}
 					</button>
 					{t("banner.addWowHint")}
@@ -139,7 +145,7 @@ export default function App() {
 				<div className="banner">
 					{t("banner.invalidWow")}
 					{settings?.invalidWowRoots.join("；")}。{t("banner.fixOrRemove")}
-					<button className="linkish" onClick={openSettings}>
+					<button className="linkish" onClick={() => openSettings()}>
 						{t("banner.goSettings")}
 					</button>
 					。
@@ -150,6 +156,8 @@ export default function App() {
 				{tab === "settings" ? (
 					<SettingsPage
 						onBack={() => setTab(previousTab === "settings" ? "browse" : previousTab)}
+						focusSection={settingsFocus}
+						onFocusHandled={() => setSettingsFocus(null)}
 						onSaved={(next) => {
 							applySettings(next);
 							setBrowseNonce((v) => v + 1);
@@ -180,6 +188,8 @@ export default function App() {
 										key={install.id}
 										install={install}
 										refreshKey={refreshKey}
+										hasBackupPath={Boolean(settings?.hasBackupPath)}
+										onNeedBackupPath={openBackupSettings}
 									/>
 								</div>
 							) : (

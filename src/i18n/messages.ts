@@ -66,6 +66,10 @@ export type MessageKey =
 	| "installed.pickArchive"
 	| "installed.archiveFilter"
 	| "installed.clientMissing"
+	| "installed.backup"
+	| "installed.backingUp"
+	| "installed.backupDone"
+	| "installed.backupNeedPath"
 	| "settings.back"
 	| "settings.title"
 	| "settings.subtitle"
@@ -103,6 +107,17 @@ export type MessageKey =
 	| "settings.invalidPaths"
 	| "settings.rescanDoneFound"
 	| "settings.rescanDoneNone"
+	| "settings.backupTitle"
+	| "settings.backupHint"
+	| "settings.backupPath"
+	| "settings.backupPathPlaceholder"
+	| "settings.pickBackupDir"
+	| "settings.chooseBackupPath"
+	| "settings.clearBackupPath"
+	| "settings.openBackupPath"
+	| "settings.backupPathSaved"
+	| "settings.backupPathCleared"
+	| "settings.backupPathUnset"
 	| "settings.logsTitle"
 	| "settings.logsHint"
 	| "settings.openLogs"
@@ -185,9 +200,13 @@ export const en: Messages = {
 	"installed.pickArchive": "Select addon archive",
 	"installed.archiveFilter": "Addon Archive",
 	"installed.clientMissing": "Client not found",
+	"installed.backup": "Backup",
+	"installed.backingUp": "Backing up…",
+	"installed.backupDone": "Backup complete: {path}",
+	"installed.backupNeedPath": "Set a backup folder in Settings first.",
 	"settings.back": "← Back",
 	"settings.title": "Settings",
-	"settings.subtitle": "API Key, language, WoW paths, and logs",
+	"settings.subtitle": "API Key, language, WoW paths, backup, and logs",
 	"settings.language": "Language",
 	"settings.languageHint": "Default follows the system language. You can override it here.",
 	"settings.languageSystem": "System default",
@@ -224,6 +243,18 @@ export const en: Messages = {
 	"settings.invalidPaths": "These manual paths are invalid or have no recognizable client:",
 	"settings.rescanDoneFound": "Rescan complete. Detected {count} client(s).",
 	"settings.rescanDoneNone": "Rescan complete. Still no World of Warcraft clients found.",
+	"settings.backupTitle": "Backup",
+	"settings.backupHint":
+		"Choose a folder for Interface and WTF backups. Each backup creates a timestamped subfolder for that client. .bak and .old files are skipped.",
+	"settings.backupPath": "Backup folder",
+	"settings.backupPathPlaceholder": "Not set",
+	"settings.pickBackupDir": "Select backup folder",
+	"settings.chooseBackupPath": "Choose folder",
+	"settings.clearBackupPath": "Clear",
+	"settings.openBackupPath": "Open folder",
+	"settings.backupPathSaved": "Backup folder saved: {path}",
+	"settings.backupPathCleared": "Backup folder cleared",
+	"settings.backupPathUnset": "Please choose a backup folder before backing up a client.",
 	"settings.logsTitle": "Logs",
 	"settings.logsHint":
 		"Default level is WARN. Open to view in-memory logs and save them to a file.",
@@ -304,9 +335,13 @@ export const zhCN: Messages = {
 	"installed.pickArchive": "选择插件压缩包",
 	"installed.archiveFilter": "插件压缩包",
 	"installed.clientMissing": "未找到该客户端",
+	"installed.backup": "备份",
+	"installed.backingUp": "备份中…",
+	"installed.backupDone": "备份完成：{path}",
+	"installed.backupNeedPath": "请先在设置中指定备份路径",
 	"settings.back": "← 返回",
 	"settings.title": "设置",
-	"settings.subtitle": "配置语言、API Key、魔兽世界安装目录与日志",
+	"settings.subtitle": "配置语言、API Key、魔兽世界安装目录、备份路径与日志",
 	"settings.language": "语言",
 	"settings.languageHint": "默认跟随系统语言，也可在此手动切换。",
 	"settings.languageSystem": "跟随系统",
@@ -343,6 +378,18 @@ export const zhCN: Messages = {
 	"settings.invalidPaths": "以下手动路径无效或不包含可识别的客户端：",
 	"settings.rescanDoneFound": "客户端扫描完成，检测到 {count} 个客户端。",
 	"settings.rescanDoneNone": "客户端扫描完成，仍未检测到魔兽世界客户端。",
+	"settings.backupTitle": "备份",
+	"settings.backupHint":
+		"选择 Interface 与 WTF 的备份目录。每次备份会在该目录下按客户端创建带时间戳的子文件夹，并跳过 .bak / .old 文件。",
+	"settings.backupPath": "备份路径",
+	"settings.backupPathPlaceholder": "未设置",
+	"settings.pickBackupDir": "选择备份目录",
+	"settings.chooseBackupPath": "选择目录",
+	"settings.clearBackupPath": "清除",
+	"settings.openBackupPath": "打开目录",
+	"settings.backupPathSaved": "已保存备份路径：{path}",
+	"settings.backupPathCleared": "已清除备份路径",
+	"settings.backupPathUnset": "请先设置备份路径，再备份客户端。",
 	"settings.logsTitle": "日志",
 	"settings.logsHint": "默认级别为 WARN。打开后可查看内存中的运行日志，并保存为文件。",
 	"settings.openLogs": "打开日志",

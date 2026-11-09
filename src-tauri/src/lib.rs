@@ -11,7 +11,7 @@ use types::{
 	DeleteRequest, FilterCatalog, InstallRequest, InstalledAddon, ManualInstallRequest,
 	SearchParams, SearchResult, UpdateRequest, WowInstall,
 };
-use wow::{detect, install, scan};
+use wow::{backup, detect, install, scan};
 
 async fn run_blocking<T, F>(f: F) -> Result<T, String>
 where
@@ -181,6 +181,12 @@ fn save_logs(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn backup_install(install_id: String) -> Result<String, String> {
+	log::warn!("backup_install install_id={install_id}");
+	run_blocking(move || backup::backup_install(&install_id)).await
+}
+
+#[tauri::command]
 fn open_dir(path: String) -> Result<(), String> {
 	use std::path::PathBuf;
 	use std::process::Command;
@@ -246,6 +252,7 @@ pub fn run() {
 			set_log_level,
 			clear_logs,
 			save_logs,
+			backup_install,
 			open_dir
 		])
 		.run(tauri::generate_context!())

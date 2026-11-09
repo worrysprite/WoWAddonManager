@@ -8,9 +8,16 @@ import { AddonCard } from "./AddonCard";
 type Props = {
 	install: WowInstall;
 	refreshKey: number;
+	hasBackupPath: boolean;
+	onNeedBackupPath: () => void;
 };
 
-export function InstalledTab({ install, refreshKey }: Props) {
+export function InstalledTab({
+	install,
+	refreshKey,
+	hasBackupPath,
+	onNeedBackupPath,
+}: Props) {
 	const { t } = useI18n();
 	const [addons, setAddons] = useState<InstalledAddon[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -193,6 +200,36 @@ export function InstalledTab({ install, refreshKey }: Props) {
 		}
 	}
 
+	async function handleBackup() {
+		const forInstallId = install.id;
+		setError(null);
+		setStatus(null);
+		if (!hasBackupPath) {
+			setStatus(t("installed.backupNeedPath"));
+			onNeedBackupPath();
+			return;
+		}
+		setBusy("__backup__");
+		try {
+			const dest = await api.backupInstall(forInstallId);
+			if (installIdRef.current !== forInstallId) return;
+			setStatus(t("installed.backupDone", { path: dest }));
+		} catch (err) {
+			if (installIdRef.current !== forInstallId) return;
+			const message = String(err);
+			if (message.includes("未设置备份路径")) {
+				setStatus(t("installed.backupNeedPath"));
+				onNeedBackupPath();
+				return;
+			}
+			setError(message);
+		} finally {
+			if (installIdRef.current === forInstallId) {
+				setBusy(null);
+			}
+		}
+	}
+
 	const blocked = loading || scanning || busy !== null;
 
 	return (
@@ -228,6 +265,14 @@ export function InstalledTab({ install, refreshKey }: Props) {
 						title={t("installed.openInterface")}
 					>
 						{t("installed.openInterface")}
+					</button>
+					<button
+						className="btn"
+						onClick={handleBackup}
+						disabled={blocked}
+						title={t("installed.backup")}
+					>
+						{busy === "__backup__" ? t("installed.backingUp") : t("installed.backup")}
 					</button>
 				</div>
 			</div>
