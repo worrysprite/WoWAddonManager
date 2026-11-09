@@ -245,7 +245,7 @@ export const en: Messages = {
 	"settings.rescanDoneNone": "Rescan complete. Still no World of Warcraft clients found.",
 	"settings.backupTitle": "Backup",
 	"settings.backupHint":
-		"Choose a folder for Interface and WTF backups. Each backup creates a timestamped subfolder for that client. .bak and .old files are skipped.",
+		"Choose a folder for Interface and WTF backups. Each backup creates a timestamped subfolder for that client.",
 	"settings.backupPath": "Backup folder",
 	"settings.backupPathPlaceholder": "Not set",
 	"settings.pickBackupDir": "Select backup folder",
@@ -380,7 +380,7 @@ export const zhCN: Messages = {
 	"settings.rescanDoneNone": "客户端扫描完成，仍未检测到魔兽世界客户端。",
 	"settings.backupTitle": "备份",
 	"settings.backupHint":
-		"选择 Interface 与 WTF 的备份目录。每次备份会在该目录下按客户端创建带时间戳的子文件夹，并跳过 .bak / .old 文件。",
+		"选择 Interface 与 WTF 的备份目录。每次备份会在该目录下按客户端创建带时间戳的子文件夹。",
 	"settings.backupPath": "备份路径",
 	"settings.backupPathPlaceholder": "未设置",
 	"settings.pickBackupDir": "选择备份目录",
