@@ -13,23 +13,6 @@ fn resolve_install(install_id: &str) -> Result<WowInstall, String> {
 	install::find_install_in(&report.installs, install_id)
 }
 
-fn sanitize_folder_name(raw: &str) -> String {
-	let cleaned: String = raw
-		.chars()
-		.map(|c| match c {
-			'/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-			c if c.is_control() => '_',
-			c => c,
-		})
-		.collect();
-	let trimmed = cleaned.trim().trim_matches('.');
-	if trimmed.is_empty() {
-		"wow-client".into()
-	} else {
-		trimmed.to_string()
-	}
-}
-
 fn should_skip_backup_file(path: &Path) -> bool {
 	path.extension()
 		.and_then(|ext| ext.to_str())
@@ -40,17 +23,8 @@ fn should_skip_backup_file(path: &Path) -> bool {
 		.unwrap_or(false)
 }
 
-fn backup_folder_name(install: &WowInstall) -> String {
-	// Keep label readable; append install id (`wow-<hash>`) so two clients with
-	// the same flavor label never share a backup directory.
-	format!(
-		"{}__{}",
-		sanitize_folder_name(&install.label),
-		sanitize_folder_name(&install.id)
-	)
-}
-
-fn backup_root_for(install: &WowInstall) -> Result<PathBuf, String> {
+/// User-selected backup folder is the sync root (`Interface` / `WTF` live directly under it).
+fn backup_root() -> Result<PathBuf, String> {
 	let cfg = config::load();
 	let backup_root = cfg
 		.backup_path
@@ -58,7 +32,7 @@ fn backup_root_for(install: &WowInstall) -> Result<PathBuf, String> {
 		.map(str::trim)
 		.filter(|p| !p.is_empty())
 		.ok_or_else(|| "未设置备份路径".to_string())?;
-	Ok(PathBuf::from(backup_root).join(backup_folder_name(install)))
+	Ok(PathBuf::from(backup_root))
 }
 
 fn ensure_trailing_slash(path: &Path) -> String {
@@ -209,11 +183,11 @@ fn sync_pair(src_root: &Path, dst_root: &Path, label: &str) -> Result<Vec<&'stat
 	Ok(synced)
 }
 
-/// Sync live `Interface` / `WTF` into the configured backup folder for this client.
+/// Sync live `Interface` / `WTF` into the configured backup folder.
 pub fn backup_install(install_id: &str) -> Result<String, String> {
 	let install = resolve_install(install_id)?;
 	let install_path = PathBuf::from(&install.install_path);
-	let dest_root = backup_root_for(&install)?;
+	let dest_root = backup_root()?;
 	let synced = sync_pair(&install_path, &dest_root, "客户端")?;
 	log::warn!(
 		"备份同步完成 install={} dest={} items={} via={}",
@@ -233,18 +207,18 @@ pub fn backup_install(install_id: &str) -> Result<String, String> {
 pub fn restore_install(install_id: &str) -> Result<String, String> {
 	let install = resolve_install(install_id)?;
 	let install_path = PathBuf::from(&install.install_path);
-	let backup_root = backup_root_for(&install)?;
-	if !backup_root.is_dir() {
+	let src_root = backup_root()?;
+	if !src_root.join("Interface").is_dir() && !src_root.join("WTF").is_dir() {
 		return Err(format!(
 			"未找到该客户端的备份目录：{}",
-			backup_root.display()
+			src_root.display()
 		));
 	}
-	let synced = sync_pair(&backup_root, &install_path, "备份")?;
+	let synced = sync_pair(&src_root, &install_path, "备份")?;
 	log::warn!(
 		"恢复同步完成 install={} from={} items={} via={}",
 		install.label,
-		backup_root.display(),
+		src_root.display(),
 		synced.join("+"),
 		if rsync_available() {
 			"rsync"
@@ -252,40 +226,13 @@ pub fn restore_install(install_id: &str) -> Result<String, String> {
 			"mirror"
 		}
 	);
-	Ok(backup_root.display().to_string())
+	Ok(src_root.display().to_string())
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use std::time::{SystemTime, UNIX_EPOCH};
-
-	#[test]
-	fn sanitize_replaces_invalid_chars() {
-		assert_eq!(sanitize_folder_name("Retail: _retail_"), "Retail_ _retail_");
-		assert_eq!(sanitize_folder_name("   "), "wow-client");
-	}
-
-	#[test]
-	fn backup_folder_includes_install_id() {
-		let a = WowInstall {
-			id: "c__games__wow__retail".into(),
-			label: "Retail".into(),
-			flavor: "Retail".into(),
-			flavor_key: "retail".into(),
-			install_path: r"C:\Games\World of Warcraft\_retail_".into(),
-			addons_path: r"C:\Games\World of Warcraft\_retail_\Interface\AddOns".into(),
-			game_version: None,
-			game_version_type_id: None,
-		};
-		let b = WowInstall {
-			id: "d__other__wow__retail".into(),
-			label: "Retail".into(),
-			..a.clone()
-		};
-		assert_ne!(backup_folder_name(&a), backup_folder_name(&b));
-		assert!(backup_folder_name(&a).starts_with("Retail__"));
-	}
 
 	#[test]
 	fn mirror_syncs_and_skips_bak_old() {
