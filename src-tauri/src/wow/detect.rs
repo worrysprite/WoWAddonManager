@@ -319,6 +319,7 @@ fn build_install(path: &Path) -> Option<WowInstall> {
 		addons_path: path.join("Interface").join("AddOns").display().to_string(),
 		game_version: read_game_version(path, root, None),
 		game_version_type_id: None,
+		backup_path: String::new(),
 	})
 }
 
@@ -339,6 +340,7 @@ fn build_install_with_meta(path: &Path, meta: &FlavorMeta, root: &Path) -> Optio
 		addons_path: addons_path.display().to_string(),
 		game_version: read_game_version(path, root, Some(meta.flavor_key)),
 		game_version_type_id: Some(meta.game_version_type_id),
+		backup_path: String::new(),
 	})
 }
 

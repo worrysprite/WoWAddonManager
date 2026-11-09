@@ -59,6 +59,7 @@ export interface WowInstall {
 	addonsPath: string;
 	gameVersion?: string | null;
 	gameVersionTypeId?: number | null;
+	backupPath?: string;
 }
 
 export interface InstalledAddon {
@@ -102,8 +103,6 @@ export interface SettingsView {
 	hasWowInstall: boolean;
 	locale: string;
 	systemLocale: string;
-	backupPath: string;
-	hasBackupPath: boolean;
 }
 
 export interface LogEntry {

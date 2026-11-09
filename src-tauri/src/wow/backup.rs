@@ -23,14 +23,9 @@ fn should_skip_backup_file(path: &Path) -> bool {
 		.unwrap_or(false)
 }
 
-/// User-selected backup folder is the sync root (`Interface` / `WTF` live directly under it).
-fn backup_root() -> Result<PathBuf, String> {
-	let cfg = config::load();
-	let backup_root = cfg
-		.backup_path
-		.as_deref()
-		.map(str::trim)
-		.filter(|p| !p.is_empty())
+/// Per-client backup folder is the sync root (`Interface` / `WTF` live directly under it).
+fn backup_root_for(install_id: &str) -> Result<PathBuf, String> {
+	let backup_root = config::backup_path_for_install(install_id)
 		.ok_or_else(|| "未设置备份路径".to_string())?;
 	Ok(PathBuf::from(backup_root))
 }
@@ -183,11 +178,11 @@ fn sync_pair(src_root: &Path, dst_root: &Path, label: &str) -> Result<Vec<&'stat
 	Ok(synced)
 }
 
-/// Sync live `Interface` / `WTF` into the configured backup folder.
+/// Sync live `Interface` / `WTF` into this client's configured backup folder.
 pub fn backup_install(install_id: &str) -> Result<String, String> {
 	let install = resolve_install(install_id)?;
 	let install_path = PathBuf::from(&install.install_path);
-	let dest_root = backup_root()?;
+	let dest_root = backup_root_for(install_id)?;
 	let synced = sync_pair(&install_path, &dest_root, "客户端")?;
 	log::warn!(
 		"备份同步完成 install={} dest={} items={} via={}",
@@ -203,11 +198,11 @@ pub fn backup_install(install_id: &str) -> Result<String, String> {
 	Ok(dest_root.display().to_string())
 }
 
-/// Sync backup `Interface` / `WTF` back into the live client install.
+/// Sync this client's backup `Interface` / `WTF` back into the live install.
 pub fn restore_install(install_id: &str) -> Result<String, String> {
 	let install = resolve_install(install_id)?;
 	let install_path = PathBuf::from(&install.install_path);
-	let src_root = backup_root()?;
+	let src_root = backup_root_for(install_id)?;
 	if !src_root.join("Interface").is_dir() && !src_root.join("WTF").is_dir() {
 		return Err(format!(
 			"未找到该客户端的备份目录：{}",

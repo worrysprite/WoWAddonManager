@@ -4,12 +4,10 @@ import * as api from "../api";
 import { useI18n, type LocalePreference } from "../i18n";
 import type { LogEntry, SettingsView } from "../types";
 
-type SettingsFocus = "backup" | null;
-
 type Props = {
 	onBack: () => void;
 	onSaved: (settings: SettingsView) => void;
-	focusSection?: SettingsFocus;
+	focusInstallId?: string | null;
 	onFocusHandled?: () => void;
 };
 
@@ -18,7 +16,7 @@ const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
 export function SettingsPage({
 	onBack,
 	onSaved,
-	focusSection = null,
+	focusInstallId = null,
 	onFocusHandled,
 }: Props) {
 	const { t, preference, setPreference } = useI18n();
@@ -34,9 +32,9 @@ export function SettingsPage({
 	const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
 	const [logsOpen, setLogsOpen] = useState(false);
 	const [logsBusy, setLogsBusy] = useState(false);
-	const [highlightBackup, setHighlightBackup] = useState(false);
+	const [highlightInstallId, setHighlightInstallId] = useState<string | null>(null);
 	const logPaneRef = useRef<HTMLPreElement | null>(null);
-	const backupCardRef = useRef<HTMLDivElement | null>(null);
+	const installRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 	const saveChain = useRef(Promise.resolve());
 
 	async function reload() {
@@ -59,17 +57,17 @@ export function SettingsPage({
 	}, [preference]);
 
 	useEffect(() => {
-		if (focusSection !== "backup" || !ready) return;
-		setHighlightBackup(true);
+		if (!focusInstallId || !ready) return;
+		setHighlightInstallId(focusInstallId);
 		setMessage(t("settings.backupPathUnset"));
-		const card = backupCardRef.current;
-		if (card) {
-			card.scrollIntoView({ behavior: "smooth", block: "center" });
+		const row = installRowRefs.current[focusInstallId];
+		if (row) {
+			row.scrollIntoView({ behavior: "smooth", block: "center" });
 		}
 		onFocusHandled?.();
-		const timer = window.setTimeout(() => setHighlightBackup(false), 2600);
+		const timer = window.setTimeout(() => setHighlightInstallId(null), 2600);
 		return () => window.clearTimeout(timer);
-	}, [focusSection, ready, t, onFocusHandled]);
+	}, [focusInstallId, ready, t, onFocusHandled]);
 
 	function enqueueSave<T>(work: () => Promise<T>): Promise<T> {
 		const run = saveChain.current.then(work, work);
@@ -186,7 +184,7 @@ export function SettingsPage({
 		}
 	}
 
-	async function handleChooseBackupPath() {
+	async function handleChooseBackupPath(installId: string, label: string, current?: string) {
 		setBusy(true);
 		setError(null);
 		setMessage(null);
@@ -194,18 +192,18 @@ export function SettingsPage({
 			const selected = await open({
 				directory: true,
 				multiple: false,
-				title: t("settings.pickBackupDir"),
-				defaultPath: settings?.backupPath || undefined,
+				title: t("settings.pickBackupDir", { label }),
+				defaultPath: current || undefined,
 			});
 			if (!selected || Array.isArray(selected)) return;
 			const next = await enqueueSave(() =>
 				api.saveSettings({
-					backupPath: selected,
+					installBackup: { installId, backupPath: selected },
 				}),
 			);
 			setSettings(next);
-			setMessage(t("settings.backupPathSaved", { path: selected }));
-			setHighlightBackup(false);
+			setMessage(t("settings.backupPathSaved", { label, path: selected }));
+			setHighlightInstallId(null);
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
@@ -214,33 +212,23 @@ export function SettingsPage({
 		}
 	}
 
-	async function handleClearBackupPath() {
+	async function handleClearBackupPath(installId: string, label: string) {
 		setBusy(true);
 		setError(null);
 		setMessage(null);
 		try {
 			const next = await enqueueSave(() =>
 				api.saveSettings({
-					backupPath: "",
+					installBackup: { installId, backupPath: "" },
 				}),
 			);
 			setSettings(next);
-			setMessage(t("settings.backupPathCleared"));
+			setMessage(t("settings.backupPathCleared", { label }));
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
 		} finally {
 			setBusy(false);
-		}
-	}
-
-	async function handleOpenBackupPath() {
-		if (!settings?.backupPath) return;
-		setError(null);
-		try {
-			await api.openDir(settings.backupPath);
-		} catch (err) {
-			setError(String(err));
 		}
 	}
 
@@ -423,17 +411,65 @@ export function SettingsPage({
 				{settings?.detectedInstalls?.length ? (
 					<div className="settings-list">
 						<div className="settings-list-label">{t("settings.detectedClients")}</div>
-						{settings.detectedInstalls.map((install) => (
-							<div key={install.id} className="settings-list-item">
-								<div>
-									<strong>{install.label}</strong>
-									<div className="muted">{install.installPath}</div>
+						{settings.detectedInstalls.map((install) => {
+							const backupPath = install.backupPath?.trim() || "";
+							return (
+								<div
+									key={install.id}
+									className={`settings-list-item settings-client-item${
+										highlightInstallId === install.id ? " settings-card-focus" : ""
+									}`}
+									ref={(el) => {
+										installRowRefs.current[install.id] = el;
+									}}
+								>
+									<div className="settings-client-main">
+										<div className="settings-client-header">
+											<strong>{install.label}</strong>
+											<span className="muted">
+												{install.gameVersion || t("settings.versionUnknown")}
+											</span>
+										</div>
+										<div className="muted">{install.installPath}</div>
+										<div className="settings-client-backup">
+											<span className="muted settings-backup-label">
+												{t("settings.backupPath")}
+											</span>
+											<span
+												className={`settings-backup-value${backupPath ? "" : " is-empty"}`}
+												title={backupPath || undefined}
+											>
+												{backupPath || t("settings.backupPathPlaceholder")}
+											</span>
+										</div>
+									</div>
+									<div className="settings-client-actions">
+										<button
+											className="btn"
+											type="button"
+											disabled={busy || !ready}
+											onClick={() =>
+												handleChooseBackupPath(install.id, install.label, backupPath)
+											}
+										>
+											{t("settings.chooseBackupPath")}
+										</button>
+										{backupPath ? (
+											<button
+												className="btn"
+												type="button"
+												disabled={busy}
+												onClick={() =>
+													handleClearBackupPath(install.id, install.label)
+												}
+											>
+												{t("settings.clearBackupPath")}
+											</button>
+										) : null}
+									</div>
 								</div>
-								<span className="muted">
-									{install.gameVersion || t("settings.versionUnknown")}
-								</span>
-							</div>
-						))}
+							);
+						})}
 					</div>
 				) : (
 					<div className="banner">{t("settings.noClients")}</div>
@@ -464,51 +500,6 @@ export function SettingsPage({
 						{settings.invalidWowRoots.join("；")}
 					</div>
 				) : null}
-			</div>
-
-			<div
-				className={`settings-card${highlightBackup ? " settings-card-focus" : ""}`}
-				ref={backupCardRef}
-				id="settings-backup"
-			>
-				<h3 className="settings-card-title">{t("settings.backupTitle")}</h3>
-				<p className="muted settings-hint">{t("settings.backupHint")}</p>
-				<label className="settings-field">
-					<span>{t("settings.backupPath")}</span>
-					<input
-						type="text"
-						readOnly
-						spellCheck={false}
-						placeholder={t("settings.backupPathPlaceholder")}
-						value={settings?.backupPath || ""}
-					/>
-				</label>
-				<div className="card-actions">
-					<button
-						className="btn primary"
-						type="button"
-						disabled={busy || !ready}
-						onClick={handleChooseBackupPath}
-					>
-						{t("settings.chooseBackupPath")}
-					</button>
-					<button
-						className="btn"
-						type="button"
-						disabled={busy || !settings?.backupPath}
-						onClick={handleOpenBackupPath}
-					>
-						{t("settings.openBackupPath")}
-					</button>
-					<button
-						className="btn"
-						type="button"
-						disabled={busy || !settings?.backupPath}
-						onClick={handleClearBackupPath}
-					>
-						{t("settings.clearBackupPath")}
-					</button>
-				</div>
 			</div>
 
 			<div className="settings-card">

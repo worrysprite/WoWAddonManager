@@ -8,16 +8,15 @@ import { AddonCard } from "./AddonCard";
 type Props = {
 	install: WowInstall;
 	refreshKey: number;
-	hasBackupPath: boolean;
 	onNeedBackupPath: () => void;
 };
 
 export function InstalledTab({
 	install,
 	refreshKey,
-	hasBackupPath,
 	onNeedBackupPath,
 }: Props) {
+	const hasBackupPath = Boolean(install.backupPath?.trim());
 	const { t } = useI18n();
 	const [addons, setAddons] = useState<InstalledAddon[]>([]);
 	const [loading, setLoading] = useState(false);

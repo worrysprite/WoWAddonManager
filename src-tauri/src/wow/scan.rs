@@ -331,6 +331,7 @@ mod tests {
 			addons_path: addons.display().to_string(),
 			game_version: None,
 			game_version_type_id: None,
+			backup_path: String::new(),
 		};
 		(dir, install)
 	}

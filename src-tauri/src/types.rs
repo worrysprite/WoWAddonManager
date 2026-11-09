@@ -75,6 +75,9 @@ pub struct WowInstall {
 	pub addons_path: String,
 	pub game_version: Option<String>,
 	pub game_version_type_id: Option<i64>,
+	/// Per-client Interface/WTF backup directory (empty when unset).
+	#[serde(default)]
+	pub backup_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

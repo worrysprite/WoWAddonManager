@@ -1,6 +1,7 @@
 use crate::types::WowInstall;
 use crate::wow::detect;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -13,8 +14,11 @@ pub struct AppConfig {
 	/// UI language preference: `system`, `zh-CN`, or `en`.
 	#[serde(default = "default_locale_preference")]
 	pub locale: String,
-	/// Destination root for Interface / WTF backups.
+	/// Per-install backup directories keyed by install id.
 	#[serde(default)]
+	pub backup_paths: HashMap<String, String>,
+	/// Legacy global backup path from older builds; ignored after load.
+	#[serde(default, skip_serializing)]
 	pub backup_path: Option<String>,
 }
 
@@ -28,6 +32,7 @@ impl Default for AppConfig {
 			extra_wow_roots: Vec::new(),
 			curseforge_api_key: None,
 			locale: default_locale_preference(),
+			backup_paths: HashMap::new(),
 			backup_path: None,
 		}
 	}
@@ -46,8 +51,14 @@ pub struct SettingsView {
 	pub has_wow_install: bool,
 	pub locale: String,
 	pub system_locale: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallBackupPathRequest {
+	pub install_id: String,
+	/// Empty string clears the path for this install.
 	pub backup_path: String,
-	pub has_backup_path: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,9 +71,8 @@ pub struct SaveSettingsRequest {
 	pub wow_roots: Option<Vec<String>>,
 	#[serde(default)]
 	pub locale: Option<String>,
-	/// `None` leaves the path unchanged; `Some("")` clears it.
 	#[serde(default)]
-	pub backup_path: Option<String>,
+	pub install_backup: Option<InstallBackupPathRequest>,
 }
 
 fn config_path() -> Result<PathBuf, String> {
@@ -175,6 +185,17 @@ pub fn detect_system_locale() -> String {
 		})
 }
 
+fn apply_backup_paths(mut installs: Vec<WowInstall>, paths: &HashMap<String, String>) -> Vec<WowInstall> {
+	for install in &mut installs {
+		install.backup_path = paths
+			.get(&install.id)
+			.map(|p| p.trim().to_string())
+			.filter(|p| !p.is_empty())
+			.unwrap_or_default();
+	}
+	installs
+}
+
 fn settings_view_with_depth(deep: bool) -> SettingsView {
 	let config = load();
 	let key = config
@@ -188,12 +209,6 @@ fn settings_view_with_depth(deep: bool) -> SettingsView {
 	} else {
 		detect::detect_with_extra_roots(&config.extra_wow_roots)
 	};
-	let backup_path = config
-		.backup_path
-		.clone()
-		.unwrap_or_default()
-		.trim()
-		.to_string();
 	SettingsView {
 		has_api_key: !key.is_empty(),
 		curseforge_api_key: key,
@@ -202,13 +217,19 @@ fn settings_view_with_depth(deep: bool) -> SettingsView {
 		docs_url: "https://docs.curseforge.com/rest-api/".into(),
 		wow_roots: config.extra_wow_roots,
 		has_wow_install: !report.installs.is_empty(),
-		detected_installs: report.installs,
+		detected_installs: apply_backup_paths(report.installs, &config.backup_paths),
 		invalid_wow_roots: report.invalid_roots,
 		locale: normalize_locale_preference(&config.locale),
 		system_locale: detect_system_locale(),
-		has_backup_path: !backup_path.is_empty(),
-		backup_path,
 	}
+}
+
+pub fn backup_path_for_install(install_id: &str) -> Option<String> {
+	load()
+		.backup_paths
+		.get(install_id)
+		.map(|p| p.trim().to_string())
+		.filter(|p| !p.is_empty())
 }
 
 pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, String> {
@@ -241,14 +262,20 @@ pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, Strin
 	if let Some(locale) = request.locale {
 		config.locale = normalize_locale_preference(&locale);
 	}
-	if let Some(raw_path) = request.backup_path {
-		let trimmed = raw_path.trim().to_string();
-		config.backup_path = if trimmed.is_empty() {
-			None
+	if let Some(patch) = request.install_backup {
+		let install_id = patch.install_id.trim().to_string();
+		if install_id.is_empty() {
+			return Err("缺少客户端 id".into());
+		}
+		let trimmed = patch.backup_path.trim().to_string();
+		if trimmed.is_empty() {
+			config.backup_paths.remove(&install_id);
 		} else {
-			Some(trimmed)
-		};
+			config.backup_paths.insert(install_id, trimmed);
+		}
 	}
+	// Drop deprecated global field so it is not written back.
+	config.backup_path = None;
 	save(&config)?;
 	detect::invalidate_cache();
 	if api_key_changed {
