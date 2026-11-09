@@ -66,6 +66,18 @@ export type MessageKey =
 	| "installed.pickArchive"
 	| "installed.archiveFilter"
 	| "installed.clientMissing"
+	| "installed.backup"
+	| "installed.backingUp"
+	| "installed.backupDone"
+	| "installed.backupNeedPath"
+	| "installed.restore"
+	| "installed.restoring"
+	| "installed.restoreDone"
+	| "installed.restoreConfirm"
+	| "installed.restoreTitle"
+	| "installed.restoreOk"
+	| "installed.restoreCancel"
+	| "installed.restoreMissing"
 	| "settings.back"
 	| "settings.title"
 	| "settings.subtitle"
@@ -103,6 +115,17 @@ export type MessageKey =
 	| "settings.invalidPaths"
 	| "settings.rescanDoneFound"
 	| "settings.rescanDoneNone"
+	| "settings.backupTitle"
+	| "settings.backupHint"
+	| "settings.backupPath"
+	| "settings.backupPathPlaceholder"
+	| "settings.pickBackupDir"
+	| "settings.chooseBackupPath"
+	| "settings.clearBackupPath"
+	| "settings.openBackupPath"
+	| "settings.backupPathSaved"
+	| "settings.backupPathCleared"
+	| "settings.backupPathUnset"
 	| "settings.logsTitle"
 	| "settings.logsHint"
 	| "settings.openLogs"
@@ -185,9 +208,22 @@ export const en: Messages = {
 	"installed.pickArchive": "Select addon archive",
 	"installed.archiveFilter": "Addon Archive",
 	"installed.clientMissing": "Client not found",
+	"installed.backup": "Backup",
+	"installed.backingUp": "Backing up…",
+	"installed.backupDone": "Backup synced: {path}",
+	"installed.backupNeedPath": "Set a backup folder in Settings first.",
+	"installed.restore": "Restore",
+	"installed.restoring": "Restoring…",
+	"installed.restoreDone": "Restore synced from: {path}",
+	"installed.restoreConfirm":
+		"Restore Interface and WTF for {label} from the backup folder? Current files will be overwritten to match the backup.",
+	"installed.restoreTitle": "Restore from backup",
+	"installed.restoreOk": "Restore",
+	"installed.restoreCancel": "Cancel",
+	"installed.restoreMissing": "No backup found for this client.",
 	"settings.back": "← Back",
 	"settings.title": "Settings",
-	"settings.subtitle": "API Key, language, WoW paths, and logs",
+	"settings.subtitle": "API Key, language, WoW paths, backup, and logs",
 	"settings.language": "Language",
 	"settings.languageHint": "Default follows the system language. You can override it here.",
 	"settings.languageSystem": "System default",
@@ -224,6 +260,18 @@ export const en: Messages = {
 	"settings.invalidPaths": "These manual paths are invalid or have no recognizable client:",
 	"settings.rescanDoneFound": "Rescan complete. Detected {count} client(s).",
 	"settings.rescanDoneNone": "Rescan complete. Still no World of Warcraft clients found.",
+	"settings.backupTitle": "Backup",
+	"settings.backupHint":
+		"Choose a folder for Interface and WTF backups. Each client syncs into a subfolder under this path.",
+	"settings.backupPath": "Backup folder",
+	"settings.backupPathPlaceholder": "Not set",
+	"settings.pickBackupDir": "Select backup folder",
+	"settings.chooseBackupPath": "Choose folder",
+	"settings.clearBackupPath": "Clear",
+	"settings.openBackupPath": "Open folder",
+	"settings.backupPathSaved": "Backup folder saved: {path}",
+	"settings.backupPathCleared": "Backup folder cleared",
+	"settings.backupPathUnset": "Please choose a backup folder before backing up a client.",
 	"settings.logsTitle": "Logs",
 	"settings.logsHint":
 		"Default level is WARN. Open to view in-memory logs and save them to a file.",
@@ -304,9 +352,22 @@ export const zhCN: Messages = {
 	"installed.pickArchive": "选择插件压缩包",
 	"installed.archiveFilter": "插件压缩包",
 	"installed.clientMissing": "未找到该客户端",
+	"installed.backup": "备份",
+	"installed.backingUp": "备份中…",
+	"installed.backupDone": "备份已同步：{path}",
+	"installed.backupNeedPath": "请先在设置中指定备份路径",
+	"installed.restore": "恢复",
+	"installed.restoring": "恢复中…",
+	"installed.restoreDone": "已从备份恢复：{path}",
+	"installed.restoreConfirm":
+		"确定将备份中的 Interface / WTF 恢复到 {label}？当前目录会同步为与备份一致。",
+	"installed.restoreTitle": "从备份恢复",
+	"installed.restoreOk": "恢复",
+	"installed.restoreCancel": "取消",
+	"installed.restoreMissing": "未找到该客户端的备份",
 	"settings.back": "← 返回",
 	"settings.title": "设置",
-	"settings.subtitle": "配置语言、API Key、魔兽世界安装目录与日志",
+	"settings.subtitle": "配置语言、API Key、魔兽世界安装目录、备份路径与日志",
 	"settings.language": "语言",
 	"settings.languageHint": "默认跟随系统语言，也可在此手动切换。",
 	"settings.languageSystem": "跟随系统",
@@ -343,6 +404,18 @@ export const zhCN: Messages = {
 	"settings.invalidPaths": "以下手动路径无效或不包含可识别的客户端：",
 	"settings.rescanDoneFound": "客户端扫描完成，检测到 {count} 个客户端。",
 	"settings.rescanDoneNone": "客户端扫描完成，仍未检测到魔兽世界客户端。",
+	"settings.backupTitle": "备份",
+	"settings.backupHint":
+		"选择 Interface 与 WTF 的备份目录。每个客户端会同步到该路径下的对应子文件夹。",
+	"settings.backupPath": "备份路径",
+	"settings.backupPathPlaceholder": "未设置",
+	"settings.pickBackupDir": "选择备份目录",
+	"settings.chooseBackupPath": "选择目录",
+	"settings.clearBackupPath": "清除",
+	"settings.openBackupPath": "打开目录",
+	"settings.backupPathSaved": "已保存备份路径：{path}",
+	"settings.backupPathCleared": "已清除备份路径",
+	"settings.backupPathUnset": "请先设置备份路径，再备份客户端。",
 	"settings.logsTitle": "日志",
 	"settings.logsHint": "默认级别为 WARN。打开后可查看内存中的运行日志，并保存为文件。",
 	"settings.openLogs": "打开日志",

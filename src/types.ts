@@ -102,6 +102,8 @@ export interface SettingsView {
 	hasWowInstall: boolean;
 	locale: string;
 	systemLocale: string;
+	backupPath: string;
+	hasBackupPath: boolean;
 }
 
 export interface LogEntry {

@@ -4,14 +4,23 @@ import * as api from "../api";
 import { useI18n, type LocalePreference } from "../i18n";
 import type { LogEntry, SettingsView } from "../types";
 
+type SettingsFocus = "backup" | null;
+
 type Props = {
 	onBack: () => void;
 	onSaved: (settings: SettingsView) => void;
+	focusSection?: SettingsFocus;
+	onFocusHandled?: () => void;
 };
 
 const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
 
-export function SettingsPage({ onBack, onSaved }: Props) {
+export function SettingsPage({
+	onBack,
+	onSaved,
+	focusSection = null,
+	onFocusHandled,
+}: Props) {
 	const { t, preference, setPreference } = useI18n();
 	const [settings, setSettings] = useState<SettingsView | null>(null);
 	const [apiKey, setApiKey] = useState("");
@@ -25,7 +34,9 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 	const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
 	const [logsOpen, setLogsOpen] = useState(false);
 	const [logsBusy, setLogsBusy] = useState(false);
+	const [highlightBackup, setHighlightBackup] = useState(false);
 	const logPaneRef = useRef<HTMLPreElement | null>(null);
+	const backupCardRef = useRef<HTMLDivElement | null>(null);
 	const saveChain = useRef(Promise.resolve());
 
 	async function reload() {
@@ -46,6 +57,19 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 	useEffect(() => {
 		setLocaleDraft(preference);
 	}, [preference]);
+
+	useEffect(() => {
+		if (focusSection !== "backup" || !ready) return;
+		setHighlightBackup(true);
+		setMessage(t("settings.backupPathUnset"));
+		const card = backupCardRef.current;
+		if (card) {
+			card.scrollIntoView({ behavior: "smooth", block: "center" });
+		}
+		onFocusHandled?.();
+		const timer = window.setTimeout(() => setHighlightBackup(false), 2600);
+		return () => window.clearTimeout(timer);
+	}, [focusSection, ready, t, onFocusHandled]);
 
 	function enqueueSave<T>(work: () => Promise<T>): Promise<T> {
 		const run = saveChain.current.then(work, work);
@@ -159,6 +183,64 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 			setError(String(err));
 		} finally {
 			setBusy(false);
+		}
+	}
+
+	async function handleChooseBackupPath() {
+		setBusy(true);
+		setError(null);
+		setMessage(null);
+		try {
+			const selected = await open({
+				directory: true,
+				multiple: false,
+				title: t("settings.pickBackupDir"),
+				defaultPath: settings?.backupPath || undefined,
+			});
+			if (!selected || Array.isArray(selected)) return;
+			const next = await enqueueSave(() =>
+				api.saveSettings({
+					backupPath: selected,
+				}),
+			);
+			setSettings(next);
+			setMessage(t("settings.backupPathSaved", { path: selected }));
+			setHighlightBackup(false);
+			onSaved(next);
+		} catch (err) {
+			setError(String(err));
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	async function handleClearBackupPath() {
+		setBusy(true);
+		setError(null);
+		setMessage(null);
+		try {
+			const next = await enqueueSave(() =>
+				api.saveSettings({
+					backupPath: "",
+				}),
+			);
+			setSettings(next);
+			setMessage(t("settings.backupPathCleared"));
+			onSaved(next);
+		} catch (err) {
+			setError(String(err));
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	async function handleOpenBackupPath() {
+		if (!settings?.backupPath) return;
+		setError(null);
+		try {
+			await api.openDir(settings.backupPath);
+		} catch (err) {
+			setError(String(err));
 		}
 	}
 
@@ -382,6 +464,51 @@ export function SettingsPage({ onBack, onSaved }: Props) {
 						{settings.invalidWowRoots.join("；")}
 					</div>
 				) : null}
+			</div>
+
+			<div
+				className={`settings-card${highlightBackup ? " settings-card-focus" : ""}`}
+				ref={backupCardRef}
+				id="settings-backup"
+			>
+				<h3 className="settings-card-title">{t("settings.backupTitle")}</h3>
+				<p className="muted settings-hint">{t("settings.backupHint")}</p>
+				<label className="settings-field">
+					<span>{t("settings.backupPath")}</span>
+					<input
+						type="text"
+						readOnly
+						spellCheck={false}
+						placeholder={t("settings.backupPathPlaceholder")}
+						value={settings?.backupPath || ""}
+					/>
+				</label>
+				<div className="card-actions">
+					<button
+						className="btn primary"
+						type="button"
+						disabled={busy || !ready}
+						onClick={handleChooseBackupPath}
+					>
+						{t("settings.chooseBackupPath")}
+					</button>
+					<button
+						className="btn"
+						type="button"
+						disabled={busy || !settings?.backupPath}
+						onClick={handleOpenBackupPath}
+					>
+						{t("settings.openBackupPath")}
+					</button>
+					<button
+						className="btn"
+						type="button"
+						disabled={busy || !settings?.backupPath}
+						onClick={handleClearBackupPath}
+					>
+						{t("settings.clearBackupPath")}
+					</button>
+				</div>
 			</div>
 
 			<div className="settings-card">
