@@ -325,16 +325,9 @@ export function InstalledTab({
 		if (installIdRef.current !== forInstallId) return;
 		setBusy("__restore__");
 		beginSyncDialog("restore");
+		let report: SyncReport | null = null;
 		try {
-			const report = await api.restoreInstall(forInstallId, appendSyncLine);
-			if (installIdRef.current !== forInstallId) return;
-			const seq = beginRequest(forInstallId);
-			if (seq === null) return;
-			const list = await api.rescanInstalledAddons(forInstallId);
-			if (!isCurrent(forInstallId, seq)) return;
-			setAddons(list);
-			finishSyncDialog("restore", { report, error: null });
-			setStatus(t("installed.restoreDone", { path: report.path }));
+			report = await api.restoreInstall(forInstallId, appendSyncLine);
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			const message = String(err);
@@ -354,6 +347,25 @@ export function InstalledTab({
 			}
 			finishSyncDialog("restore", { report: null, error: message });
 			setError(message);
+			return;
+		} finally {
+			if (installIdRef.current === forInstallId && report === null) {
+				setBusy(null);
+			}
+		}
+		if (installIdRef.current !== forInstallId) return;
+		finishSyncDialog("restore", { report, error: null });
+		setStatus(t("installed.restoreDone", { path: report.path }));
+		try {
+			const seq = beginRequest(forInstallId);
+			if (seq === null) return;
+			const list = await api.rescanInstalledAddons(forInstallId);
+			if (!isCurrent(forInstallId, seq)) return;
+			setAddons(list);
+		} catch (err) {
+			if (installIdRef.current !== forInstallId) return;
+			// Restore already succeeded; keep success dialog and surface rescan separately.
+			setError(String(err));
 		} finally {
 			if (installIdRef.current === forInstallId) {
 				setBusy(null);
