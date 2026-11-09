@@ -8,6 +8,7 @@ import type {
 	SearchParams,
 	SearchResult,
 	SettingsView,
+	SyncReport,
 	WowInstall,
 } from "./types";
 
@@ -92,11 +93,11 @@ export function saveSettings(options: {
 }
 
 export function backupInstall(installId: string) {
-	return invoke<string>("backup_install", { installId });
+	return invoke<SyncReport>("backup_install", { installId });
 }
 
 export function restoreInstall(installId: string) {
-	return invoke<string>("restore_install", { installId });
+	return invoke<SyncReport>("restore_install", { installId });
 }
 
 export function getLogs() {

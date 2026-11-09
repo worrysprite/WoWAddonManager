@@ -825,6 +825,80 @@ button {
 	flex: 0 0 auto;
 }
 
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 40;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	background: rgba(0, 0, 0, 0.55);
+}
+
+.modal-card {
+	width: min(720px, 100%);
+	max-height: min(80vh, 720px);
+	overflow: auto;
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+	padding: 20px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.sync-modal-header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.sync-modal-header h3 {
+	margin: 0;
+	font-size: 16px;
+}
+
+.sync-modal-ok {
+	color: #7dcea0;
+	font-size: 13px;
+}
+
+.sync-modal-failed {
+	color: #e07a7a;
+	font-size: 13px;
+}
+
+.sync-modal-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 12px;
+}
+
+.sync-modal-path {
+	word-break: break-all;
+}
+
+.sync-output {
+	margin: 0;
+	max-height: 360px;
+	overflow: auto;
+	padding: 12px 14px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: #0c0c10;
+	color: #c8c8d0;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 12px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
 @media (max-width: 960px) {
 	.browse-layout {
 		grid-template-columns: 1fr;

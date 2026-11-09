@@ -116,3 +116,11 @@ export interface LogView {
 	level: string;
 	entries: LogEntry[];
 }
+
+export interface SyncReport {
+	path: string;
+	engine: string;
+	items: string[];
+	log: string;
+	success: boolean;
+}
