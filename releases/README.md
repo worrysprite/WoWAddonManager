@@ -1,16 +1,20 @@
 # Windows 预编译包
 
-当前版本：**0.2.5**
+当前版本：**0.2.6**
 
-- `WoW-Addon-Manager_0.2.5_x64-setup.exe`：安装包（推荐）
+- `WoW-Addon-Manager_0.2.6_x64-setup.exe`：安装包（推荐）
 - `WoW-Addon-Manager.exe`：免安装便携版
 
 首次运行若被 SmartScreen 拦截，选择“仍要运行”。需已安装 WebView2（Win10/11 通常自带）。
 
 下载：
 
-- 安装包：https://github.com/worrysprite/WoWAddonManager/raw/main/releases/WoW-Addon-Manager_0.2.5_x64-setup.exe
+- 安装包：https://github.com/worrysprite/WoWAddonManager/raw/main/releases/WoW-Addon-Manager_0.2.6_x64-setup.exe
 - 便携版：https://github.com/worrysprite/WoWAddonManager/raw/main/releases/WoW-Addon-Manager.exe
+
+## 0.2.6 更新
+- 客户端页支持备份 / 恢复 Interface 与 WTF（rsync 镜像同步；无 rsync 时用同等逻辑）
+- 设置页可配备份路径；未设置时点击备份会跳转到该设置
 
 ## 0.2.5 更新
 - 修复 Forever 插件（Interface 16001）被 Retail 12.x 版本号误拒（PrettyTooltip / ForeverForge 等）
