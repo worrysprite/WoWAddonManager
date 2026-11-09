@@ -399,11 +399,9 @@ mod tests {
 		assert!(!backup.join("WTF/Account/config.wtf.bak").exists());
 
 		fs::write(backup.join("Interface/AddOns/Foo/Stale.lua"), "-- gone\n").unwrap();
-		fs::write(
-			client.join("Interface/AddOns/Foo/Foo.toc"),
-			"## Interface: 16002\n",
-		)
-		.unwrap();
+		let toc = client.join("Interface/AddOns/Foo/Foo.toc");
+		// Different length so size check catches the change even on coarse mtime FS.
+		fs::write(&toc, "## Interface: 16002\n## Updated\n").unwrap();
 		let (_engine, log2) = mirror_tree(
 			&client.join("Interface"),
 			&backup.join("Interface"),
@@ -414,14 +412,11 @@ mod tests {
 		assert!(log2.contains("Stale") || log2.contains('-') || log2.contains("Foo.toc"));
 		assert_eq!(
 			fs::read_to_string(backup.join("Interface/AddOns/Foo/Foo.toc")).unwrap(),
-			"## Interface: 16002\n"
+			"## Interface: 16002\n## Updated\n"
 		);
 
-		fs::write(
-			backup.join("Interface/AddOns/Foo/Foo.toc"),
-			"## Interface: restored\n",
-		)
-		.unwrap();
+		let backup_toc = backup.join("Interface/AddOns/Foo/Foo.toc");
+		fs::write(&backup_toc, "## Interface: restored\n## From backup\n").unwrap();
 		mirror_tree(
 			&backup.join("Interface"),
 			&client.join("Interface"),
@@ -430,7 +425,7 @@ mod tests {
 		.unwrap();
 		assert_eq!(
 			fs::read_to_string(client.join("Interface/AddOns/Foo/Foo.toc")).unwrap(),
-			"## Interface: restored\n"
+			"## Interface: restored\n## From backup\n"
 		);
 
 		let _ = fs::remove_dir_all(root);
@@ -487,7 +482,7 @@ mod tests {
 			"unchanged file should not be re-emitted as copy: {lines:?}"
 		);
 
-		fs::write(src.join("a/keep.txt"), "changed\n").unwrap();
+		fs::write(src.join("a/keep.txt"), "changed-content\n").unwrap();
 		let log2 = mirror_dir(&src, &dst, &mut noop).unwrap();
 		assert!(
 			log2.contains("keep.txt") && log2.contains('+'),
@@ -495,7 +490,7 @@ mod tests {
 		);
 		assert_eq!(
 			fs::read_to_string(dst.join("a/keep.txt")).unwrap(),
-			"changed\n"
+			"changed-content\n"
 		);
 		let _ = fs::remove_dir_all(root);
 	}
