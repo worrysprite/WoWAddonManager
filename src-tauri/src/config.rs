@@ -196,19 +196,55 @@ fn apply_backup_paths(mut installs: Vec<WowInstall>, paths: &HashMap<String, Str
 	installs
 }
 
+/// Copy legacy global `backupPath` onto every known install once, then drop it.
+fn migrate_legacy_backup_path(config: &mut AppConfig, install_ids: &[String]) -> bool {
+	let legacy = config
+		.backup_path
+		.as_deref()
+		.map(str::trim)
+		.filter(|p| !p.is_empty())
+		.map(|p| p.to_string());
+	let Some(legacy) = legacy else {
+		return false;
+	};
+	if config.backup_paths.is_empty() {
+		for id in install_ids {
+			if id.trim().is_empty() {
+				continue;
+			}
+			config
+				.backup_paths
+				.entry(id.clone())
+				.or_insert_with(|| legacy.clone());
+		}
+	}
+	config.backup_path = None;
+	true
+}
+
+fn load_migrated(install_ids: &[String]) -> AppConfig {
+	let mut config = load();
+	if migrate_legacy_backup_path(&mut config, install_ids) {
+		let _ = save(&config);
+	}
+	config
+}
+
 fn settings_view_with_depth(deep: bool) -> SettingsView {
-	let config = load();
+	let preliminary = load();
+	let report = if deep {
+		detect::detect_with_extra_roots_deep(&preliminary.extra_wow_roots)
+	} else {
+		detect::detect_with_extra_roots(&preliminary.extra_wow_roots)
+	};
+	let install_ids: Vec<String> = report.installs.iter().map(|i| i.id.clone()).collect();
+	let config = load_migrated(&install_ids);
 	let key = config
 		.curseforge_api_key
 		.clone()
 		.unwrap_or_default()
 		.trim()
 		.to_string();
-	let report = if deep {
-		detect::detect_with_extra_roots_deep(&config.extra_wow_roots)
-	} else {
-		detect::detect_with_extra_roots(&config.extra_wow_roots)
-	};
 	SettingsView {
 		has_api_key: !key.is_empty(),
 		curseforge_api_key: key,
@@ -225,11 +261,59 @@ fn settings_view_with_depth(deep: bool) -> SettingsView {
 }
 
 pub fn backup_path_for_install(install_id: &str) -> Option<String> {
-	load()
+	let config = load_migrated(&[install_id.to_string()]);
+	config
 		.backup_paths
 		.get(install_id)
 		.map(|p| p.trim().to_string())
 		.filter(|p| !p.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn migrates_legacy_global_backup_to_each_install() {
+		let mut config = AppConfig {
+			backup_path: Some("D:/WoWBackup".into()),
+			backup_paths: HashMap::new(),
+			..AppConfig::default()
+		};
+		let changed = migrate_legacy_backup_path(
+			&mut config,
+			&["wow-aaa".into(), "wow-bbb".into()],
+		);
+		assert!(changed);
+		assert!(config.backup_path.is_none());
+		assert_eq!(
+			config.backup_paths.get("wow-aaa").map(String::as_str),
+			Some("D:/WoWBackup")
+		);
+		assert_eq!(
+			config.backup_paths.get("wow-bbb").map(String::as_str),
+			Some("D:/WoWBackup")
+		);
+	}
+
+	#[test]
+	fn keeps_existing_per_install_paths_when_migrating() {
+		let mut config = AppConfig {
+			backup_path: Some("D:/Legacy".into()),
+			backup_paths: HashMap::from([("wow-aaa".into(), "E:/Keep".into())]),
+			..AppConfig::default()
+		};
+		assert!(migrate_legacy_backup_path(
+			&mut config,
+			&["wow-aaa".into(), "wow-bbb".into()]
+		));
+		assert!(config.backup_path.is_none());
+		assert_eq!(
+			config.backup_paths.get("wow-aaa").map(String::as_str),
+			Some("E:/Keep")
+		);
+		assert!(!config.backup_paths.contains_key("wow-bbb"));
+	}
 }
 
 pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, String> {
