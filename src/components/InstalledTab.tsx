@@ -2,8 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
 import { useI18n } from "../i18n";
-import type { InstalledAddon, WowInstall } from "../types";
+import type { InstalledAddon, SyncReport, WowInstall } from "../types";
 import { AddonCard } from "./AddonCard";
+
+type SyncDialogState = {
+	kind: "backup" | "restore";
+	running: boolean;
+	liveLog: string;
+	report: SyncReport | null;
+	error: string | null;
+};
 
 type Props = {
 	install: WowInstall;
@@ -24,6 +32,10 @@ export function InstalledTab({
 	const [busy, setBusy] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [status, setStatus] = useState<string | null>(null);
+	const [syncDialog, setSyncDialog] = useState<SyncDialogState | null>(null);
+	const syncOutputRef = useRef<HTMLPreElement | null>(null);
+	const syncLiveLogRef = useRef("");
+	const syncFlushTimerRef = useRef<number | null>(null);
 	const requestSeq = useRef(0);
 	const installIdRef = useRef(install.id);
 	const prevInstallIdRef = useRef(install.id);
@@ -93,6 +105,7 @@ export function InstalledTab({
 			setStatus(null);
 			setBusy(null);
 			setScanning(false);
+			setSyncDialog(null);
 		}
 		setLoading(false);
 		loadCached(install.id);
@@ -199,6 +212,63 @@ export function InstalledTab({
 		}
 	}
 
+	useEffect(() => {
+		if (!syncDialog || !syncOutputRef.current) return;
+		syncOutputRef.current.scrollTop = syncOutputRef.current.scrollHeight;
+	}, [syncDialog?.liveLog, syncDialog?.report?.log, syncDialog?.error, syncDialog?.running]);
+
+	useEffect(() => {
+		return () => {
+			if (syncFlushTimerRef.current !== null) {
+				window.clearTimeout(syncFlushTimerRef.current);
+				syncFlushTimerRef.current = null;
+			}
+		};
+	}, []);
+
+	function beginSyncDialog(kind: "backup" | "restore") {
+		if (syncFlushTimerRef.current !== null) {
+			window.clearTimeout(syncFlushTimerRef.current);
+			syncFlushTimerRef.current = null;
+		}
+		syncLiveLogRef.current = "";
+		setSyncDialog({
+			kind,
+			running: true,
+			liveLog: "",
+			report: null,
+			error: null,
+		});
+	}
+
+	function appendSyncLine(line: string) {
+		syncLiveLogRef.current += `${line}\n`;
+		if (syncFlushTimerRef.current !== null) return;
+		syncFlushTimerRef.current = window.setTimeout(() => {
+			syncFlushTimerRef.current = null;
+			const liveLog = syncLiveLogRef.current;
+			setSyncDialog((prev) => (prev ? { ...prev, liveLog } : prev));
+		}, 50);
+	}
+
+	function finishSyncDialog(
+		kind: "backup" | "restore",
+		patch: Partial<SyncDialogState>,
+	) {
+		if (syncFlushTimerRef.current !== null) {
+			window.clearTimeout(syncFlushTimerRef.current);
+			syncFlushTimerRef.current = null;
+		}
+		setSyncDialog({
+			kind,
+			running: false,
+			liveLog: syncLiveLogRef.current,
+			report: null,
+			error: null,
+			...patch,
+		});
+	}
+
 	async function handleBackup() {
 		const forInstallId = install.id;
 		setError(null);
@@ -209,18 +279,22 @@ export function InstalledTab({
 			return;
 		}
 		setBusy("__backup__");
+		beginSyncDialog("backup");
 		try {
-			const dest = await api.backupInstall(forInstallId);
+			const report = await api.backupInstall(forInstallId, appendSyncLine);
 			if (installIdRef.current !== forInstallId) return;
-			setStatus(t("installed.backupDone", { path: dest }));
+			finishSyncDialog("backup", { report, error: null });
+			setStatus(t("installed.backupDone", { path: report.path }));
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			const message = String(err);
 			if (message.includes("未设置备份路径")) {
+				setSyncDialog(null);
 				setStatus(t("installed.backupNeedPath"));
 				onNeedBackupPath();
 				return;
 			}
+			finishSyncDialog("backup", { report: null, error: message });
 			setError(message);
 		} finally {
 			if (installIdRef.current === forInstallId) {
@@ -250,28 +324,48 @@ export function InstalledTab({
 		if (!confirmed) return;
 		if (installIdRef.current !== forInstallId) return;
 		setBusy("__restore__");
+		beginSyncDialog("restore");
+		let report: SyncReport | null = null;
 		try {
-			const src = await api.restoreInstall(forInstallId);
-			if (installIdRef.current !== forInstallId) return;
-			const seq = beginRequest(forInstallId);
-			if (seq === null) return;
-			const list = await api.rescanInstalledAddons(forInstallId);
-			if (!isCurrent(forInstallId, seq)) return;
-			setAddons(list);
-			setStatus(t("installed.restoreDone", { path: src }));
+			report = await api.restoreInstall(forInstallId, appendSyncLine);
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			const message = String(err);
 			if (message.includes("未设置备份路径")) {
+				setSyncDialog(null);
 				setStatus(t("installed.backupNeedPath"));
 				onNeedBackupPath();
 				return;
 			}
 			if (message.includes("未找到该客户端的备份目录")) {
+				finishSyncDialog("restore", {
+					report: null,
+					error: t("installed.restoreMissing"),
+				});
 				setError(t("installed.restoreMissing"));
 				return;
 			}
+			finishSyncDialog("restore", { report: null, error: message });
 			setError(message);
+			return;
+		} finally {
+			if (installIdRef.current === forInstallId && report === null) {
+				setBusy(null);
+			}
+		}
+		if (installIdRef.current !== forInstallId) return;
+		finishSyncDialog("restore", { report, error: null });
+		setStatus(t("installed.restoreDone", { path: report.path }));
+		try {
+			const seq = beginRequest(forInstallId);
+			if (seq === null) return;
+			const list = await api.rescanInstalledAddons(forInstallId);
+			if (!isCurrent(forInstallId, seq)) return;
+			setAddons(list);
+		} catch (err) {
+			if (installIdRef.current !== forInstallId) return;
+			// Restore already succeeded; keep success dialog and surface rescan separately.
+			setError(String(err));
 		} finally {
 			if (installIdRef.current === forInstallId) {
 				setBusy(null);
@@ -336,6 +430,69 @@ export function InstalledTab({
 
 			{error ? <div className="banner">{error}</div> : null}
 			{status ? <div className="banner ok-banner">{status}</div> : null}
+
+			{syncDialog ? (
+				<div className="modal-backdrop" role="presentation">
+					<div
+						className="modal-card sync-modal"
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="sync-modal-title"
+					>
+						<div className="sync-modal-header">
+							<h3 id="sync-modal-title">
+								{syncDialog.kind === "backup"
+									? t("installed.syncBackupTitle")
+									: t("installed.syncRestoreTitle")}
+							</h3>
+							{syncDialog.running ? (
+								<span className="muted">{t("installed.syncRunning")}</span>
+							) : syncDialog.error ? (
+								<span className="sync-modal-failed">{t("installed.syncFailed")}</span>
+							) : syncDialog.report ? (
+								<span className="sync-modal-ok">
+									{t("installed.syncDone", { engine: syncDialog.report.engine })}
+								</span>
+							) : null}
+						</div>
+						{syncDialog.report ? (
+							<div className="muted sync-modal-meta">
+								<div>
+									{t("installed.syncEngine", { engine: syncDialog.report.engine })}
+								</div>
+								<div>
+									{t("installed.syncItems", {
+										items: syncDialog.report.items.join(" / ") || "—",
+									})}
+								</div>
+								<div className="sync-modal-path">{syncDialog.report.path}</div>
+							</div>
+						) : null}
+						<label className="settings-field">
+							<span>{t("installed.syncOutput")}</span>
+							<pre className="sync-output" ref={syncOutputRef}>
+								{syncDialog.liveLog.trim()
+									? syncDialog.liveLog
+									: syncDialog.running
+										? t("installed.syncRunning")
+										: syncDialog.error ||
+											syncDialog.report?.log ||
+											"—"}
+							</pre>
+						</label>
+						<div className="card-actions">
+							<button
+								className="btn primary"
+								type="button"
+								disabled={syncDialog.running}
+								onClick={() => setSyncDialog(null)}
+							>
+								{t("installed.syncClose")}
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
 
 			<div className="list-pane">
 				{(loading || scanning) && addons.length === 0 ? (

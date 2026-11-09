@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
 	AddonSummary,
 	ApiHelp,
@@ -8,6 +8,7 @@ import type {
 	SearchParams,
 	SearchResult,
 	SettingsView,
+	SyncReport,
 	WowInstall,
 } from "./types";
 
@@ -91,12 +92,32 @@ export function saveSettings(options: {
 	});
 }
 
-export function backupInstall(installId: string) {
-	return invoke<string>("backup_install", { installId });
+export function backupInstall(
+	installId: string,
+	onProgress?: (line: string) => void,
+) {
+	const channel = new Channel<string>();
+	channel.onmessage = (line) => {
+		onProgress?.(line);
+	};
+	return invoke<SyncReport>("backup_install", {
+		installId,
+		onProgress: channel,
+	});
 }
 
-export function restoreInstall(installId: string) {
-	return invoke<string>("restore_install", { installId });
+export function restoreInstall(
+	installId: string,
+	onProgress?: (line: string) => void,
+) {
+	const channel = new Channel<string>();
+	channel.onmessage = (line) => {
+		onProgress?.(line);
+	};
+	return invoke<SyncReport>("restore_install", {
+		installId,
+		onProgress: channel,
+	});
 }
 
 export function getLogs() {

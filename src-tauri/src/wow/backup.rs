@@ -1,11 +1,31 @@
 use crate::config;
 use crate::types::WowInstall;
 use crate::wow::{detect, install};
+use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
 use walkdir::WalkDir;
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncReport {
+	pub path: String,
+	pub engine: String,
+	pub items: Vec<String>,
+	pub log: String,
+	pub success: bool,
+}
 
 fn resolve_install(install_id: &str) -> Result<WowInstall, String> {
 	let cfg = config::load();
@@ -38,54 +58,187 @@ fn ensure_trailing_slash(path: &Path) -> String {
 	s
 }
 
+fn configure_child(cmd: &mut Command) {
+	cmd.stdin(Stdio::null())
+		.stdout(Stdio::piped())
+		.stderr(Stdio::piped());
+	#[cfg(windows)]
+	{
+		// Prevent a console window from flashing on Windows GUI apps.
+		cmd.creation_flags(CREATE_NO_WINDOW);
+	}
+}
+
+fn emit(on_progress: &mut impl FnMut(&str), line: &str) {
+	if line.is_empty() {
+		return;
+	}
+	log::debug!("sync> {line}");
+	on_progress(line);
+}
+
 fn rsync_available() -> bool {
-	Command::new("rsync")
-		.arg("--version")
-		.output()
-		.map(|out| out.status.success())
-		.unwrap_or(false)
+	let mut cmd = Command::new("rsync");
+	configure_child(&mut cmd);
+	cmd.arg("--version");
+	match cmd.output() {
+		Ok(out) => {
+			let ok = out.status.success();
+			log::debug!(
+				"rsync --version status={} stdout_len={} stderr_len={}",
+				out.status,
+				out.stdout.len(),
+				out.stderr.len()
+			);
+			ok
+		}
+		Err(err) => {
+			log::info!("系统未找到 rsync，将使用内置镜像同步: {err}");
+			false
+		}
+	}
+}
+
+fn run_rsync(src: &Path, dst: &Path, on_progress: &mut impl FnMut(&str)) -> Result<String, String> {
+	log::info!(
+		"rsync 开始 src={} dst={}",
+		src.display(),
+		dst.display()
+	);
+	let src_arg = ensure_trailing_slash(src);
+	let dst_arg = ensure_trailing_slash(dst);
+	let header = format!(
+		"$ rsync -avh --delete --exclude=*.bak --exclude=*.old \\\n  \"{src_arg}\" \\\n  \"{dst_arg}\""
+	);
+	emit(on_progress, &header);
+
+	let mut cmd = Command::new("rsync");
+	configure_child(&mut cmd);
+	cmd.args([
+		"-avh",
+		"--delete",
+		"--exclude=*.bak",
+		"--exclude=*.BAK",
+		"--exclude=*.old",
+		"--exclude=*.OLD",
+	])
+	.arg(&src_arg)
+	.arg(&dst_arg);
+
+	let mut child = cmd
+		.spawn()
+		.map_err(|e| format!("启动 rsync 失败: {e}"))?;
+	let stdout = child
+		.stdout
+		.take()
+		.ok_or_else(|| "无法捕获 rsync stdout".to_string())?;
+	let stderr = child
+		.stderr
+		.take()
+		.ok_or_else(|| "无法捕获 rsync stderr".to_string())?;
+
+	let (tx, rx) = mpsc::channel::<(bool, String)>();
+	let tx_out = tx.clone();
+	let tx_err = tx.clone();
+	drop(tx);
+	thread::spawn(move || {
+		let reader = BufReader::new(stdout);
+		for line in reader.lines() {
+			match line {
+				Ok(text) => {
+					if tx_out.send((false, text)).is_err() {
+						break;
+					}
+				}
+				Err(_) => break,
+			}
+		}
+	});
+	thread::spawn(move || {
+		let reader = BufReader::new(stderr);
+		for line in reader.lines() {
+			match line {
+				Ok(text) => {
+					if tx_err.send((true, text)).is_err() {
+						break;
+					}
+				}
+				Err(_) => break,
+			}
+		}
+	});
+
+	let mut log_text = String::new();
+	log_text.push_str(&header);
+	log_text.push_str("\n\n");
+	let mut saw_stderr_header = false;
+	for (is_err, line) in rx {
+		if is_err {
+			if !saw_stderr_header {
+				emit(on_progress, "[stderr]");
+				log_text.push_str("[stderr]\n");
+				saw_stderr_header = true;
+			}
+			emit(on_progress, &line);
+			log_text.push_str(&line);
+			log_text.push('\n');
+		} else {
+			emit(on_progress, &line);
+			log_text.push_str(&line);
+			log_text.push('\n');
+		}
+	}
+
+	let status = child
+		.wait()
+		.map_err(|e| format!("等待 rsync 结束失败: {e}"))?;
+	log::debug!("rsync 结束 status={}", status);
+	if !status.success() {
+		log::error!("rsync 失败 status={} detail={}", status, log_text);
+		return Err(format!("rsync 失败 ({}):\n{}", status, log_text.trim()));
+	}
+	log::info!("rsync 成功 src={} dst={}", src.display(), dst.display());
+	Ok(log_text)
 }
 
 /// Mirror `src` into `dst`, skipping `.bak` / `.old` (like rsync --exclude).
-fn rsync_mirror(src: &Path, dst: &Path) -> Result<(), String> {
+fn rsync_mirror(
+	src: &Path,
+	dst: &Path,
+	on_progress: &mut impl FnMut(&str),
+) -> Result<(String, String), String> {
 	if !src.is_dir() {
 		return Err(format!("源目录不存在: {}", src.display()));
 	}
 	fs::create_dir_all(dst).map_err(|e| format!("无法创建目录 {}: {e}", dst.display()))?;
 
 	if rsync_available() {
-		let output = Command::new("rsync")
-			.args([
-				"-a",
-				"--delete",
-				"--exclude=*.bak",
-				"--exclude=*.BAK",
-				"--exclude=*.old",
-				"--exclude=*.OLD",
-			])
-			.arg(ensure_trailing_slash(src))
-			.arg(ensure_trailing_slash(dst))
-			.output()
-			.map_err(|e| format!("启动 rsync 失败: {e}"))?;
-		if !output.status.success() {
-			let stderr = String::from_utf8_lossy(&output.stderr);
-			let stdout = String::from_utf8_lossy(&output.stdout);
-			let detail = if stderr.trim().is_empty() {
-				stdout.trim()
-			} else {
-				stderr.trim()
-			};
-			return Err(format!("rsync 失败 ({}): {detail}", output.status));
-		}
-		return Ok(());
+		let log = run_rsync(src, dst, on_progress)?;
+		return Ok(("rsync".into(), log));
 	}
 
-	mirror_dir_fallback(src, dst)
+	let log = mirror_dir_fallback(src, dst, on_progress)?;
+	Ok(("mirror".into(), log))
 }
 
 /// Rust fallback when system rsync is unavailable: copy/update then delete extras.
-fn mirror_dir_fallback(src: &Path, dst: &Path) -> Result<(), String> {
+fn mirror_dir_fallback(
+	src: &Path,
+	dst: &Path,
+	on_progress: &mut impl FnMut(&str),
+) -> Result<String, String> {
+	log::info!(
+		"内置镜像同步开始 src={} dst={}",
+		src.display(),
+		dst.display()
+	);
 	let mut kept: HashSet<PathBuf> = HashSet::new();
+	let mut copied = 0usize;
+	let mut deleted = 0usize;
+	let mut log_lines: Vec<String> = Vec::new();
+	let start = format!("[mirror] {} -> {}", src.display(), dst.display());
+	emit(on_progress, &start);
+	log_lines.push(start);
 
 	for entry in WalkDir::new(src).follow_links(false) {
 		let entry = entry.map_err(|e| format!("遍历目录失败 {}: {e}", src.display()))?;
@@ -97,6 +250,7 @@ fn mirror_dir_fallback(src: &Path, dst: &Path) -> Result<(), String> {
 			continue;
 		}
 		if entry.file_type().is_file() && should_skip_backup_file(path) {
+			log::trace!("跳过备份文件 {}", path.display());
 			continue;
 		}
 		let target = dst.join(rel);
@@ -116,10 +270,14 @@ fn mirror_dir_fallback(src: &Path, dst: &Path) -> Result<(), String> {
 					target.display()
 				)
 			})?;
+			copied += 1;
+			let line = format!("+ {}", rel.display());
+			emit(on_progress, &line);
+			log_lines.push(line);
+			log::trace!("复制 {}", rel.display());
 		}
 	}
 
-	// Delete destination entries that are no longer in source (keep .bak/.old).
 	let mut to_remove: Vec<PathBuf> = Vec::new();
 	if dst.is_dir() {
 		for entry in WalkDir::new(dst).follow_links(false).contents_first(true) {
@@ -140,18 +298,44 @@ fn mirror_dir_fallback(src: &Path, dst: &Path) -> Result<(), String> {
 		}
 	}
 	for path in to_remove {
+		let rel = path
+			.strip_prefix(dst)
+			.map(|p| p.display().to_string())
+			.unwrap_or_else(|_| path.display().to_string());
 		if path.is_dir() {
 			fs::remove_dir_all(&path)
 				.map_err(|e| format!("同步删除目录失败 {}: {e}", path.display()))?;
 		} else if path.is_file() {
 			fs::remove_file(&path)
 				.map_err(|e| format!("同步删除文件失败 {}: {e}", path.display()))?;
+		} else {
+			continue;
 		}
+		deleted += 1;
+		let line = format!("- {rel}");
+		emit(on_progress, &line);
+		log_lines.push(line);
+		log::trace!("删除 {rel}");
 	}
-	Ok(())
+
+	let summary = format!("完成：复制 {copied} 个文件，删除 {deleted} 项");
+	emit(on_progress, &summary);
+	log_lines.push(summary);
+	let log_text = log_lines.join("\n") + "\n";
+	log::info!(
+		"内置镜像同步完成 copied={copied} deleted={deleted} src={} dst={}",
+		src.display(),
+		dst.display()
+	);
+	Ok(log_text)
 }
 
-fn sync_pair(src_root: &Path, dst_root: &Path, label: &str) -> Result<Vec<&'static str>, String> {
+fn sync_pair(
+	src_root: &Path,
+	dst_root: &Path,
+	label: &str,
+	on_progress: &mut impl FnMut(&str),
+) -> Result<(Vec<&'static str>, String, String), String> {
 	let interface_src = src_root.join("Interface");
 	let wtf_src = src_root.join("WTF");
 	let has_interface = interface_src.is_dir();
@@ -167,67 +351,151 @@ fn sync_pair(src_root: &Path, dst_root: &Path, label: &str) -> Result<Vec<&'stat
 		.map_err(|e| format!("无法创建目标目录 {}: {e}", dst_root.display()))?;
 
 	let mut synced = Vec::new();
+	let mut engines = HashSet::new();
+	let mut log_chunks = Vec::new();
+
 	if has_interface {
-		rsync_mirror(&interface_src, &dst_root.join("Interface"))?;
+		log::info!("同步 Interface …");
+		emit(on_progress, "===== Interface =====");
+		let (engine, chunk) =
+			rsync_mirror(&interface_src, &dst_root.join("Interface"), on_progress)?;
+		engines.insert(engine);
+		log_chunks.push(format!("===== Interface =====\n{chunk}"));
 		synced.push("Interface");
 	}
 	if has_wtf {
-		rsync_mirror(&wtf_src, &dst_root.join("WTF"))?;
+		log::info!("同步 WTF …");
+		emit(on_progress, "===== WTF =====");
+		let (engine, chunk) = rsync_mirror(&wtf_src, &dst_root.join("WTF"), on_progress)?;
+		engines.insert(engine);
+		log_chunks.push(format!("===== WTF =====\n{chunk}"));
 		synced.push("WTF");
 	}
-	Ok(synced)
+
+	let engine = if engines.len() == 1 {
+		engines.into_iter().next().unwrap_or_else(|| "mirror".into())
+	} else {
+		engines.into_iter().collect::<Vec<_>>().join("+")
+	};
+	Ok((synced, engine, log_chunks.join("\n")))
 }
 
 /// Sync live `Interface` / `WTF` into this client's configured backup folder.
-pub fn backup_install(install_id: &str) -> Result<String, String> {
+pub fn backup_install(
+	install_id: &str,
+	mut on_progress: impl FnMut(&str),
+) -> Result<SyncReport, String> {
+	log::info!("开始备份 install_id={install_id}");
 	let install = resolve_install(install_id)?;
 	let install_path = PathBuf::from(&install.install_path);
 	let dest_root = backup_root_for(install_id)?;
-	let synced = sync_pair(&install_path, &dest_root, "客户端")?;
+	emit(
+		&mut on_progress,
+		&format!(
+			"开始备份 {} → {}",
+			install.label,
+			dest_root.display()
+		),
+	);
+	log::info!(
+		"备份路径 install={} src={} dest={}",
+		install.label,
+		install_path.display(),
+		dest_root.display()
+	);
+	let (synced, engine, log_text) =
+		match sync_pair(&install_path, &dest_root, "客户端", &mut on_progress) {
+			Ok(v) => v,
+			Err(err) => {
+				log::error!("备份失败 install={} err={err}", install.label);
+				emit(&mut on_progress, &format!("错误: {err}"));
+				return Err(err);
+			}
+		};
+	emit(
+		&mut on_progress,
+		&format!("备份完成（{}）: {}", engine, synced.join(" + ")),
+	);
 	log::warn!(
 		"备份同步完成 install={} dest={} items={} via={}",
 		install.label,
 		dest_root.display(),
 		synced.join("+"),
-		if rsync_available() {
-			"rsync"
-		} else {
-			"mirror"
-		}
+		engine
 	);
-	Ok(dest_root.display().to_string())
+	Ok(SyncReport {
+		path: dest_root.display().to_string(),
+		engine,
+		items: synced.into_iter().map(|s| s.to_string()).collect(),
+		log: log_text,
+		success: true,
+	})
 }
 
 /// Sync this client's backup `Interface` / `WTF` back into the live install.
-pub fn restore_install(install_id: &str) -> Result<String, String> {
+pub fn restore_install(
+	install_id: &str,
+	mut on_progress: impl FnMut(&str),
+) -> Result<SyncReport, String> {
+	log::info!("开始恢复 install_id={install_id}");
 	let install = resolve_install(install_id)?;
 	let install_path = PathBuf::from(&install.install_path);
 	let src_root = backup_root_for(install_id)?;
 	if !src_root.join("Interface").is_dir() && !src_root.join("WTF").is_dir() {
-		return Err(format!(
-			"未找到该客户端的备份目录：{}",
-			src_root.display()
-		));
+		let err = format!("未找到该客户端的备份目录：{}", src_root.display());
+		log::error!("{err}");
+		emit(&mut on_progress, &format!("错误: {err}"));
+		return Err(err);
 	}
-	let synced = sync_pair(&src_root, &install_path, "备份")?;
+	emit(
+		&mut on_progress,
+		&format!(
+			"开始恢复 {} ← {}",
+			install.label,
+			src_root.display()
+		),
+	);
+	log::info!(
+		"恢复路径 install={} from={} to={}",
+		install.label,
+		src_root.display(),
+		install_path.display()
+	);
+	let (synced, engine, log_text) =
+		match sync_pair(&src_root, &install_path, "备份", &mut on_progress) {
+			Ok(v) => v,
+			Err(err) => {
+				log::error!("恢复失败 install={} err={err}", install.label);
+				emit(&mut on_progress, &format!("错误: {err}"));
+				return Err(err);
+			}
+		};
+	emit(
+		&mut on_progress,
+		&format!("恢复完成（{}）: {}", engine, synced.join(" + ")),
+	);
 	log::warn!(
 		"恢复同步完成 install={} from={} items={} via={}",
 		install.label,
 		src_root.display(),
 		synced.join("+"),
-		if rsync_available() {
-			"rsync"
-		} else {
-			"mirror"
-		}
+		engine
 	);
-	Ok(src_root.display().to_string())
+	Ok(SyncReport {
+		path: src_root.display().to_string(),
+		engine,
+		items: synced.into_iter().map(|s| s.to_string()).collect(),
+		log: log_text,
+		success: true,
+	})
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use std::time::{SystemTime, UNIX_EPOCH};
+
+	fn noop(_: &str) {}
 
 	#[test]
 	fn mirror_syncs_and_skips_bak_old() {
@@ -247,8 +515,29 @@ mod tests {
 		fs::write(client.join("WTF/Account/config.wtf"), "SET foo \"bar\"\n").unwrap();
 		fs::write(client.join("WTF/Account/config.wtf.bak"), "SET foo \"old\"\n").unwrap();
 
-		rsync_mirror(&client.join("Interface"), &backup.join("Interface")).unwrap();
-		rsync_mirror(&client.join("WTF"), &backup.join("WTF")).unwrap();
+		let mut lines = Vec::new();
+		let (engine, log) = rsync_mirror(
+			&client.join("Interface"),
+			&backup.join("Interface"),
+			&mut |line| lines.push(line.to_string()),
+		)
+		.unwrap();
+		assert!(!engine.is_empty());
+		assert!(
+			log.contains("Interface")
+				|| log.contains("Foo")
+				|| log.contains("mirror")
+				|| log.contains("sending")
+				|| log.contains("total")
+				|| log.contains("+")
+		);
+		assert!(!lines.is_empty(), "progress callback should receive lines");
+		rsync_mirror(
+			&client.join("WTF"),
+			&backup.join("WTF"),
+			&mut noop,
+		)
+		.unwrap();
 
 		assert!(backup.join("Interface/AddOns/Foo/Foo.toc").is_file());
 		assert!(backup.join("WTF/Account/config.wtf").is_file());
@@ -256,7 +545,6 @@ mod tests {
 		assert!(!backup.join("Interface/AddOns/Foo/Foo.xml.old").exists());
 		assert!(!backup.join("WTF/Account/config.wtf.bak").exists());
 
-		// Stale file in backup should be removed on next sync.
 		fs::write(backup.join("Interface/AddOns/Foo/Stale.lua"), "-- gone\n").unwrap();
 		fs::remove_file(client.join("Interface/AddOns/Foo/Foo.toc")).unwrap();
 		fs::write(
@@ -264,25 +552,73 @@ mod tests {
 			"## Interface: 16002\n",
 		)
 		.unwrap();
-		rsync_mirror(&client.join("Interface"), &backup.join("Interface")).unwrap();
+		let (_engine, log2) = rsync_mirror(
+			&client.join("Interface"),
+			&backup.join("Interface"),
+			&mut noop,
+		)
+		.unwrap();
 		assert!(!backup.join("Interface/AddOns/Foo/Stale.lua").exists());
+		assert!(
+			log2.contains("Stale")
+				|| log2.contains("deleting")
+				|| log2.contains("- ")
+				|| log2.contains("Foo.toc")
+				|| log2.contains("完成")
+		);
 		assert_eq!(
 			fs::read_to_string(backup.join("Interface/AddOns/Foo/Foo.toc")).unwrap(),
 			"## Interface: 16002\n"
 		);
 
-		// Restore direction.
 		fs::write(
 			backup.join("Interface/AddOns/Foo/Foo.toc"),
 			"## Interface: restored\n",
 		)
 		.unwrap();
-		rsync_mirror(&backup.join("Interface"), &client.join("Interface")).unwrap();
+		rsync_mirror(
+			&backup.join("Interface"),
+			&client.join("Interface"),
+			&mut noop,
+		)
+		.unwrap();
 		assert_eq!(
 			fs::read_to_string(client.join("Interface/AddOns/Foo/Foo.toc")).unwrap(),
 			"## Interface: restored\n"
 		);
 
+		let _ = fs::remove_dir_all(root);
+	}
+
+	#[test]
+	fn mirror_fallback_streams_copy_and_delete() {
+		let stamp = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.unwrap()
+			.as_nanos();
+		let root = std::env::temp_dir().join(format!("wam-mirror-log-{stamp}"));
+		let src = root.join("src");
+		let dst = root.join("dst");
+		let _ = fs::remove_dir_all(&root);
+		fs::create_dir_all(src.join("a")).unwrap();
+		fs::write(src.join("a/one.txt"), "1\n").unwrap();
+		fs::create_dir_all(&dst).unwrap();
+		fs::write(dst.join("gone.txt"), "x\n").unwrap();
+
+		let mut streamed = Vec::new();
+		let log = mirror_dir_fallback(&src, &dst, &mut |line| streamed.push(line.to_string())).unwrap();
+		assert!(dst.join("a/one.txt").is_file());
+		assert!(!dst.join("gone.txt").exists());
+		assert!(log.contains("one.txt") && (log.contains('+') || log.contains("复制")));
+		assert!(log.contains("gone.txt") && (log.contains('-') || log.contains("删除")));
+		assert!(
+			streamed.iter().any(|l| l.contains("one.txt")),
+			"live stream should include copied file: {streamed:?}"
+		);
+		assert!(
+			streamed.iter().any(|l| l.contains("gone.txt")),
+			"live stream should include deleted file: {streamed:?}"
+		);
 		let _ = fs::remove_dir_all(root);
 	}
 }

@@ -78,6 +78,15 @@ export type MessageKey =
 	| "installed.restoreOk"
 	| "installed.restoreCancel"
 	| "installed.restoreMissing"
+	| "installed.syncBackupTitle"
+	| "installed.syncRestoreTitle"
+	| "installed.syncRunning"
+	| "installed.syncDone"
+	| "installed.syncFailed"
+	| "installed.syncEngine"
+	| "installed.syncItems"
+	| "installed.syncClose"
+	| "installed.syncOutput"
 	| "settings.back"
 	| "settings.title"
 	| "settings.subtitle"
@@ -218,6 +227,15 @@ export const en: Messages = {
 	"installed.restoreOk": "Restore",
 	"installed.restoreCancel": "Cancel",
 	"installed.restoreMissing": "No backup found for this client.",
+	"installed.syncBackupTitle": "Backup progress",
+	"installed.syncRestoreTitle": "Restore progress",
+	"installed.syncRunning": "Waiting for sync output…",
+	"installed.syncDone": "Completed via {engine}",
+	"installed.syncFailed": "Sync failed",
+	"installed.syncEngine": "Engine: {engine}",
+	"installed.syncItems": "Folders: {items}",
+	"installed.syncClose": "Close",
+	"installed.syncOutput": "Output",
 	"settings.back": "← Back",
 	"settings.title": "Settings",
 	"settings.subtitle": "API Key, language, WoW paths, and logs",
@@ -359,6 +377,15 @@ export const zhCN: Messages = {
 	"installed.restoreOk": "恢复",
 	"installed.restoreCancel": "取消",
 	"installed.restoreMissing": "未找到该客户端的备份",
+	"installed.syncBackupTitle": "备份进度",
+	"installed.syncRestoreTitle": "恢复进度",
+	"installed.syncRunning": "等待同步输出…",
+	"installed.syncDone": "已完成（{engine}）",
+	"installed.syncFailed": "同步失败",
+	"installed.syncEngine": "引擎：{engine}",
+	"installed.syncItems": "目录：{items}",
+	"installed.syncClose": "关闭",
+	"installed.syncOutput": "输出",
 	"settings.back": "← 返回",
 	"settings.title": "设置",
 	"settings.subtitle": "配置语言、API Key、魔兽世界安装目录与日志",

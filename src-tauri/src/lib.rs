@@ -11,6 +11,7 @@ use types::{
 	DeleteRequest, FilterCatalog, InstallRequest, InstalledAddon, ManualInstallRequest,
 	SearchParams, SearchResult, UpdateRequest, WowInstall,
 };
+use wow::backup::SyncReport;
 use wow::{backup, detect, install, scan};
 
 async fn run_blocking<T, F>(f: F) -> Result<T, String>
@@ -181,15 +182,31 @@ fn save_logs(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn backup_install(install_id: String) -> Result<String, String> {
-	log::warn!("backup_install install_id={install_id}");
-	run_blocking(move || backup::backup_install(&install_id)).await
+async fn backup_install(
+	install_id: String,
+	on_progress: tauri::ipc::Channel<String>,
+) -> Result<SyncReport, String> {
+	log::info!("backup_install install_id={install_id}");
+	run_blocking(move || {
+		backup::backup_install(&install_id, |line| {
+			let _ = on_progress.send(line.to_string());
+		})
+	})
+	.await
 }
 
 #[tauri::command]
-async fn restore_install(install_id: String) -> Result<String, String> {
-	log::warn!("restore_install install_id={install_id}");
-	run_blocking(move || backup::restore_install(&install_id)).await
+async fn restore_install(
+	install_id: String,
+	on_progress: tauri::ipc::Channel<String>,
+) -> Result<SyncReport, String> {
+	log::info!("restore_install install_id={install_id}");
+	run_blocking(move || {
+		backup::restore_install(&install_id, |line| {
+			let _ = on_progress.send(line.to_string());
+		})
+	})
+	.await
 }
 
 #[tauri::command]
