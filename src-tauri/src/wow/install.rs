@@ -102,6 +102,20 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 		.ok_or_else(|| "安装完成但未能读取插件信息".to_string())
 }
 
+fn promote_addon_folder(src: &Path, dest: &Path) -> Result<(), String> {
+	if dest.exists() {
+		fs::remove_dir_all(dest).map_err(|e| format!("无法覆盖已有插件目录 {}: {e}", dest.display()))?;
+	}
+	if let Some(parent) = dest.parent() {
+		fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+	}
+	if fs::rename(src, dest).is_err() {
+		archive::copy_dir_recursive(src, dest)?;
+		let _ = fs::remove_dir_all(src);
+	}
+	Ok(())
+}
+
 pub async fn install_from_archive(
 	install_id: &str,
 	archive_path: &str,
@@ -115,7 +129,22 @@ pub async fn install_from_archive(
 		return Err("压缩包不存在".into());
 	}
 
-	let folders = archive::extract_archive(&archive, &addons_path)?;
+	// Extract into an isolated staging dir first so rejected folders never
+	// overwrite / delete an already-installed addon of the same name.
+	let staging = addons_path.join(format!(
+		".wam-manual-{}",
+		Utc::now().timestamp_millis()
+	));
+	if let Err(err) = fs::create_dir_all(&staging) {
+		return Err(err.to_string());
+	}
+	let folders = match archive::extract_archive(&archive, &staging) {
+		Ok(folders) => folders,
+		Err(err) => {
+			let _ = fs::remove_dir_all(&staging);
+			return Err(err);
+		}
+	};
 	let now = Utc::now().to_rfc3339();
 	let archive_name = archive
 		.file_name()
@@ -132,9 +161,9 @@ pub async fn install_from_archive(
 
 	for folder in &folders {
 		if let Some(issue) =
-			crate::wow::toc::folder_unsupported_reason(&addons_path, folder, &toc_ctx)
+			crate::wow::toc::folder_unsupported_reason(&staging, folder, &toc_ctx)
 		{
-			let title = crate::wow::toc::read_folder_toc_for_client(&addons_path, folder, &toc_ctx)
+			let title = crate::wow::toc::read_folder_toc_for_client(&staging, folder, &toc_ctx)
 				.and_then(|m| m.title)
 				.unwrap_or_else(|| folder.clone());
 			rejected.push(format!("{folder}（{title}）: {}", issue.reason));
@@ -144,17 +173,13 @@ pub async fn install_from_archive(
 			);
 			continue;
 		}
-		let meta = crate::wow::toc::read_folder_toc_for_client(&addons_path, folder, &toc_ctx);
+		let meta = crate::wow::toc::read_folder_toc_for_client(&staging, folder, &toc_ctx);
 		pending.push((folder.clone(), meta));
 	}
 
-	// UI suites / multi-addon zips: keep compatible folders, remove the rest.
+	// UI suites / multi-addon zips: keep compatible folders only.
 	if pending.is_empty() {
-		for folder in &folders {
-			let target = addons_path.join(folder);
-			let _ = fs::remove_dir_all(&target);
-			let _ = manifest::remove(&addons_path, folder);
-		}
+		let _ = fs::remove_dir_all(&staging);
 		let _ = scan::refresh_local_cache(&install);
 		return Err(format!(
 			"安装失败：压缩包内插件与当前客户端不兼容。{}",
@@ -166,17 +191,14 @@ pub async fn install_from_archive(
 		));
 	}
 
-	for folder in &folders {
-		if pending.iter().any(|(name, _)| name == folder) {
-			continue;
-		}
-		let target = addons_path.join(folder);
-		let _ = fs::remove_dir_all(&target);
-		let _ = manifest::remove(&addons_path, folder);
-	}
-
 	let mut accepted = Vec::new();
 	for (folder, meta) in pending {
+		let src = staging.join(&folder);
+		let dest = addons_path.join(&folder);
+		if let Err(err) = promote_addon_folder(&src, &dest) {
+			let _ = fs::remove_dir_all(&staging);
+			return Err(err);
+		}
 		let title = meta.as_ref().and_then(|m| m.title.clone());
 		let author = meta.as_ref().and_then(|m| m.author.clone());
 		let notes = meta.as_ref().and_then(|m| m.notes.clone());
@@ -201,9 +223,14 @@ pub async fn install_from_archive(
 			install_source: Some("manual".into()),
 			archive_name: Some(archive_name.clone()),
 		};
-		manifest::upsert(&addons_path, entry)?;
+		if let Err(err) = manifest::upsert(&addons_path, entry) {
+			let _ = fs::remove_dir_all(&staging);
+			return Err(err);
+		}
 		accepted.push(folder);
 	}
+
+	let _ = fs::remove_dir_all(&staging);
 
 	if !rejected.is_empty() {
 		log::warn!(
@@ -368,4 +395,48 @@ fn write_placeholder_toc(dir: &Path, folder: &str, addon: &AddonSummary) -> Resu
 	)
 	.map_err(|e| e.to_string())?;
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::time::{SystemTime, UNIX_EPOCH};
+
+	#[test]
+	fn rejected_staging_folder_leaves_live_addon_intact() {
+		let stamp = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.unwrap()
+			.as_nanos();
+		let root = std::env::temp_dir().join(format!("wam-manual-stage-{stamp}"));
+		let addons = root.join("AddOns");
+		let staging = root.join(".wam-manual-stage");
+		let _ = fs::remove_dir_all(&root);
+		fs::create_dir_all(addons.join("Foo")).unwrap();
+		fs::write(addons.join("Foo/Foo.toc"), "## Interface: 16001\n## Title: LiveFoo\n").unwrap();
+		fs::create_dir_all(staging.join("Foo")).unwrap();
+		fs::write(
+			staging.join("Foo/Foo.toc"),
+			"## Interface: 11507\n## Title: ZipFoo\n",
+		)
+		.unwrap();
+		fs::create_dir_all(staging.join("Bar")).unwrap();
+		fs::write(
+			staging.join("Bar/Bar.toc"),
+			"## Interface: 16001\n## Title: ZipBar\n",
+		)
+		.unwrap();
+
+		// Only promote the compatible folder; rejected Foo stays in staging.
+		promote_addon_folder(&staging.join("Bar"), &addons.join("Bar")).unwrap();
+		let _ = fs::remove_dir_all(&staging);
+
+		assert_eq!(
+			fs::read_to_string(addons.join("Foo/Foo.toc")).unwrap(),
+			"## Interface: 16001\n## Title: LiveFoo\n"
+		);
+		assert!(addons.join("Bar/Bar.toc").is_file());
+		assert!(!staging.exists());
+		let _ = fs::remove_dir_all(root);
+	}
 }

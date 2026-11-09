@@ -272,7 +272,7 @@ fn extension_of(path: &Path) -> String {
 		.to_lowercase()
 }
 
-fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), String> {
+pub(crate) fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), String> {
 	fs::create_dir_all(dest).map_err(|e| e.to_string())?;
 	for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
 		let entry = entry.map_err(|e| e.to_string())?;
