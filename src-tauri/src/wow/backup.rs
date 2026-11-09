@@ -40,6 +40,16 @@ fn should_skip_backup_file(path: &Path) -> bool {
 		.unwrap_or(false)
 }
 
+fn backup_folder_name(install: &WowInstall) -> String {
+	// Keep label readable; append install id (`wow-<hash>`) so two clients with
+	// the same flavor label never share a backup directory.
+	format!(
+		"{}__{}",
+		sanitize_folder_name(&install.label),
+		sanitize_folder_name(&install.id)
+	)
+}
+
 fn backup_root_for(install: &WowInstall) -> Result<PathBuf, String> {
 	let cfg = config::load();
 	let backup_root = cfg
@@ -48,7 +58,7 @@ fn backup_root_for(install: &WowInstall) -> Result<PathBuf, String> {
 		.map(str::trim)
 		.filter(|p| !p.is_empty())
 		.ok_or_else(|| "未设置备份路径".to_string())?;
-	Ok(PathBuf::from(backup_root).join(sanitize_folder_name(&install.label)))
+	Ok(PathBuf::from(backup_root).join(backup_folder_name(install)))
 }
 
 fn ensure_trailing_slash(path: &Path) -> String {
@@ -162,9 +172,11 @@ fn mirror_dir_fallback(src: &Path, dst: &Path) -> Result<(), String> {
 	}
 	for path in to_remove {
 		if path.is_dir() {
-			let _ = fs::remove_dir_all(&path);
-		} else {
-			let _ = fs::remove_file(&path);
+			fs::remove_dir_all(&path)
+				.map_err(|e| format!("同步删除目录失败 {}: {e}", path.display()))?;
+		} else if path.is_file() {
+			fs::remove_file(&path)
+				.map_err(|e| format!("同步删除文件失败 {}: {e}", path.display()))?;
 		}
 	}
 	Ok(())
@@ -252,6 +264,27 @@ mod tests {
 	fn sanitize_replaces_invalid_chars() {
 		assert_eq!(sanitize_folder_name("Retail: _retail_"), "Retail_ _retail_");
 		assert_eq!(sanitize_folder_name("   "), "wow-client");
+	}
+
+	#[test]
+	fn backup_folder_includes_install_id() {
+		let a = WowInstall {
+			id: "c__games__wow__retail".into(),
+			label: "Retail".into(),
+			flavor: "Retail".into(),
+			flavor_key: "retail".into(),
+			install_path: r"C:\Games\World of Warcraft\_retail_".into(),
+			addons_path: r"C:\Games\World of Warcraft\_retail_\Interface\AddOns".into(),
+			game_version: None,
+			game_version_type_id: None,
+		};
+		let b = WowInstall {
+			id: "d__other__wow__retail".into(),
+			label: "Retail".into(),
+			..a.clone()
+		};
+		assert_ne!(backup_folder_name(&a), backup_folder_name(&b));
+		assert!(backup_folder_name(&a).starts_with("Retail__"));
 	}
 
 	#[test]
