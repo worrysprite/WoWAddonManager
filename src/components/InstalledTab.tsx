@@ -8,6 +8,7 @@ import { AddonCard } from "./AddonCard";
 type SyncDialogState = {
 	kind: "backup" | "restore";
 	running: boolean;
+	liveLog: string;
 	report: SyncReport | null;
 	error: string | null;
 };
@@ -33,6 +34,8 @@ export function InstalledTab({
 	const [status, setStatus] = useState<string | null>(null);
 	const [syncDialog, setSyncDialog] = useState<SyncDialogState | null>(null);
 	const syncOutputRef = useRef<HTMLPreElement | null>(null);
+	const syncLiveLogRef = useRef("");
+	const syncFlushTimerRef = useRef<number | null>(null);
 	const requestSeq = useRef(0);
 	const installIdRef = useRef(install.id);
 	const prevInstallIdRef = useRef(install.id);
@@ -212,7 +215,59 @@ export function InstalledTab({
 	useEffect(() => {
 		if (!syncDialog || !syncOutputRef.current) return;
 		syncOutputRef.current.scrollTop = syncOutputRef.current.scrollHeight;
-	}, [syncDialog?.report?.log, syncDialog?.error, syncDialog?.running]);
+	}, [syncDialog?.liveLog, syncDialog?.report?.log, syncDialog?.error, syncDialog?.running]);
+
+	useEffect(() => {
+		return () => {
+			if (syncFlushTimerRef.current !== null) {
+				window.clearTimeout(syncFlushTimerRef.current);
+				syncFlushTimerRef.current = null;
+			}
+		};
+	}, []);
+
+	function beginSyncDialog(kind: "backup" | "restore") {
+		if (syncFlushTimerRef.current !== null) {
+			window.clearTimeout(syncFlushTimerRef.current);
+			syncFlushTimerRef.current = null;
+		}
+		syncLiveLogRef.current = "";
+		setSyncDialog({
+			kind,
+			running: true,
+			liveLog: "",
+			report: null,
+			error: null,
+		});
+	}
+
+	function appendSyncLine(line: string) {
+		syncLiveLogRef.current += `${line}\n`;
+		if (syncFlushTimerRef.current !== null) return;
+		syncFlushTimerRef.current = window.setTimeout(() => {
+			syncFlushTimerRef.current = null;
+			const liveLog = syncLiveLogRef.current;
+			setSyncDialog((prev) => (prev ? { ...prev, liveLog } : prev));
+		}, 50);
+	}
+
+	function finishSyncDialog(
+		kind: "backup" | "restore",
+		patch: Partial<SyncDialogState>,
+	) {
+		if (syncFlushTimerRef.current !== null) {
+			window.clearTimeout(syncFlushTimerRef.current);
+			syncFlushTimerRef.current = null;
+		}
+		setSyncDialog({
+			kind,
+			running: false,
+			liveLog: syncLiveLogRef.current,
+			report: null,
+			error: null,
+			...patch,
+		});
+	}
 
 	async function handleBackup() {
 		const forInstallId = install.id;
@@ -224,11 +279,11 @@ export function InstalledTab({
 			return;
 		}
 		setBusy("__backup__");
-		setSyncDialog({ kind: "backup", running: true, report: null, error: null });
+		beginSyncDialog("backup");
 		try {
-			const report = await api.backupInstall(forInstallId);
+			const report = await api.backupInstall(forInstallId, appendSyncLine);
 			if (installIdRef.current !== forInstallId) return;
-			setSyncDialog({ kind: "backup", running: false, report, error: null });
+			finishSyncDialog("backup", { report, error: null });
 			setStatus(t("installed.backupDone", { path: report.path }));
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
@@ -239,12 +294,7 @@ export function InstalledTab({
 				onNeedBackupPath();
 				return;
 			}
-			setSyncDialog({
-				kind: "backup",
-				running: false,
-				report: null,
-				error: message,
-			});
+			finishSyncDialog("backup", { report: null, error: message });
 			setError(message);
 		} finally {
 			if (installIdRef.current === forInstallId) {
@@ -274,16 +324,16 @@ export function InstalledTab({
 		if (!confirmed) return;
 		if (installIdRef.current !== forInstallId) return;
 		setBusy("__restore__");
-		setSyncDialog({ kind: "restore", running: true, report: null, error: null });
+		beginSyncDialog("restore");
 		try {
-			const report = await api.restoreInstall(forInstallId);
+			const report = await api.restoreInstall(forInstallId, appendSyncLine);
 			if (installIdRef.current !== forInstallId) return;
 			const seq = beginRequest(forInstallId);
 			if (seq === null) return;
 			const list = await api.rescanInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
 			setAddons(list);
-			setSyncDialog({ kind: "restore", running: false, report, error: null });
+			finishSyncDialog("restore", { report, error: null });
 			setStatus(t("installed.restoreDone", { path: report.path }));
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
@@ -295,21 +345,14 @@ export function InstalledTab({
 				return;
 			}
 			if (message.includes("未找到该客户端的备份目录")) {
-				setSyncDialog({
-					kind: "restore",
-					running: false,
+				finishSyncDialog("restore", {
 					report: null,
 					error: t("installed.restoreMissing"),
 				});
 				setError(t("installed.restoreMissing"));
 				return;
 			}
-			setSyncDialog({
-				kind: "restore",
-				running: false,
-				report: null,
-				error: message,
-			});
+			finishSyncDialog("restore", { report: null, error: message });
 			setError(message);
 		} finally {
 			if (installIdRef.current === forInstallId) {
@@ -416,11 +459,13 @@ export function InstalledTab({
 						<label className="settings-field">
 							<span>{t("installed.syncOutput")}</span>
 							<pre className="sync-output" ref={syncOutputRef}>
-								{syncDialog.running
-									? t("installed.syncRunning")
-									: syncDialog.error ||
-										syncDialog.report?.log ||
-										"—"}
+								{syncDialog.liveLog.trim()
+									? syncDialog.liveLog
+									: syncDialog.running
+										? t("installed.syncRunning")
+										: syncDialog.error ||
+											syncDialog.report?.log ||
+											"—"}
 							</pre>
 						</label>
 						<div className="card-actions">
