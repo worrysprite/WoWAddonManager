@@ -450,16 +450,11 @@ export function InstalledTab({
 							) : syncDialog.error ? (
 								<span className="sync-modal-failed">{t("installed.syncFailed")}</span>
 							) : syncDialog.report ? (
-								<span className="sync-modal-ok">
-									{t("installed.syncDone", { engine: syncDialog.report.engine })}
-								</span>
+								<span className="sync-modal-ok">{t("installed.syncDone")}</span>
 							) : null}
 						</div>
 						{syncDialog.report ? (
 							<div className="muted sync-modal-meta">
-								<div>
-									{t("installed.syncEngine", { engine: syncDialog.report.engine })}
-								</div>
 								<div>
 									{t("installed.syncItems", {
 										items: syncDialog.report.items.join(" / ") || "—",

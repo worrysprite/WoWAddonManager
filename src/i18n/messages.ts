@@ -83,7 +83,6 @@ export type MessageKey =
 	| "installed.syncRunning"
 	| "installed.syncDone"
 	| "installed.syncFailed"
-	| "installed.syncEngine"
 	| "installed.syncItems"
 	| "installed.syncClose"
 	| "installed.syncOutput"
@@ -230,9 +229,8 @@ export const en: Messages = {
 	"installed.syncBackupTitle": "Backup progress",
 	"installed.syncRestoreTitle": "Restore progress",
 	"installed.syncRunning": "Waiting for sync output…",
-	"installed.syncDone": "Completed via {engine}",
+	"installed.syncDone": "Completed",
 	"installed.syncFailed": "Sync failed",
-	"installed.syncEngine": "Engine: {engine}",
 	"installed.syncItems": "Folders: {items}",
 	"installed.syncClose": "Close",
 	"installed.syncOutput": "Output",
@@ -380,9 +378,8 @@ export const zhCN: Messages = {
 	"installed.syncBackupTitle": "备份进度",
 	"installed.syncRestoreTitle": "恢复进度",
 	"installed.syncRunning": "等待同步输出…",
-	"installed.syncDone": "已完成（{engine}）",
+	"installed.syncDone": "已完成",
 	"installed.syncFailed": "同步失败",
-	"installed.syncEngine": "引擎：{engine}",
 	"installed.syncItems": "目录：{items}",
 	"installed.syncClose": "关闭",
 	"installed.syncOutput": "输出",
