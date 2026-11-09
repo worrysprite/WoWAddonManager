@@ -148,8 +148,8 @@ pub async fn install_from_archive(
 		pending.push((folder.clone(), meta));
 	}
 
-	// Treat the archive as one package: any incompatible folder rolls back all.
-	if !rejected.is_empty() || pending.is_empty() {
+	// UI suites / multi-addon zips: keep compatible folders, remove the rest.
+	if pending.is_empty() {
 		for folder in &folders {
 			let target = addons_path.join(folder);
 			let _ = fs::remove_dir_all(&target);
@@ -164,6 +164,15 @@ pub async fn install_from_archive(
 				format!("详情：{}", rejected.join("；"))
 			}
 		));
+	}
+
+	for folder in &folders {
+		if pending.iter().any(|(name, _)| name == folder) {
+			continue;
+		}
+		let target = addons_path.join(folder);
+		let _ = fs::remove_dir_all(&target);
+		let _ = manifest::remove(&addons_path, folder);
 	}
 
 	let mut accepted = Vec::new();
@@ -194,6 +203,13 @@ pub async fn install_from_archive(
 		};
 		manifest::upsert(&addons_path, entry)?;
 		accepted.push(folder);
+	}
+
+	if !rejected.is_empty() {
+		log::warn!(
+			"合集部分插件与当前客户端不兼容已跳过：{}",
+			rejected.join("；")
+		);
 	}
 
 	let list = scan::refresh_local_cache(&install)?;

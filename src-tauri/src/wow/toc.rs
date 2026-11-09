@@ -263,7 +263,9 @@ fn interfaces_match_client(meta: &TocMeta, ctx: &ClientContext<'_>) -> bool {
 /// TOC filename suffixes commonly used for each flavor key.
 fn flavor_toc_suffixes(flavor_key: &str) -> &'static [&'static str] {
 	match flavor_key {
-		"forever" => &["Forever"],
+		// Camelot is Blizzard's Forever codename; packs like EllesmereUI ship
+		// `*_Camelot.toc` with Interface 16001 instead of `_Forever.toc`.
+		"forever" => &["Forever", "Camelot"],
 		"classic" => &["Vanilla", "Classic", "Era", "ClassicEra"],
 		"mop-classic" | "classic-beta" | "classic-ptr" => &["Mists", "MoP", "Mist", "Pandaria"],
 		"classic-tbc" => &["TBC", "BurningCrusade", "BCC", "Burning"],
@@ -460,9 +462,7 @@ pub fn folder_unsupported_reason(
 		})
 		.collect();
 
-	// Multi-TOC packs (Questie_Forever / _Vanilla / …): require an explicit
-	// matching flavor TOC. Do not accept another flavor just because Interface
-	// majors overlap (e.g. Forever vs Vanilla both in the 1.x range).
+	// Multi-TOC packs (Questie_Forever / _Camelot / _Vanilla / …).
 	if !real_flavor_tocs.is_empty() {
 		if let Some(flavor_key) = ctx.flavor_key {
 			if real_flavor_tocs.iter().any(|m| {
@@ -472,6 +472,15 @@ pub fn folder_unsupported_reason(
 			}) {
 				return None;
 			}
+
+			// No Forever/Camelot/… filename: still allow when any TOC lists a
+			// fitting Interface (EllesmereUI plain/Mainline TOC with 16001).
+			if metas.iter().any(|m| {
+				client_unsupported_reason(m, None).is_none() && interfaces_match_client(m, ctx)
+			}) {
+				return None;
+			}
+
 			return Some(CompatibilityIssue {
 				reason: format!("未找到适用于 {flavor_key} 客户端的 TOC"),
 			});
@@ -719,6 +728,89 @@ mod tests {
 		.unwrap();
 		let ctx = ClientContext::from_install("forever", Some("1.16.0"));
 		assert!(folder_unsupported_reason(&dir, "Questie", &ctx).is_some());
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn forever_accepts_camelot_toc_suffix() {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-ellesmere-camelot-{}-{}",
+			std::process::id(),
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addon = dir.join("EllesmereUIForeverEssentials");
+		fs::create_dir_all(&addon).unwrap();
+		fs::write(
+			addon.join("EllesmereUIForeverEssentials_Camelot.toc"),
+			"## Interface: 16001\n## Title: EllesmereUI Forever Essentials\n## Version: 9.8.1\n",
+		)
+		.unwrap();
+		let ctx = ClientContext::from_install("forever", Some("12.1.5.70783"));
+		let meta = read_folder_toc_for_client(&dir, "EllesmereUIForeverEssentials", &ctx).unwrap();
+		assert_eq!(meta.flavor_suffix.as_deref(), Some("Camelot"));
+		assert!(folder_unsupported_reason(&dir, "EllesmereUIForeverEssentials", &ctx).is_none());
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn forever_accepts_mainline_toc_when_interface_includes_16001() {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-ellesmere-mainline-{}-{}",
+			std::process::id(),
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addon = dir.join("EllesmereUI");
+		fs::create_dir_all(&addon).unwrap();
+		fs::write(
+			addon.join("EllesmereUI.toc"),
+			"## Interface: 120105, 16001\n## Title: EllesmereUI\n## Version: 9.8.1\n",
+		)
+		.unwrap();
+		fs::write(
+			addon.join("EllesmereUI_Mainline.toc"),
+			"## Interface: 120105, 16001\n## Title: EllesmereUI\n## Version: 9.8.1\n",
+		)
+		.unwrap();
+		let ctx = ClientContext::from_install("forever", Some("12.1.5.70783"));
+		assert!(folder_unsupported_reason(&dir, "EllesmereUI", &ctx).is_none());
+		let retail = ClientContext::from_install("retail", Some("12.1.5.70783"));
+		assert!(folder_unsupported_reason(&dir, "EllesmereUI", &retail).is_none());
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn forever_rejects_retail_only_mainline_toc() {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-retail-mainline-{}-{}",
+			std::process::id(),
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addon = dir.join("SomeRetailAddon");
+		fs::create_dir_all(&addon).unwrap();
+		fs::write(
+			addon.join("SomeRetailAddon_Mainline.toc"),
+			"## Interface: 120105\n## Title: SomeRetailAddon\n## Version: 1.0.0\n",
+		)
+		.unwrap();
+		let forever = ClientContext::from_install("forever", Some("12.1.5.70783"));
+		let issue = folder_unsupported_reason(&dir, "SomeRetailAddon", &forever);
+		assert!(issue.is_some());
+		assert!(issue
+			.unwrap()
+			.reason
+			.contains("未找到适用于 forever 客户端的 TOC"));
 		let _ = fs::remove_dir_all(dir);
 	}
 }
