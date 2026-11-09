@@ -230,6 +230,56 @@ export function InstalledTab({
 		}
 	}
 
+	async function handleRestore() {
+		const forInstallId = install.id;
+		setError(null);
+		setStatus(null);
+		if (!hasBackupPath) {
+			setStatus(t("installed.backupNeedPath"));
+			onNeedBackupPath();
+			return;
+		}
+		const confirmed = await ask(
+			t("installed.restoreConfirm", { label: install.label }),
+			{
+				title: t("installed.restoreTitle"),
+				kind: "warning",
+				okLabel: t("installed.restoreOk"),
+				cancelLabel: t("installed.restoreCancel"),
+			},
+		);
+		if (!confirmed) return;
+		if (installIdRef.current !== forInstallId) return;
+		setBusy("__restore__");
+		try {
+			const src = await api.restoreInstall(forInstallId);
+			if (installIdRef.current !== forInstallId) return;
+			const seq = beginRequest(forInstallId);
+			if (seq === null) return;
+			const list = await api.rescanInstalledAddons(forInstallId);
+			if (!isCurrent(forInstallId, seq)) return;
+			setAddons(list);
+			setStatus(t("installed.restoreDone", { path: src }));
+		} catch (err) {
+			if (installIdRef.current !== forInstallId) return;
+			const message = String(err);
+			if (message.includes("未设置备份路径")) {
+				setStatus(t("installed.backupNeedPath"));
+				onNeedBackupPath();
+				return;
+			}
+			if (message.includes("未找到该客户端的备份目录")) {
+				setError(t("installed.restoreMissing"));
+				return;
+			}
+			setError(message);
+		} finally {
+			if (installIdRef.current === forInstallId) {
+				setBusy(null);
+			}
+		}
+	}
+
 	const blocked = loading || scanning || busy !== null;
 
 	return (
@@ -273,6 +323,14 @@ export function InstalledTab({
 						title={t("installed.backup")}
 					>
 						{busy === "__backup__" ? t("installed.backingUp") : t("installed.backup")}
+					</button>
+					<button
+						className="btn"
+						onClick={handleRestore}
+						disabled={blocked}
+						title={t("installed.restore")}
+					>
+						{busy === "__restore__" ? t("installed.restoring") : t("installed.restore")}
 					</button>
 				</div>
 			</div>

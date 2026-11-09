@@ -95,6 +95,10 @@ export function backupInstall(installId: string) {
 	return invoke<string>("backup_install", { installId });
 }
 
+export function restoreInstall(installId: string) {
+	return invoke<string>("restore_install", { installId });
+}
+
 export function getLogs() {
 	return invoke<LogView>("get_logs");
 }

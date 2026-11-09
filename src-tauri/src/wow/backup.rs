@@ -1,9 +1,10 @@
 use crate::config;
 use crate::types::WowInstall;
 use crate::wow::{detect, install};
-use chrono::Local;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use walkdir::WalkDir;
 
 fn resolve_install(install_id: &str) -> Result<WowInstall, String> {
@@ -39,11 +40,73 @@ fn should_skip_backup_file(path: &Path) -> bool {
 		.unwrap_or(false)
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+fn backup_root_for(install: &WowInstall) -> Result<PathBuf, String> {
+	let cfg = config::load();
+	let backup_root = cfg
+		.backup_path
+		.as_deref()
+		.map(str::trim)
+		.filter(|p| !p.is_empty())
+		.ok_or_else(|| "未设置备份路径".to_string())?;
+	Ok(PathBuf::from(backup_root).join(sanitize_folder_name(&install.label)))
+}
+
+fn ensure_trailing_slash(path: &Path) -> String {
+	let mut s = path.display().to_string();
+	if !s.ends_with('/') && !s.ends_with('\\') {
+		s.push('/');
+	}
+	s
+}
+
+fn rsync_available() -> bool {
+	Command::new("rsync")
+		.arg("--version")
+		.output()
+		.map(|out| out.status.success())
+		.unwrap_or(false)
+}
+
+/// Mirror `src` into `dst`, skipping `.bak` / `.old` (like rsync --exclude).
+fn rsync_mirror(src: &Path, dst: &Path) -> Result<(), String> {
 	if !src.is_dir() {
 		return Err(format!("源目录不存在: {}", src.display()));
 	}
-	fs::create_dir_all(dst).map_err(|e| format!("无法创建备份目录 {}: {e}", dst.display()))?;
+	fs::create_dir_all(dst).map_err(|e| format!("无法创建目录 {}: {e}", dst.display()))?;
+
+	if rsync_available() {
+		let output = Command::new("rsync")
+			.args([
+				"-a",
+				"--delete",
+				"--exclude=*.bak",
+				"--exclude=*.BAK",
+				"--exclude=*.old",
+				"--exclude=*.OLD",
+			])
+			.arg(ensure_trailing_slash(src))
+			.arg(ensure_trailing_slash(dst))
+			.output()
+			.map_err(|e| format!("启动 rsync 失败: {e}"))?;
+		if !output.status.success() {
+			let stderr = String::from_utf8_lossy(&output.stderr);
+			let stdout = String::from_utf8_lossy(&output.stdout);
+			let detail = if stderr.trim().is_empty() {
+				stdout.trim()
+			} else {
+				stderr.trim()
+			};
+			return Err(format!("rsync 失败 ({}): {detail}", output.status));
+		}
+		return Ok(());
+	}
+
+	mirror_dir_fallback(src, dst)
+}
+
+/// Rust fallback when system rsync is unavailable: copy/update then delete extras.
+fn mirror_dir_fallback(src: &Path, dst: &Path) -> Result<(), String> {
+	let mut kept: HashSet<PathBuf> = HashSet::new();
 
 	for entry in WalkDir::new(src).follow_links(false) {
 		let entry = entry.map_err(|e| format!("遍历目录失败 {}: {e}", src.display()))?;
@@ -58,6 +121,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
 			continue;
 		}
 		let target = dst.join(rel);
+		kept.insert(rel.to_path_buf());
 		if entry.file_type().is_dir() {
 			fs::create_dir_all(&target)
 				.map_err(|e| format!("无法创建目录 {}: {e}", target.display()))?;
@@ -68,68 +132,115 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
 			}
 			fs::copy(path, &target).map_err(|e| {
 				format!(
-					"复制文件失败 {} -> {}: {e}",
+					"同步文件失败 {} -> {}: {e}",
 					path.display(),
 					target.display()
 				)
 			})?;
 		}
 	}
+
+	// Delete destination entries that are no longer in source (keep .bak/.old).
+	let mut to_remove: Vec<PathBuf> = Vec::new();
+	if dst.is_dir() {
+		for entry in WalkDir::new(dst).follow_links(false).contents_first(true) {
+			let entry = entry.map_err(|e| format!("遍历备份目录失败 {}: {e}", dst.display()))?;
+			let path = entry.path();
+			let rel = path
+				.strip_prefix(dst)
+				.map_err(|e| format!("路径计算失败: {e}"))?;
+			if rel.as_os_str().is_empty() {
+				continue;
+			}
+			if entry.file_type().is_file() && should_skip_backup_file(path) {
+				continue;
+			}
+			if !kept.contains(rel) {
+				to_remove.push(path.to_path_buf());
+			}
+		}
+	}
+	for path in to_remove {
+		if path.is_dir() {
+			let _ = fs::remove_dir_all(&path);
+		} else {
+			let _ = fs::remove_file(&path);
+		}
+	}
 	Ok(())
 }
 
-/// Copy `Interface` and `WTF` under the client install into a timestamped folder
-/// inside the configured backup path.
-pub fn backup_install(install_id: &str) -> Result<String, String> {
-	let cfg = config::load();
-	let backup_root = cfg
-		.backup_path
-		.as_deref()
-		.map(str::trim)
-		.filter(|p| !p.is_empty())
-		.ok_or_else(|| "未设置备份路径".to_string())?;
-
-	let install = resolve_install(install_id)?;
-	let install_path = PathBuf::from(&install.install_path);
-	let interface_src = install_path.join("Interface");
-	let wtf_src = install_path.join("WTF");
-
+fn sync_pair(src_root: &Path, dst_root: &Path, label: &str) -> Result<Vec<&'static str>, String> {
+	let interface_src = src_root.join("Interface");
+	let wtf_src = src_root.join("WTF");
 	let has_interface = interface_src.is_dir();
 	let has_wtf = wtf_src.is_dir();
 	if !has_interface && !has_wtf {
 		return Err(format!(
-			"客户端目录下未找到 Interface 或 WTF：{}",
-			install_path.display()
+			"{label}目录下未找到 Interface 或 WTF：{}",
+			src_root.display()
 		));
 	}
 
-	let stamp = Local::now().format("%Y%m%d_%H%M%S");
-	let folder_name = format!("{}_{stamp}", sanitize_folder_name(&install.label));
-	let dest_root = PathBuf::from(backup_root).join(folder_name);
-	if dest_root.exists() {
-		return Err(format!("备份目录已存在：{}", dest_root.display()));
-	}
-	fs::create_dir_all(&dest_root)
-		.map_err(|e| format!("无法创建备份目录 {}: {e}", dest_root.display()))?;
+	fs::create_dir_all(dst_root)
+		.map_err(|e| format!("无法创建目标目录 {}: {e}", dst_root.display()))?;
 
-	let mut copied = Vec::new();
+	let mut synced = Vec::new();
 	if has_interface {
-		copy_dir_recursive(&interface_src, &dest_root.join("Interface"))?;
-		copied.push("Interface");
+		rsync_mirror(&interface_src, &dst_root.join("Interface"))?;
+		synced.push("Interface");
 	}
 	if has_wtf {
-		copy_dir_recursive(&wtf_src, &dest_root.join("WTF"))?;
-		copied.push("WTF");
+		rsync_mirror(&wtf_src, &dst_root.join("WTF"))?;
+		synced.push("WTF");
 	}
+	Ok(synced)
+}
 
+/// Sync live `Interface` / `WTF` into the configured backup folder for this client.
+pub fn backup_install(install_id: &str) -> Result<String, String> {
+	let install = resolve_install(install_id)?;
+	let install_path = PathBuf::from(&install.install_path);
+	let dest_root = backup_root_for(&install)?;
+	let synced = sync_pair(&install_path, &dest_root, "客户端")?;
 	log::warn!(
-		"备份完成 install={} dest={} items={}",
+		"备份同步完成 install={} dest={} items={} via={}",
 		install.label,
 		dest_root.display(),
-		copied.join("+")
+		synced.join("+"),
+		if rsync_available() {
+			"rsync"
+		} else {
+			"mirror"
+		}
 	);
-
 	Ok(dest_root.display().to_string())
+}
+
+/// Sync backup `Interface` / `WTF` back into the live client install.
+pub fn restore_install(install_id: &str) -> Result<String, String> {
+	let install = resolve_install(install_id)?;
+	let install_path = PathBuf::from(&install.install_path);
+	let backup_root = backup_root_for(&install)?;
+	if !backup_root.is_dir() {
+		return Err(format!(
+			"未找到该客户端的备份目录：{}",
+			backup_root.display()
+		));
+	}
+	let synced = sync_pair(&backup_root, &install_path, "备份")?;
+	log::warn!(
+		"恢复同步完成 install={} from={} items={} via={}",
+		install.label,
+		backup_root.display(),
+		synced.join("+"),
+		if rsync_available() {
+			"rsync"
+		} else {
+			"mirror"
+		}
+	);
+	Ok(backup_root.display().to_string())
 }
 
 #[cfg(test)]
@@ -144,7 +255,7 @@ mod tests {
 	}
 
 	#[test]
-	fn copies_interface_and_wtf() {
+	fn mirror_syncs_and_skips_bak_old() {
 		let stamp = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
 			.unwrap()
@@ -161,14 +272,42 @@ mod tests {
 		fs::write(client.join("WTF/Account/config.wtf"), "SET foo \"bar\"\n").unwrap();
 		fs::write(client.join("WTF/Account/config.wtf.bak"), "SET foo \"old\"\n").unwrap();
 
-		copy_dir_recursive(&client.join("Interface"), &backup.join("Interface")).unwrap();
-		copy_dir_recursive(&client.join("WTF"), &backup.join("WTF")).unwrap();
+		rsync_mirror(&client.join("Interface"), &backup.join("Interface")).unwrap();
+		rsync_mirror(&client.join("WTF"), &backup.join("WTF")).unwrap();
 
 		assert!(backup.join("Interface/AddOns/Foo/Foo.toc").is_file());
 		assert!(backup.join("WTF/Account/config.wtf").is_file());
 		assert!(!backup.join("Interface/AddOns/Foo/Foo.lua.bak").exists());
 		assert!(!backup.join("Interface/AddOns/Foo/Foo.xml.old").exists());
 		assert!(!backup.join("WTF/Account/config.wtf.bak").exists());
+
+		// Stale file in backup should be removed on next sync.
+		fs::write(backup.join("Interface/AddOns/Foo/Stale.lua"), "-- gone\n").unwrap();
+		fs::remove_file(client.join("Interface/AddOns/Foo/Foo.toc")).unwrap();
+		fs::write(
+			client.join("Interface/AddOns/Foo/Foo.toc"),
+			"## Interface: 16002\n",
+		)
+		.unwrap();
+		rsync_mirror(&client.join("Interface"), &backup.join("Interface")).unwrap();
+		assert!(!backup.join("Interface/AddOns/Foo/Stale.lua").exists());
+		assert_eq!(
+			fs::read_to_string(backup.join("Interface/AddOns/Foo/Foo.toc")).unwrap(),
+			"## Interface: 16002\n"
+		);
+
+		// Restore direction.
+		fs::write(
+			backup.join("Interface/AddOns/Foo/Foo.toc"),
+			"## Interface: restored\n",
+		)
+		.unwrap();
+		rsync_mirror(&backup.join("Interface"), &client.join("Interface")).unwrap();
+		assert_eq!(
+			fs::read_to_string(client.join("Interface/AddOns/Foo/Foo.toc")).unwrap(),
+			"## Interface: restored\n"
+		);
+
 		let _ = fs::remove_dir_all(root);
 	}
 }

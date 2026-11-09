@@ -70,6 +70,14 @@ export type MessageKey =
 	| "installed.backingUp"
 	| "installed.backupDone"
 	| "installed.backupNeedPath"
+	| "installed.restore"
+	| "installed.restoring"
+	| "installed.restoreDone"
+	| "installed.restoreConfirm"
+	| "installed.restoreTitle"
+	| "installed.restoreOk"
+	| "installed.restoreCancel"
+	| "installed.restoreMissing"
 	| "settings.back"
 	| "settings.title"
 	| "settings.subtitle"
@@ -202,8 +210,17 @@ export const en: Messages = {
 	"installed.clientMissing": "Client not found",
 	"installed.backup": "Backup",
 	"installed.backingUp": "Backing up…",
-	"installed.backupDone": "Backup complete: {path}",
+	"installed.backupDone": "Backup synced: {path}",
 	"installed.backupNeedPath": "Set a backup folder in Settings first.",
+	"installed.restore": "Restore",
+	"installed.restoring": "Restoring…",
+	"installed.restoreDone": "Restore synced from: {path}",
+	"installed.restoreConfirm":
+		"Restore Interface and WTF for {label} from the backup folder? Current files will be overwritten to match the backup.",
+	"installed.restoreTitle": "Restore from backup",
+	"installed.restoreOk": "Restore",
+	"installed.restoreCancel": "Cancel",
+	"installed.restoreMissing": "No backup found for this client.",
 	"settings.back": "← Back",
 	"settings.title": "Settings",
 	"settings.subtitle": "API Key, language, WoW paths, backup, and logs",
@@ -245,7 +262,7 @@ export const en: Messages = {
 	"settings.rescanDoneNone": "Rescan complete. Still no World of Warcraft clients found.",
 	"settings.backupTitle": "Backup",
 	"settings.backupHint":
-		"Choose a folder for Interface and WTF backups. Each backup creates a timestamped subfolder for that client.",
+		"Choose a folder for Interface and WTF backups. Each client syncs into a subfolder under this path.",
 	"settings.backupPath": "Backup folder",
 	"settings.backupPathPlaceholder": "Not set",
 	"settings.pickBackupDir": "Select backup folder",
@@ -337,8 +354,17 @@ export const zhCN: Messages = {
 	"installed.clientMissing": "未找到该客户端",
 	"installed.backup": "备份",
 	"installed.backingUp": "备份中…",
-	"installed.backupDone": "备份完成：{path}",
+	"installed.backupDone": "备份已同步：{path}",
 	"installed.backupNeedPath": "请先在设置中指定备份路径",
+	"installed.restore": "恢复",
+	"installed.restoring": "恢复中…",
+	"installed.restoreDone": "已从备份恢复：{path}",
+	"installed.restoreConfirm":
+		"确定将备份中的 Interface / WTF 恢复到 {label}？当前目录会同步为与备份一致。",
+	"installed.restoreTitle": "从备份恢复",
+	"installed.restoreOk": "恢复",
+	"installed.restoreCancel": "取消",
+	"installed.restoreMissing": "未找到该客户端的备份",
 	"settings.back": "← 返回",
 	"settings.title": "设置",
 	"settings.subtitle": "配置语言、API Key、魔兽世界安装目录、备份路径与日志",
@@ -380,7 +406,7 @@ export const zhCN: Messages = {
 	"settings.rescanDoneNone": "客户端扫描完成，仍未检测到魔兽世界客户端。",
 	"settings.backupTitle": "备份",
 	"settings.backupHint":
-		"选择 Interface 与 WTF 的备份目录。每次备份会在该目录下按客户端创建带时间戳的子文件夹。",
+		"选择 Interface 与 WTF 的备份目录。每个客户端会同步到该路径下的对应子文件夹。",
 	"settings.backupPath": "备份路径",
 	"settings.backupPathPlaceholder": "未设置",
 	"settings.pickBackupDir": "选择备份目录",

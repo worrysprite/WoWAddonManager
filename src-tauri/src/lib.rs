@@ -187,6 +187,12 @@ async fn backup_install(install_id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn restore_install(install_id: String) -> Result<String, String> {
+	log::warn!("restore_install install_id={install_id}");
+	run_blocking(move || backup::restore_install(&install_id)).await
+}
+
+#[tauri::command]
 fn open_dir(path: String) -> Result<(), String> {
 	use std::path::PathBuf;
 	use std::process::Command;
@@ -253,6 +259,7 @@ pub fn run() {
 			clear_logs,
 			save_logs,
 			backup_install,
+			restore_install,
 			open_dir
 		])
 		.run(tauri::generate_context!())
