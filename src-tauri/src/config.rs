@@ -17,6 +17,9 @@ pub struct AppConfig {
 	/// Per-install backup directories keyed by install id.
 	#[serde(default)]
 	pub backup_paths: HashMap<String, String>,
+	/// In-memory log filter level (`error` / `warn` / `info` / `debug` / `trace`).
+	#[serde(default = "default_log_level")]
+	pub log_level: String,
 	/// Legacy global backup path from older builds; ignored after load.
 	#[serde(default, skip_serializing)]
 	pub backup_path: Option<String>,
@@ -26,6 +29,10 @@ fn default_locale_preference() -> String {
 	"system".into()
 }
 
+fn default_log_level() -> String {
+	"info".into()
+}
+
 impl Default for AppConfig {
 	fn default() -> Self {
 		Self {
@@ -33,6 +40,7 @@ impl Default for AppConfig {
 			curseforge_api_key: None,
 			locale: default_locale_preference(),
 			backup_paths: HashMap::new(),
+			log_level: default_log_level(),
 			backup_path: None,
 		}
 	}
@@ -132,8 +140,22 @@ pub fn remove_wow_root(path: &str) -> Result<AppConfig, String> {
 pub fn api_key() -> Option<String> {
 	load()
 		.curseforge_api_key
-		.map(|k| k.trim().to_string())
+		.map(|k| sanitize_api_key(&k))
 		.filter(|k| !k.is_empty())
+}
+
+fn sanitize_api_key(raw: &str) -> String {
+	raw.trim()
+		.trim_start_matches('\u{feff}')
+		.chars()
+		.filter(|c| !c.is_control() && !c.is_whitespace())
+		.collect()
+}
+
+pub fn save_log_level(level: &str) -> Result<(), String> {
+	let mut config = load();
+	config.log_level = level.trim().to_ascii_lowercase();
+	save(&config)
 }
 
 pub fn settings_view() -> SettingsView {
@@ -320,7 +342,7 @@ pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, Strin
 	let mut config = load();
 	let mut api_key_changed = false;
 	if let Some(raw_key) = request.curseforge_api_key {
-		let trimmed = raw_key.trim().to_string();
+		let trimmed = sanitize_api_key(&raw_key);
 		let next = if trimmed.is_empty() {
 			None
 		} else {
