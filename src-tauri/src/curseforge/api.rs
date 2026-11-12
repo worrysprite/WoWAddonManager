@@ -183,16 +183,22 @@ pub async fn search(api_key: &str, params: &SearchParams) -> Result<SearchResult
 
 	if result.items.is_empty() {
 		log::warn!(
-			"CurseForge 搜索无结果 total={} page={} search={:?}",
+			"CurseForge 搜索无结果 total={} page={} search={:?} categories={:?}",
 			result.total,
 			result.page,
-			params.search
+			params.search,
+			params.categories
 		);
 		if result.message.is_none() {
-			result.message = Some(
+			result.message = Some(if result.total == 0 {
 				"官方 API 返回 0 条结果。可清空左侧筛选后点「刷新」，或检查 API Key 是否有 WoW 搜索权限。"
-					.into(),
-			);
+					.into()
+			} else {
+				format!(
+					"API 返回了 {total} 条，但当前分类筛选后无可显示项。请清空左侧分类后重试。",
+					total = result.total
+				)
+			});
 		}
 	} else {
 		log::info!(
