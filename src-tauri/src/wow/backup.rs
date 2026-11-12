@@ -110,7 +110,7 @@ fn mirror_dir(
 	let mut skipped = 0usize;
 	let mut deleted = 0usize;
 	let mut log_lines: Vec<String> = Vec::new();
-	let start = format!("[mirror] {} → {}", src.display(), dst.display());
+	let start = format!("{} → {}", src.display(), dst.display());
 	emit(on_progress, &start);
 	log_lines.push(start);
 
@@ -280,14 +280,13 @@ pub fn backup_install(
 		};
 	emit(
 		&mut on_progress,
-		&format!("备份完成（{}）: {}", engine, synced.join(" + ")),
+		&format!("备份完成: {}", synced.join(" + ")),
 	);
 	log::warn!(
-		"备份同步完成 install={} dest={} items={} via={}",
+		"备份同步完成 install={} dest={} items={}",
 		install.label,
 		dest_root.display(),
-		synced.join("+"),
-		engine
+		synced.join("+")
 	);
 	Ok(SyncReport {
 		path: dest_root.display().to_string(),
@@ -334,14 +333,13 @@ pub fn restore_install(
 		};
 	emit(
 		&mut on_progress,
-		&format!("恢复完成（{}）: {}", engine, synced.join(" + ")),
+		&format!("恢复完成: {}", synced.join(" + ")),
 	);
 	log::warn!(
-		"恢复同步完成 install={} from={} items={} via={}",
+		"恢复同步完成 install={} from={} items={}",
 		install.label,
 		src_root.display(),
-		synced.join("+"),
-		engine
+		synced.join("+")
 	);
 	Ok(SyncReport {
 		path: src_root.display().to_string(),
