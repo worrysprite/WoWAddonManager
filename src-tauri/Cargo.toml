@@ -1,6 +1,6 @@
 [package]
 name = "wow-addon-manager"
-version = "0.4.1"
+version = "0.4.2"
 description = "World of Warcraft addon manager"
 authors = ["WorrySprite"]
 edition = "2021"
