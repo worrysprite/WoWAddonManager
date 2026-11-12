@@ -28,7 +28,7 @@ export function SettingsPage({
 	const [ready, setReady] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [logLevel, setLogLevel] = useState("warn");
+	const [logLevel, setLogLevel] = useState("info");
 	const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
 	const [logsOpen, setLogsOpen] = useState(false);
 	const [logsBusy, setLogsBusy] = useState(false);

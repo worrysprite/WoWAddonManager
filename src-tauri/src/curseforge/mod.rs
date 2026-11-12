@@ -25,34 +25,42 @@ pub async fn search_addons(params: SearchParams, force_refresh: bool) -> SearchR
 
 async fn fetch_search(params: SearchParams) -> SearchResult {
 	if let Some(api_key) = config::api_key() {
+		log::info!("搜索走官方 API（已配置 Key，len={}）", api_key.len());
 		match api::search(&api_key, &params).await {
 			Ok(result) => result,
-			Err(err) => SearchResult {
-				items: Vec::new(),
-				page: params.page.unwrap_or(1).max(1),
-				page_size: params.page_size.unwrap_or(20).clamp(1, 50),
-				total: 0,
-				source: "curseforge-api-error".to_string(),
-				message: Some(format!(
-					"CurseForge API 请求失败：{}。请检查设置中的 API Key 是否有效。",
-					err
-				)),
-			},
+			Err(err) => {
+				log::error!("CurseForge API 搜索失败: {err}");
+				SearchResult {
+					items: Vec::new(),
+					page: params.page.unwrap_or(1).max(1),
+					page_size: params.page_size.unwrap_or(20).clamp(1, 50),
+					total: 0,
+					source: "curseforge-api-error".to_string(),
+					message: Some(format!(
+						"CurseForge API 请求失败：{}。请检查设置中的 API Key 是否有效。",
+						err
+					)),
+				}
+			}
 		}
 	} else {
+		log::info!("搜索走网页 GET（未配置 API Key）");
 		match web::search(&params).await {
 			Ok(result) => result,
-			Err(err) => SearchResult {
-				items: Vec::new(),
-				page: params.page.unwrap_or(1).max(1),
-				page_size: params.page_size.unwrap_or(20).clamp(1, 50),
-				total: 0,
-				source: "curseforge-web-error".to_string(),
-				message: Some(format!(
-					"CurseForge 网页请求失败：{}。可在设置中填写 API Key 使用官方接口。",
-					err
-				)),
-			},
+			Err(err) => {
+				log::error!("CurseForge 网页搜索失败: {err}");
+				SearchResult {
+					items: Vec::new(),
+					page: params.page.unwrap_or(1).max(1),
+					page_size: params.page_size.unwrap_or(20).clamp(1, 50),
+					total: 0,
+					source: "curseforge-web-error".to_string(),
+					message: Some(format!(
+						"CurseForge 网页请求失败：{}。可在设置中填写 API Key 使用官方接口。",
+						err
+					)),
+				}
+			}
 		}
 	}
 }

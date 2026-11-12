@@ -284,8 +284,8 @@ export const en: Messages = {
 		"Set a backup folder for this client under Detected clients before backing up.",
 	"settings.logsTitle": "Logs",
 	"settings.logsHint":
-		"Default level is WARN. Open to view in-memory logs and save them to a file.",
-	"settings.openLogs": "Open logs",
+		"Logs are always recorded from startup (default INFO). Show this panel only to view, change level, or save.",
+	"settings.openLogs": "Show logs",
 	"settings.closeLogs": "Hide logs",
 	"settings.saveLogs": "Save log file",
 	"settings.clearLogs": "Clear",
@@ -431,8 +431,9 @@ export const zhCN: Messages = {
 	"settings.backupPathCleared": "已清除 {label} 的备份目录",
 	"settings.backupPathUnset": "请先在「已检测到的客户端」中为该版本设置备份目录。",
 	"settings.logsTitle": "日志",
-	"settings.logsHint": "默认级别为 WARN。打开后可查看内存中的运行日志，并保存为文件。",
-	"settings.openLogs": "打开日志",
+	"settings.logsHint":
+		"日志从启动起始终记录（默认 INFO）。此处仅用于查看、调整级别或保存文件。",
+	"settings.openLogs": "查看日志",
 	"settings.closeLogs": "收起日志",
 	"settings.saveLogs": "保存日志文件",
 	"settings.clearLogs": "清空",

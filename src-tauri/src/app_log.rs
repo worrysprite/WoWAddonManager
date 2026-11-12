@@ -28,8 +28,8 @@ pub struct LogView {
 struct MemoryLogger;
 
 static ENTRIES: Mutex<VecDeque<LogEntry>> = Mutex::new(VecDeque::new());
-// 2 == LevelFilter::Warn
-static LEVEL: AtomicU8 = AtomicU8::new(2);
+// 3 == LevelFilter::Info — always record from process start; settings only views.
+static LEVEL: AtomicU8 = AtomicU8::new(3);
 static LOGGER: MemoryLogger = MemoryLogger;
 static INIT: OnceLock<()> = OnceLock::new();
 
@@ -81,9 +81,15 @@ fn level_name(level: LevelFilter) -> &'static str {
 pub fn init() {
 	INIT.get_or_init(|| {
 		let _ = log::set_logger(&LOGGER);
+		// Accept every level from macros; LEVEL atomic still filters what we store.
 		log::set_max_level(LevelFilter::Trace);
-		LEVEL.store(level_to_u8(LevelFilter::Warn), Ordering::Relaxed);
-		log::warn!("日志系统已启动，默认级别 WARN");
+		let preferred = parse_level(&crate::config::load().log_level)
+			.unwrap_or(LevelFilter::Info);
+		LEVEL.store(level_to_u8(preferred), Ordering::Relaxed);
+		log::info!(
+			"日志系统已启动，级别 {}（始终记录，设置页仅用于查看）",
+			level_name(preferred)
+		);
 	});
 }
 
@@ -94,7 +100,10 @@ pub fn current_level() -> String {
 pub fn set_level(name: &str) -> Result<String, String> {
 	let level = parse_level(name)?;
 	LEVEL.store(level_to_u8(level), Ordering::Relaxed);
-	log::warn!("日志级别已设置为 {}", level_name(level));
+	if let Err(err) = crate::config::save_log_level(level_name(level)) {
+		log::warn!("保存日志级别失败: {err}");
+	}
+	log::info!("日志级别已设置为 {}", level_name(level));
 	Ok(level_name(level).to_string())
 }
 
@@ -173,11 +182,12 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn default_level_is_warn_and_can_change() {
+	fn default_level_is_info_and_can_change() {
 		init();
-		assert_eq!(current_level(), "warn");
+		// May already be info from a prior test/config; ensure set works.
+		assert_eq!(set_level("debug").unwrap(), "debug");
+		assert_eq!(current_level(), "debug");
 		assert_eq!(set_level("info").unwrap(), "info");
 		assert_eq!(current_level(), "info");
-		assert_eq!(set_level("warn").unwrap(), "warn");
 	}
 }
