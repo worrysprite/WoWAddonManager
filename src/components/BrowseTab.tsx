@@ -188,7 +188,6 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 					<div className="page-info">
 						{t("browse.pageInfo", { page, totalPages })}
 						{result ? ` · ${t("browse.results", { total: result.total })}` : ""}
-						{result ? ` · ${result.source}` : ""}
 					</div>
 					<button
 						className="btn"

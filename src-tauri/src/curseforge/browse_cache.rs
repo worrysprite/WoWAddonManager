@@ -96,16 +96,8 @@ pub fn get(params: &SearchParams, has_api_key: bool) -> Option<SearchResult> {
 	if age.to_std().unwrap_or(Duration::MAX) > CACHE_TTL {
 		return None;
 	}
-	let mut result = entry.result.clone();
-	if result.message.is_none() {
-		result.message = Some(format!(
-			"已使用本地缓存（{} 分钟内有效）。点「刷新」可重新请求。",
-			CACHE_TTL.as_secs() / 60
-		));
-	}
-	result.source = format!("{}-cache", result.source.trim_end_matches("-cache"));
-	Some(result)
-}
+// Return cached payload as-is; do not surface cache mechanics in the UI.
+Some(entry.result.clone())
 
 pub fn put(params: &SearchParams, has_api_key: bool, result: &SearchResult) {
 	// Skip caching hard failures so a later retry can recover.
