@@ -8,7 +8,8 @@ pub mod web;
 mod tests;
 
 use crate::config;
-use crate::types::{SearchParams, SearchResult};
+use crate::types::{AddonSummary, SearchParams, SearchResult};
+use std::collections::HashMap;
 
 pub async fn search_addons(params: SearchParams, force_refresh: bool) -> SearchResult {
 	let has_api_key = config::api_key().is_some();
@@ -79,4 +80,44 @@ pub async fn download_addon_zip(
 			.await
 			.map_err(|e| e.to_string())
 	}
+}
+
+/// Fetch one mod by CurseForge id (official API only).
+pub async fn get_addon(mod_id: i64) -> Option<AddonSummary> {
+	let api_key = config::api_key()?;
+	match api::get_mod(&api_key, mod_id).await {
+		Ok(item) => Some(item),
+		Err(err) => {
+			log::warn!("CurseForge get mod {mod_id} failed: {err}");
+			None
+		}
+	}
+}
+
+/// Batch-fetch mods by id. Returns a map keyed by CurseForge mod id.
+pub async fn get_addons_by_ids(mod_ids: &[i64]) -> HashMap<i64, AddonSummary> {
+	let mut out = HashMap::new();
+	if mod_ids.is_empty() {
+		return out;
+	}
+	let Some(api_key) = config::api_key() else {
+		return out;
+	};
+	let mut unique = mod_ids.to_vec();
+	unique.sort_unstable();
+	unique.dedup();
+	match api::get_mods(&api_key, &unique).await {
+		Ok(items) => {
+			for item in items {
+				out.insert(item.id, item);
+			}
+		}
+		Err(err) => {
+			log::warn!(
+				"CurseForge batch get mods failed count={} err={err}",
+				unique.len()
+			);
+		}
+	}
+	out
 }

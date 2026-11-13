@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as api from "./api";
 import { BrowseTab } from "./components/BrowseTab";
 import { InstalledTab } from "./components/InstalledTab";
@@ -30,10 +30,23 @@ export default function App() {
 		null,
 	);
 	const [updateBusy, setUpdateBusy] = useState(false);
+	/** Keep visited client tabs mounted so switching flavors does not re-fetch. */
+	const [visitedInstallIds, setVisitedInstallIds] = useState<string[]>([]);
+
+	const mountedInstalls = useMemo(() => {
+		const ids = new Set(visitedInstallIds);
+		if (tab !== "browse" && tab !== "settings") {
+			ids.add(tab);
+		}
+		return installs.filter((install) => ids.has(install.id));
+	}, [installs, tab, visitedInstallIds]);
 
 	async function applySettings(next: SettingsView) {
 		setSettings(next);
 		setInstalls(next.detectedInstalls);
+		setVisitedInstallIds((prev) =>
+			prev.filter((id) => next.detectedInstalls.some((install) => install.id === id)),
+		);
 		setSystemLocale(next.systemLocale);
 		const pref = (next.locale || "system") as LocalePreference;
 		setPreference(pref === "zh-CN" || pref === "en" ? pref : "system");
@@ -45,6 +58,11 @@ export default function App() {
 			setTab("browse");
 		}
 	}
+
+	useEffect(() => {
+		if (tab === "browse" || tab === "settings") return;
+		setVisitedInstallIds((prev) => (prev.includes(tab) ? prev : [...prev, tab]));
+	}, [tab]);
 
 	async function refreshAll() {
 		try {
@@ -269,23 +287,24 @@ export default function App() {
 					/>
 				</div>
 
-				{tab !== "settings" && tab !== "browse"
-					? (() => {
-							const install = installs.find((i) => i.id === tab);
-							return install ? (
-								<div className="tab-panel">
-									<InstalledTab
-										key={install.id}
-										install={install}
-										refreshKey={refreshKey}
-										onNeedBackupPath={() => openBackupSettings(install.id)}
-									/>
-								</div>
-							) : (
-								<div className="empty">{t("installed.clientMissing")}</div>
-							);
-						})()
-					: null}
+				{mountedInstalls.map((install) => (
+					<div
+						key={install.id}
+						className="tab-panel"
+						style={{ display: tab === install.id ? undefined : "none" }}
+					>
+						<InstalledTab
+							install={install}
+							refreshKey={refreshKey}
+							onNeedBackupPath={() => openBackupSettings(install.id)}
+						/>
+					</div>
+				))}
+				{tab !== "settings" &&
+				tab !== "browse" &&
+				!installs.some((install) => install.id === tab) ? (
+					<div className="empty">{t("installed.clientMissing")}</div>
+				) : null}
 			</main>
 		</div>
 	);

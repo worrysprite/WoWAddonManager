@@ -54,6 +54,25 @@ async fn get_json(api_key: &str, path: &str, query: &[(&str, String)]) -> Result
 		.send()
 		.await?;
 
+	parse_response(response).await
+}
+
+async fn post_json(api_key: &str, path: &str, body: &Value) -> Result<Value, ApiError> {
+	let url = format!("{API_BASE}{path}");
+	log::info!("CurseForge POST {url} key={}", redact_key(api_key));
+	let response = client()?
+		.post(&url)
+		.header("x-api-key", api_key)
+		.header("Accept", "application/json")
+		.header("Content-Type", "application/json")
+		.json(body)
+		.send()
+		.await?;
+
+	parse_response(response).await
+}
+
+async fn parse_response(response: reqwest::Response) -> Result<Value, ApiError> {
 	let status = response.status();
 	let body = response.text().await?;
 	if !status.is_success() {
@@ -175,14 +194,14 @@ pub async fn search(api_key: &str, params: &SearchParams) -> Result<SearchResult
 
 	// Some keys / responses behave better without classId; retry once if empty.
 	if result.items.is_empty() && result.total == 0 {
-		log::warn!("CurseForge 带 classId 搜索为空，尝试不带 classId 重试");
+		log::debug!("CurseForge 带 classId 搜索为空，尝试不带 classId 重试");
 		let query = build_search_query(params, false);
 		let json = get_json(api_key, "/v1/mods/search", &query).await?;
 		result = parse_search_result(&json, params)?;
 	}
 
 	if result.items.is_empty() {
-		log::warn!(
+		log::debug!(
 			"CurseForge 搜索无结果 total={} page={} search={:?} categories={:?}",
 			result.total,
 			result.page,
@@ -191,7 +210,7 @@ pub async fn search(api_key: &str, params: &SearchParams) -> Result<SearchResult
 		);
 		if result.message.is_none() {
 			result.message = Some(if result.total == 0 {
-				"官方 API 返回 0 条结果。可清空左侧筛选后点「刷新」，或检查 API Key 是否有 WoW 搜索权限。"
+				"官方 API 返回 0 条结果。可清空左侧筛选后重试，或检查 API Key 是否有 WoW 搜索权限。"
 					.into()
 			} else {
 				format!(
@@ -244,11 +263,43 @@ pub async fn download_addon_zip(
 	Ok(bytes)
 }
 
-async fn latest_file_id(api_key: &str, mod_id: i64) -> Result<i64, ApiError> {
+pub async fn get_mod(api_key: &str, mod_id: i64) -> Result<AddonSummary, ApiError> {
 	let json = get_json(api_key, &format!("/v1/mods/{mod_id}"), &[]).await?;
-	json.pointer("/data/latestFilesIndexes/0/fileId")
-		.or_else(|| json.pointer("/data/mainFileId"))
-		.and_then(|v| v.as_i64())
+	let data = json
+		.get("data")
+		.ok_or_else(|| ApiError::Parse("缺少 data".into()))?;
+	map_mod(data).ok_or_else(|| ApiError::Parse(format!("无法解析 mod {mod_id}")))
+}
+
+pub async fn get_mods(api_key: &str, mod_ids: &[i64]) -> Result<Vec<AddonSummary>, ApiError> {
+	if mod_ids.is_empty() {
+		return Ok(Vec::new());
+	}
+	let mut items = Vec::new();
+	// CurseForge accepts batches; keep chunks modest.
+	for chunk in mod_ids.chunks(50) {
+		let body = serde_json::json!({
+			"modIds": chunk,
+			"filterPcOnly": true,
+		});
+		let json = post_json(api_key, "/v1/mods", &body).await?;
+		let data = json
+			.get("data")
+			.and_then(|v| v.as_array())
+			.ok_or_else(|| ApiError::Parse("缺少 data".into()))?;
+		for entry in data {
+			if let Some(item) = map_mod(entry) {
+				items.push(item);
+			}
+		}
+	}
+	Ok(items)
+}
+
+async fn latest_file_id(api_key: &str, mod_id: i64) -> Result<i64, ApiError> {
+	let summary = get_mod(api_key, mod_id).await?;
+	summary
+		.latest_file_id
 		.ok_or_else(|| ApiError::Parse("无法确定最新文件".into()))
 }
 

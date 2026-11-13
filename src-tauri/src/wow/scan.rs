@@ -15,18 +15,19 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 	fs::create_dir_all(&addons_path).map_err(|e| e.to_string())?;
 
 	if !force_rescan {
-		if let Some(cache) = load_scan_cache(&addons_path) {
+		if let Some(cache) = load_scan_cache(install) {
 			if cache.scanned_at.is_some() {
 				log::info!(
 					"list_installed cache hit install={} count={}",
 					install.label,
 					cache.addons.len()
 				);
+				// Cache hit: return immediately — no CurseForge API calls.
+				// Thumbnails are URL strings already persisted in the JSON cache.
 				let before = cache.addons.len();
-				let mut filtered = filter_unsupported_addons(install, cache.addons);
-				let enriched = enrich_missing_curseforge_metadata(install, &mut filtered).await;
-				if filtered.len() != before || enriched {
-					let _ = save_scan_cache(&addons_path, &filtered);
+				let filtered = filter_unsupported_addons(install, cache.addons);
+				if filtered.len() != before {
+					let _ = save_scan_cache(install, &filtered);
 				}
 				return Ok(filtered);
 			}
@@ -39,7 +40,7 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 		force_rescan
 	);
 	let results = scan_disk_with_updates(install, force_rescan).await?;
-	save_scan_cache(&addons_path, &results)?;
+	save_scan_cache(install, &results)?;
 	log::info!(
 		"list_installed scanned install={} count={}",
 		install.label,
@@ -53,7 +54,7 @@ pub fn refresh_local_cache(install: &WowInstall) -> Result<Vec<InstalledAddon>, 
 	let addons_path = PathBuf::from(&install.addons_path);
 	fs::create_dir_all(&addons_path).map_err(|e| e.to_string())?;
 
-	let previous = load_scan_cache(&addons_path).unwrap_or_default();
+	let previous = load_scan_cache(install).unwrap_or_default();
 	let prev_map: HashMap<_, _> = previous
 		.addons
 		.into_iter()
@@ -63,27 +64,39 @@ pub fn refresh_local_cache(install: &WowInstall) -> Result<Vec<InstalledAddon>, 
 	let mut results = scan_disk_only(install)?;
 	for addon in &mut results {
 		if let Some(prev) = prev_map.get(&addon.folder_name) {
-			// Keep prior update flags when the installed file hasn't changed.
+			// Keep prior update flags / icons when the installed file hasn't changed.
 			if addon.file_id == prev.file_id {
 				addon.has_update = prev.has_update;
 				addon.remote_version = prev.remote_version.clone();
 				addon.remote_file_id = prev.remote_file_id;
 			}
+			if addon.thumbnail_url.as_ref().map(|u| u.is_empty()).unwrap_or(true) {
+				addon.thumbnail_url = prev.thumbnail_url.clone();
+			}
+			if addon.curseforge_id.is_none() {
+				addon.curseforge_id = prev.curseforge_id;
+			}
+			if addon.curseforge_slug.is_none() {
+				addon.curseforge_slug = prev.curseforge_slug.clone();
+			}
+			if addon.website_url.as_ref().map(|u| u.is_empty()).unwrap_or(true) {
+				addon.website_url = prev.website_url.clone();
+			}
 		}
 	}
 
-	save_scan_cache(&addons_path, &results)?;
+	save_scan_cache(install, &results)?;
 	Ok(results)
 }
 
 pub fn remove_from_cache(install: &WowInstall, folder_name: &str) -> Result<(), String> {
-	let addons_path = PathBuf::from(&install.addons_path);
-	let Some(mut cache) = load_scan_cache(&addons_path) else {
+	let Some(mut cache) = load_scan_cache(install) else {
 		return Ok(());
 	};
 	cache.addons.retain(|a| a.folder_name != folder_name);
 	cache.scanned_at = Some(Utc::now().to_rfc3339());
-	write_scan_cache(&addons_path, &cache)
+	cache.addons_path = Some(install.addons_path.clone());
+	write_scan_cache(install, &cache)
 }
 
 fn sanitize_installed_list(mut addons: Vec<InstalledAddon>) -> Vec<InstalledAddon> {
@@ -130,28 +143,76 @@ fn filter_unsupported_addons(
 		.collect()
 }
 
-fn scan_cache_path(addons_path: &Path) -> PathBuf {
+fn appdata_scan_cache_dir() -> Option<PathBuf> {
+	let dir = dirs::config_dir()?.join("wow-addon-manager").join("scan-cache");
+	fs::create_dir_all(&dir).ok()?;
+	Some(dir)
+}
+
+fn appdata_scan_cache_path(install: &WowInstall) -> Option<PathBuf> {
+	Some(appdata_scan_cache_dir()?.join(format!("{}.json", install.id)))
+}
+
+fn legacy_scan_cache_path(addons_path: &Path) -> PathBuf {
 	addons_path.join(SCAN_CACHE_FILE)
 }
 
-fn load_scan_cache(addons_path: &Path) -> Option<AddonScanCache> {
-	let content = fs::read_to_string(scan_cache_path(addons_path)).ok()?;
-	serde_json::from_str(&content).ok()
+fn normalize_path_key(path: &str) -> String {
+	path.replace('\\', "/").to_lowercase()
 }
 
-fn save_scan_cache(addons_path: &Path, addons: &[InstalledAddon]) -> Result<(), String> {
+fn load_scan_cache(install: &WowInstall) -> Option<AddonScanCache> {
+	let addons_path = PathBuf::from(&install.addons_path);
+	let appdata = appdata_scan_cache_path(install).and_then(|path| {
+		let content = fs::read_to_string(path).ok()?;
+		serde_json::from_str::<AddonScanCache>(&content).ok()
+	});
+	if let Some(cache) = appdata {
+		if cache_matches_install(&cache, install) {
+			return Some(cache);
+		}
+	}
+
+	// Migrate legacy cache written inside the AddOns folder.
+	let legacy = {
+		let content = fs::read_to_string(legacy_scan_cache_path(&addons_path)).ok()?;
+		serde_json::from_str::<AddonScanCache>(&content).ok()
+	};
+	if let Some(mut cache) = legacy {
+		cache.addons_path = Some(install.addons_path.clone());
+		let _ = write_scan_cache(install, &cache);
+		let _ = fs::remove_file(legacy_scan_cache_path(&addons_path));
+		return Some(cache);
+	}
+	None
+}
+
+fn cache_matches_install(cache: &AddonScanCache, install: &WowInstall) -> bool {
+	match &cache.addons_path {
+		Some(path) => normalize_path_key(path) == normalize_path_key(&install.addons_path),
+		// Older caches without path still usable for this install id file.
+		None => true,
+	}
+}
+
+fn save_scan_cache(install: &WowInstall, addons: &[InstalledAddon]) -> Result<(), String> {
 	let cache = AddonScanCache {
-		version: 1,
+		version: 2,
 		scanned_at: Some(Utc::now().to_rfc3339()),
+		addons_path: Some(install.addons_path.clone()),
 		addons: addons.to_vec(),
 	};
-	write_scan_cache(addons_path, &cache)
+	write_scan_cache(install, &cache)
 }
 
-fn write_scan_cache(addons_path: &Path, cache: &AddonScanCache) -> Result<(), String> {
-	fs::create_dir_all(addons_path).map_err(|e| e.to_string())?;
+fn write_scan_cache(install: &WowInstall, cache: &AddonScanCache) -> Result<(), String> {
+	let path = appdata_scan_cache_path(install)
+		.ok_or_else(|| "无法定位 %AppData%/wow-addon-manager/scan-cache".to_string())?;
+	if let Some(parent) = path.parent() {
+		fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+	}
 	let content = serde_json::to_string_pretty(cache).map_err(|e| e.to_string())?;
-	fs::write(scan_cache_path(addons_path), content).map_err(|e| e.to_string())
+	fs::write(path, content).map_err(|e| e.to_string())
 }
 
 fn strip_manual_category(addon: &mut InstalledAddon) {
@@ -160,40 +221,9 @@ fn strip_manual_category(addon: &mut InstalledAddon) {
 		.retain(|c| !c.eq_ignore_ascii_case("Manual"));
 }
 
-/// Fill CurseForge icon / ids for addons that still lack them (e.g. manual installs).
-/// Returns true if any in-memory addon fields changed.
-async fn enrich_missing_curseforge_metadata(
-	install: &WowInstall,
-	results: &mut [InstalledAddon],
-) -> bool {
-	let addons_path = PathBuf::from(&install.addons_path);
-	let mut stored = manifest::load(&addons_path);
-	let mut manifest_dirty = false;
-	let mut changed = false;
-
-	for addon in results.iter_mut() {
-		strip_manual_category(addon);
-		if !needs_thumbnail(addon) && addon.curseforge_id.is_some() {
-			continue;
-		}
-		if let Some(remote) = find_remote_for_installed(addon, false).await {
-			if apply_remote_metadata(addon, &remote) {
-				upsert_remote_enrichment(&mut stored, addon);
-				manifest_dirty = true;
-				changed = true;
-			}
-		}
-	}
-
-	if manifest_dirty {
-		let _ = manifest::save(&addons_path, &stored);
-	}
-	changed
-}
-
 async fn scan_disk_with_updates(
 	install: &WowInstall,
-	force_refresh: bool,
+	check_remote: bool,
 ) -> Result<Vec<InstalledAddon>, String> {
 	let mut results = scan_disk_only(install)?;
 	let addons_path = PathBuf::from(&install.addons_path);
@@ -202,11 +232,48 @@ async fn scan_disk_with_updates(
 
 	for addon in &mut results {
 		strip_manual_category(addon);
-		if let Some(remote) = find_remote_for_installed(addon, force_refresh).await {
-			apply_update_flags(addon, &remote);
-			if apply_remote_metadata(addon, &remote) {
-				upsert_remote_enrichment(&mut stored, addon);
-				manifest_dirty = true;
+	}
+
+	if check_remote {
+		// One batch request for all known CurseForge ids instead of N searches.
+		let ids: Vec<i64> = results.iter().filter_map(|a| a.curseforge_id).collect();
+		let by_id = curseforge::get_addons_by_ids(&ids).await;
+
+		let batch_ok = !ids.is_empty() && !by_id.is_empty();
+		for addon in &mut results {
+			let remote = match addon.curseforge_id {
+				Some(id) => {
+					if let Some(item) = by_id.get(&id) {
+						Some(item.clone())
+					} else if !batch_ok {
+						// Batch failed or empty key — fall back to a single GET, never search.
+						curseforge::get_addon(id).await
+					} else {
+						None
+					}
+				}
+				None => find_remote_via_search(addon).await,
+			};
+			if let Some(remote) = remote {
+				apply_update_flags(addon, &remote);
+				if apply_remote_metadata(addon, &remote) {
+					upsert_remote_enrichment(&mut stored, addon);
+					manifest_dirty = true;
+				}
+			}
+		}
+	} else {
+		// First cache-less open: still fill missing icons/ids once, but never bypass
+		// browse cache and prefer id lookup / short search terms.
+		for addon in &mut results {
+			if !needs_thumbnail(addon) && addon.curseforge_id.is_some() {
+				continue;
+			}
+			if let Some(remote) = find_remote_for_installed(addon).await {
+				if apply_remote_metadata(addon, &remote) {
+					upsert_remote_enrichment(&mut stored, addon);
+					manifest_dirty = true;
+				}
 			}
 		}
 	}
@@ -467,24 +534,41 @@ fn upsert_remote_enrichment(stored: &mut crate::types::AddonManifest, addon: &In
 	stored.version = 1;
 }
 
-async fn find_remote_for_installed(
-	addon: &InstalledAddon,
-	force_refresh: bool,
-) -> Option<AddonSummary> {
+async fn find_remote_for_installed(addon: &InstalledAddon) -> Option<AddonSummary> {
+	if let Some(id) = addon.curseforge_id {
+		if let Some(summary) = curseforge::get_addon(id).await {
+			return Some(summary);
+		}
+	}
+	find_remote_via_search(addon).await
+}
+
+/// Search-based match for installed addons. Always uses browse cache (no force_refresh)
+/// and tries at most two terms to avoid classId-retry storms.
+async fn find_remote_via_search(addon: &InstalledAddon) -> Option<AddonSummary> {
 	let mut terms = Vec::new();
 	if let Some(slug) = &addon.curseforge_slug {
-		terms.push(slug.clone());
+		if !slug.trim().is_empty() {
+			terms.push(slug.clone());
+		}
 	}
-	terms.push(addon.folder_name.clone());
+	if !terms
+		.iter()
+		.any(|t| t.eq_ignore_ascii_case(&addon.folder_name))
+	{
+		terms.push(addon.folder_name.clone());
+	}
+	// Title only as a last resort when it differs from folder/slug.
 	if !addon.title.is_empty()
 		&& !terms
 			.iter()
 			.any(|t| t.eq_ignore_ascii_case(&addon.title))
+		&& terms.len() < 2
 	{
 		terms.push(addon.title.clone());
 	}
 
-	for term in terms {
+	for term in terms.into_iter().take(2) {
 		let result = curseforge::search_addons(
 			SearchParams {
 				search: Some(term),
@@ -494,7 +578,7 @@ async fn find_remote_for_installed(
 				game_version_type_ids: None,
 				sort_by: Some("relevancy".into()),
 			},
-			force_refresh,
+			false,
 		)
 		.await;
 		if let Some(item) = result
@@ -627,12 +711,43 @@ mod tests {
 		let first = refresh_local_cache(&install).unwrap();
 		assert_eq!(first.len(), 1);
 		assert_eq!(first[0].folder_name, "CachedAddon");
-		assert!(scan_cache_path(Path::new(&install.addons_path)).exists());
+		let cache_path = appdata_scan_cache_path(&install).expect("appdata cache path");
+		assert!(cache_path.exists());
 
-		let cached = load_scan_cache(Path::new(&install.addons_path)).unwrap();
+		let cached = load_scan_cache(&install).unwrap();
 		assert!(cached.scanned_at.is_some());
 		assert_eq!(cached.addons.len(), 1);
+		assert_eq!(
+			cached.addons_path.as_deref(),
+			Some(install.addons_path.as_str())
+		);
 
+		let _ = fs::remove_file(cache_path);
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn migrates_legacy_addons_folder_cache_to_appdata() {
+		let (dir, install) = temp_install();
+		let legacy = AddonScanCache {
+			version: 1,
+			scanned_at: Some("2026-01-01T00:00:00Z".into()),
+			addons_path: None,
+			addons: vec![sample_installed("CachedAddon")],
+		};
+		let legacy_path = legacy_scan_cache_path(Path::new(&install.addons_path));
+		fs::write(
+			&legacy_path,
+			serde_json::to_string_pretty(&legacy).unwrap(),
+		)
+		.unwrap();
+
+		let cached = load_scan_cache(&install).unwrap();
+		assert_eq!(cached.addons.len(), 1);
+		assert!(appdata_scan_cache_path(&install).unwrap().exists());
+		assert!(!legacy_path.exists());
+
+		let _ = fs::remove_file(appdata_scan_cache_path(&install).unwrap());
 		let _ = fs::remove_dir_all(dir);
 	}
 

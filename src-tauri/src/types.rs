@@ -166,10 +166,15 @@ pub struct AddonManifest {
 }
 
 /// Cached result of an AddOns folder scan (disk + optional update checks).
+/// Stored under %AppData%/wow-addon-manager/scan-cache/ as JSON.
+/// Thumbnails stay as remote URLs (not embedded binary) — JSON is enough.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AddonScanCache {
 	pub version: u32,
 	pub scanned_at: Option<String>,
+	/// AddOns folder this cache belongs to (detect path moves / remounts).
+	#[serde(default)]
+	pub addons_path: Option<String>,
 	pub addons: Vec<InstalledAddon>,
 }
