@@ -212,7 +212,7 @@ pub async fn install_from_archive(
 			author,
 			summary: notes.or_else(|| Some(format!("手动安装自 {archive_name}"))),
 			thumbnail_url: None,
-			categories: vec!["Manual".into()],
+			categories: Vec::new(),
 			flavors: Vec::new(),
 			download_count: None,
 			latest_game_version: None,

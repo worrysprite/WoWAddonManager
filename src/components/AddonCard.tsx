@@ -110,7 +110,10 @@ export function AddonCard(props: Props) {
 	}
 
 	const { addon, busy, onUpdate, onDelete } = props;
-	const extra = extraCategoryCount(addon.categories);
+	const categories = addon.categories.filter(
+		(c) => c.trim() && c.toLowerCase() !== "manual",
+	);
+	const extra = extraCategoryCount(categories);
 	return (
 		<article className="addon-card addon-card-installed">
 			<Thumb url={addon.thumbnailUrl} name={addon.title} />
@@ -121,11 +124,12 @@ export function AddonCard(props: Props) {
 				</p>
 				<p className="card-summary">{addon.notes || t("card.installedAddon")}</p>
 				<div className="meta-row">
-					<span className="tag">
-						{primaryCategory(addon.categories)}
-						{extra > 0 ? <span className="tag-extra">+{extra}</span> : null}
-					</span>
-					<span className="meta-item">↓ {formatDownloads(addon.downloadCount)}</span>
+					{categories.length > 0 ? (
+						<span className="tag">
+							{primaryCategory(categories)}
+							{extra > 0 ? <span className="tag-extra">+{extra}</span> : null}
+						</span>
+					) : null}
 					<span className="meta-item">⏱ {formatDate(addon.updatedAt)}</span>
 					<span className="meta-item">
 						🎮 {addon.latestGameVersion || addon.interfaceVersion || "-"}

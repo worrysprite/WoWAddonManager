@@ -601,23 +601,9 @@ button {
 	gap: 8px;
 }
 
-.settings-btn {
-	position: relative;
-}
-
 .settings-btn.active-settings {
 	border-color: var(--accent);
 	color: var(--accent-strong);
-}
-
-.settings-dot {
-	position: absolute;
-	top: 6px;
-	right: 6px;
-	width: 7px;
-	height: 7px;
-	border-radius: 50%;
-	background: var(--ok);
 }
 
 .linkish {

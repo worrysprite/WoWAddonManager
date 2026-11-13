@@ -101,7 +101,6 @@ export default function App() {
 						title={t("nav.settings")}
 					>
 						{t("nav.settings")}
-						{settings?.hasApiKey ? <span className="settings-dot" /> : null}
 					</button>
 				</div>
 			</header>
@@ -129,7 +128,7 @@ export default function App() {
 				</div>
 			) : null}
 
-			{settings?.hasApiKey ? (
+			{tab === "browse" && settings?.hasApiKey ? (
 				<div className="banner ok-banner">
 					{t("banner.apiEnabled")}{" "}
 					{t("browse.attributionBefore")}
