@@ -96,8 +96,9 @@ pub fn get(params: &SearchParams, has_api_key: bool) -> Option<SearchResult> {
 	if age.to_std().unwrap_or(Duration::MAX) > CACHE_TTL {
 		return None;
 	}
-// Return cached payload as-is; do not surface cache mechanics in the UI.
-Some(entry.result.clone())
+	// Return cached payload as-is; do not surface cache mechanics in the UI.
+	Some(entry.result.clone())
+}
 
 pub fn put(params: &SearchParams, has_api_key: bool, result: &SearchResult) {
 	// Skip caching hard failures so a later retry can recover.
