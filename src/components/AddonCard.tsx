@@ -1,3 +1,4 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
 import type { AddonSummary, InstalledAddon, WowInstall } from "../types";
@@ -8,6 +9,17 @@ import {
 	formatDownloads,
 	primaryCategory,
 } from "../utils";
+
+function resolveThumbSrc(url: string): string {
+	if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("asset:")) {
+		return url;
+	}
+	try {
+		return convertFileSrc(url);
+	} catch {
+		return url;
+	}
+}
 
 type BrowseProps = {
 	mode: "browse";
@@ -32,10 +44,11 @@ function Thumb({ url, name }: { url?: string | null; name: string }) {
 	if (!url) {
 		return <div className="thumb">{initial}</div>;
 	}
+	const src = resolveThumbSrc(url);
 	return (
 		<div className="thumb">
 			<img
-				src={url}
+				src={src}
 				alt=""
 				onError={(e) => {
 					const img = e.currentTarget;

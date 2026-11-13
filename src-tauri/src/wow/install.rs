@@ -71,6 +71,12 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 		.cloned()
 		.unwrap_or_else(|| sanitize_folder(&addon.slug));
 	let now = Utc::now().to_rfc3339();
+	let thumbnail_url = crate::icon_cache::ensure_cached(Some(addon.id), &addon.thumbnail_url)
+		.await
+		.or_else(|| {
+			let trimmed = addon.thumbnail_url.trim();
+			(!trimmed.is_empty()).then(|| trimmed.to_string())
+		});
 
 	for folder in &accepted {
 		let entry = ManifestAddon {
@@ -81,7 +87,7 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 			name: Some(addon.name.clone()),
 			author: Some(addon.author.clone()),
 			summary: Some(addon.summary.clone()),
-			thumbnail_url: Some(addon.thumbnail_url.clone()),
+			thumbnail_url: thumbnail_url.clone(),
 			categories: addon.categories.clone(),
 			flavors: addon.flavors.clone(),
 			download_count: Some(addon.download_count),

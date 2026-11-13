@@ -1,6 +1,7 @@
 mod app_log;
 mod config;
 mod curseforge;
+mod icon_cache;
 mod types;
 mod wow;
 

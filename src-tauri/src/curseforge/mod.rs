@@ -14,12 +14,14 @@ use std::collections::HashMap;
 pub async fn search_addons(params: SearchParams, force_refresh: bool) -> SearchResult {
 	let has_api_key = config::api_key().is_some();
 	if !force_refresh {
-		if let Some(cached) = browse_cache::get(&params, has_api_key) {
+		if let Some(mut cached) = browse_cache::get(&params, has_api_key) {
+			crate::icon_cache::localize_summary_thumbnails(&mut cached.items).await;
 			return cached;
 		}
 	}
 
-	let result = fetch_search(params.clone()).await;
+	let mut result = fetch_search(params.clone()).await;
+	crate::icon_cache::localize_summary_thumbnails(&mut result.items).await;
 	browse_cache::put(&params, has_api_key, &result);
 	result
 }

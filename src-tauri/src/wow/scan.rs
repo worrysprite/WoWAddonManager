@@ -14,7 +14,7 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 	let addons_path = PathBuf::from(&install.addons_path);
 	fs::create_dir_all(&addons_path).map_err(|e| e.to_string())?;
 
-	if !force_rescan {
+			if !force_rescan {
 		if let Some(cache) = load_scan_cache(install) {
 			if cache.scanned_at.is_some() {
 				log::info!(
@@ -22,11 +22,17 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 					install.label,
 					cache.addons.len()
 				);
-				// Cache hit: return immediately — no CurseForge API calls.
-				// Thumbnails are URL strings already persisted in the JSON cache.
+				// Cache hit: no CurseForge search. Still localize any leftover CDN
+				// thumbnail URLs into %AppData%/icons (no-op once already local).
 				let before = cache.addons.len();
-				let filtered = filter_unsupported_addons(install, cache.addons);
-				if filtered.len() != before {
+				let mut filtered = filter_unsupported_addons(install, cache.addons);
+				let had_remote_thumbs = filtered.iter().any(|a| {
+					a.thumbnail_url
+						.as_deref()
+						.is_some_and(|u| u.starts_with("http://") || u.starts_with("https://"))
+				});
+				crate::icon_cache::localize_installed_thumbnails(&mut filtered).await;
+				if filtered.len() != before || had_remote_thumbs {
 					let _ = save_scan_cache(install, &filtered);
 				}
 				return Ok(filtered);
@@ -39,7 +45,8 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 		install.label,
 		force_rescan
 	);
-	let results = scan_disk_with_updates(install, force_rescan).await?;
+	let mut results = scan_disk_with_updates(install, force_rescan).await?;
+	crate::icon_cache::localize_installed_thumbnails(&mut results).await;
 	save_scan_cache(install, &results)?;
 	log::info!(
 		"list_installed scanned install={} count={}",
@@ -86,6 +93,7 @@ pub fn refresh_local_cache(install: &WowInstall) -> Result<Vec<InstalledAddon>, 
 	}
 
 	save_scan_cache(install, &results)?;
+	// Icon files are resolved asynchronously on next list/rescan; keep URLs for now.
 	Ok(results)
 }
 
