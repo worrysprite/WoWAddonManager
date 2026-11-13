@@ -249,12 +249,45 @@ fn open_dir(path: String) -> Result<(), String> {
 	Err("当前平台不支持打开目录".into())
 }
 
+#[tauri::command]
+fn get_app_version() -> String {
+	env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Heuristic: NSIS installs usually live under Local AppData product folder / Program Files.
+/// Do not match the executable file name alone — portable builds are also named
+/// `WoW-Addon-Manager.exe` / similar and must stay on the manual-download path.
+#[tauri::command]
+fn get_update_install_kind() -> String {
+	let Ok(exe) = std::env::current_exe() else {
+		return "portable".into();
+	};
+	let path = exe.to_string_lossy().to_lowercase().replace('\\', "/");
+	let parent = exe
+		.parent()
+		.map(|p| p.to_string_lossy().to_lowercase().replace('\\', "/"))
+		.unwrap_or_default();
+	let installed = parent.contains("program files")
+		|| parent.contains("/appdata/local/wow addon manager")
+		|| parent.contains("/appdata/roaming/wow addon manager")
+		|| parent.contains("com.worrysprite.wowaddonmanager")
+		|| path.contains("/appdata/local/wow addon manager/")
+		|| path.contains("/appdata/roaming/wow addon manager/");
+	if installed {
+		"installed".into()
+	} else {
+		"portable".into()
+	}
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
 	app_log::init();
 	tauri::Builder::default()
 		.plugin(tauri_plugin_opener::init())
 		.plugin(tauri_plugin_dialog::init())
+		.plugin(tauri_plugin_process::init())
+		.plugin(tauri_plugin_updater::Builder::new().build())
 		.invoke_handler(tauri::generate_handler![
 			search_addons,
 			get_filter_catalog,
@@ -277,7 +310,9 @@ pub fn run() {
 			save_logs,
 			backup_install,
 			restore_install,
-			open_dir
+			open_dir,
+			get_app_version,
+			get_update_install_kind
 		])
 		.run(tauri::generate_context!())
 		.expect("error while running tauri application");

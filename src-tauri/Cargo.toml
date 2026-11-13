@@ -1,6 +1,6 @@
 [package]
 name = "wow-addon-manager"
-version = "0.4.2"
+version = "1.0.0"
 description = "World of Warcraft addon manager"
 authors = ["WorrySprite"]
 edition = "2021"
@@ -31,6 +31,8 @@ sevenz-rust = "0.6"
 thiserror = "2"
 urlencoding = "2"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread"] }
+tauri-plugin-updater = "2.14.1"
+tauri-plugin-process = "2.4.0"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"

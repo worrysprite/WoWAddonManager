@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
+import { useAppUpdater } from "../hooks/useAppUpdater";
 import { useI18n, type LocalePreference } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
 import type { LogEntry, SettingsView } from "../types";
+import {
+	installDownloadedUpdate,
+	openLatestReleasePage,
+	runUpdateCheck,
+} from "../updater";
 
 type Props = {
 	onBack: () => void;
@@ -21,11 +27,13 @@ export function SettingsPage({
 	onFocusHandled,
 }: Props) {
 	const { t, locale, preference, setPreference } = useI18n();
+	const updater = useAppUpdater({ autoCheck: false });
 	const [settings, setSettings] = useState<SettingsView | null>(null);
 	const [apiKey, setApiKey] = useState("");
 	const [localeDraft, setLocaleDraft] = useState<LocalePreference>("system");
 	const [saving, setSaving] = useState(false);
 	const [busy, setBusy] = useState(false);
+	const [updateBusy, setUpdateBusy] = useState(false);
 	const [ready, setReady] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -330,6 +338,118 @@ export function SettingsPage({
 
 			{error ? <div className="banner">{error}</div> : null}
 			{message ? <div className="banner ok-banner">{message}</div> : null}
+
+			<div className="settings-card">
+				<h3 className="settings-card-title">{t("update.title")}</h3>
+				<p className="muted settings-hint">
+					{t("update.current", {
+						version: updater.currentVersion || "…",
+					})}
+				</p>
+				{updater.status === "checking" ? (
+					<p className="muted settings-hint">{t("update.checking")}</p>
+				) : null}
+				{updater.status === "upToDate" ? (
+					<p className="muted settings-hint">{t("update.upToDate")}</p>
+				) : null}
+				{updater.status === "downloading" ? (
+					<p className="muted settings-hint">
+						{t("update.downloading", {
+							version: updater.remoteVersion || "",
+						})}
+					</p>
+				) : null}
+				{updater.status === "ready" ? (
+					<p className="muted settings-hint">
+						{t("update.ready", { version: updater.remoteVersion || "" })}
+					</p>
+				) : null}
+				{updater.status === "availableManual" ? (
+					<>
+						<p className="muted settings-hint">
+							{t("update.availableManual", {
+								version: updater.remoteVersion || "",
+							})}
+						</p>
+						{updater.installKind === "portable" ? (
+							<p className="muted settings-hint">{t("update.portableHint")}</p>
+						) : null}
+					</>
+				) : null}
+				{updater.status === "installing" ? (
+					<p className="muted settings-hint">{t("update.installing")}</p>
+				) : null}
+				{updater.status === "error" && updater.error ? (
+					<p className="muted settings-hint">
+						{t("update.error", { error: updater.error })}
+					</p>
+				) : null}
+				{updater.notes ? (
+					<details className="settings-update-notes">
+						<summary>{t("update.notes")}</summary>
+						<pre className="settings-update-notes-body">{updater.notes}</pre>
+					</details>
+				) : null}
+				<div className="settings-actions">
+					<button
+						className="btn"
+						type="button"
+						disabled={updateBusy || updater.status === "checking"}
+						onClick={async () => {
+							setUpdateBusy(true);
+							setError(null);
+							try {
+								await runUpdateCheck({ autoDownload: true });
+							} catch (err) {
+								setError(String(err));
+							} finally {
+								setUpdateBusy(false);
+							}
+						}}
+					>
+						{t("update.checkNow")}
+					</button>
+					{updater.status === "ready" ? (
+						<button
+							className="btn primary"
+							type="button"
+							disabled={updateBusy}
+							onClick={async () => {
+								setUpdateBusy(true);
+								setError(null);
+								try {
+									await installDownloadedUpdate();
+								} catch (err) {
+									setError(String(err));
+									setUpdateBusy(false);
+								}
+							}}
+						>
+							{t("update.installRestart")}
+						</button>
+					) : null}
+					{updater.status === "availableManual" ? (
+						<button
+							className="btn primary"
+							type="button"
+							disabled={updateBusy}
+							onClick={async () => {
+								setUpdateBusy(true);
+								setError(null);
+								try {
+									await openLatestReleasePage();
+								} catch (err) {
+									setError(String(err));
+								} finally {
+									setUpdateBusy(false);
+								}
+							}}
+						>
+							{t("update.openDownload")}
+						</button>
+					) : null}
+				</div>
+			</div>
 
 			<div className="settings-card">
 				<h3 className="settings-card-title">{t("settings.language")}</h3>

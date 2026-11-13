@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: WoW Addon Manager ${{ github.ref_name }}
+          releaseBody: |
+            ## Downloads
+            - **Installer (recommended)**: `*-setup.exe` — supports in-app auto-update
+            - **Portable**: `WoW-Addon-Manager.exe` — replace manually from Releases
+
+            See `releases/README.md` for notes.
+          releaseDraft: false
+          prerelease: false
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: --bundles nsis
+
+      - name: Attach portable exe
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $exe = Get-ChildItem -Path "src-tauri/target/release" -Filter "*.exe" |
+            Where-Object { $_.Name -notmatch '(?i)install|uninstall|setup' } |
+            Select-Object -First 1
+          if (-not $exe) {
+            throw "Portable exe not found under src-tauri/target/release"
+          }
+          $out = "WoW-Addon-Manager.exe"
+          Copy-Item $exe.FullName $out -Force
+          gh release upload "${{ github.ref_name }}" $out --clobber
