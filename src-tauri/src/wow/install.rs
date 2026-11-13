@@ -1,6 +1,6 @@
 use crate::curseforge;
-use crate::types::{AddonSummary, InstalledAddon, ManifestAddon, WowInstall};
-use crate::wow::{archive, detect, manifest, scan};
+use crate::types::{AddonSummary, InstalledAddon, ManifestAddon, SearchParams, WowInstall};
+use crate::wow::{archive, detect, manifest, scan, toc};
 use chrono::Utc;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -212,7 +212,7 @@ pub async fn install_from_archive(
 			author,
 			summary: notes.or_else(|| Some(format!("手动安装自 {archive_name}"))),
 			thumbnail_url: None,
-			categories: vec!["Manual".into()],
+			categories: Vec::new(),
 			flavors: Vec::new(),
 			download_count: None,
 			latest_game_version: None,
@@ -248,51 +248,118 @@ pub async fn install_from_archive(
 	Ok(installed)
 }
 
+fn remote_matches_local(
+	item: &AddonSummary,
+	folder_name: &str,
+	tracked: Option<&ManifestAddon>,
+	title: Option<&str>,
+) -> bool {
+	if let Some(tracked) = tracked {
+		if let Some(id) = tracked.curseforge_id {
+			if item.id == id {
+				return true;
+			}
+		}
+		if let Some(slug) = tracked.curseforge_slug.as_deref() {
+			if item.slug.eq_ignore_ascii_case(slug) {
+				return true;
+			}
+		}
+		if let Some(name) = tracked.name.as_deref() {
+			if item.name.eq_ignore_ascii_case(name) {
+				return true;
+			}
+		}
+	}
+	item.slug.eq_ignore_ascii_case(folder_name)
+		|| item.name.eq_ignore_ascii_case(folder_name)
+		|| title
+			.map(|t| item.name.eq_ignore_ascii_case(t))
+			.unwrap_or(false)
+}
+
+async fn find_curseforge_for_update(
+	folder_name: &str,
+	tracked: Option<&ManifestAddon>,
+	title: Option<&str>,
+) -> Option<AddonSummary> {
+	let mut terms = Vec::new();
+	if let Some(slug) = tracked.and_then(|t| t.curseforge_slug.clone()) {
+		terms.push(slug);
+	}
+	terms.push(folder_name.to_string());
+	if let Some(name) = tracked.and_then(|t| t.name.clone()) {
+		if !terms.iter().any(|t| t.eq_ignore_ascii_case(&name)) {
+			terms.push(name);
+		}
+	}
+	if let Some(title) = title {
+		if !terms.iter().any(|t| t.eq_ignore_ascii_case(title)) {
+			terms.push(title.to_string());
+		}
+	}
+
+	for term in terms {
+		let result = curseforge::search_addons(
+			SearchParams {
+				search: Some(term),
+				page: Some(1),
+				page_size: Some(10),
+				categories: None,
+				game_version_type_ids: None,
+				sort_by: Some("relevancy".into()),
+			},
+			true,
+		)
+		.await;
+		if let Some(item) = result
+			.items
+			.into_iter()
+			.find(|item| remote_matches_local(item, folder_name, tracked, title))
+		{
+			return Some(item);
+		}
+	}
+	None
+}
+
 pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<InstalledAddon, String> {
 	let install = resolve_install(install_id)?;
 	let addons_path = PathBuf::from(&install.addons_path);
 	let stored = manifest::load(&addons_path);
-	let tracked = manifest::find(&stored, folder_name)
-		.cloned()
-		.ok_or_else(|| "本地清单中没有该插件的 CurseForge 信息，请从浏览页重新安装".to_string())?;
+	let tracked = manifest::find(&stored, folder_name).cloned();
 
-	if tracked.install_source.as_deref() == Some("manual") || tracked.curseforge_slug.is_none() {
-		return Err("手动安装的插件不支持在线更新，请重新选择压缩包安装".into());
-	}
+	let toc_ctx = toc::ClientContext::from_install(
+		&install.flavor_key,
+		install.game_version.as_deref(),
+	);
+	let toc_meta =
+		toc::read_folder_toc_for_client(&addons_path, folder_name, &toc_ctx).unwrap_or_default();
+	let title = tracked
+		.as_ref()
+		.and_then(|t| t.name.clone())
+		.or(toc_meta.title.clone())
+		.or_else(|| Some(folder_name.to_string()));
 
-	let slug = tracked
-		.curseforge_slug
-		.clone()
-		.ok_or_else(|| "缺少 slug".to_string())?;
-	let remote = crate::curseforge::search_addons(
-		crate::types::SearchParams {
-			search: Some(slug.clone()),
-			page: Some(1),
-			page_size: Some(5),
-			categories: None,
-			game_version_type_ids: None,
-			sort_by: Some("relevancy".into()),
-		},
-		false,
-	)
-	.await
-	.items
-	.into_iter()
-	.find(|item| {
-		tracked
-			.curseforge_id
-			.map(|id| item.id == id)
-			.unwrap_or(false)
-			|| item.slug == slug
-	});
-
-	let summary = if let Some(remote) = remote {
+	let summary = if let Some(remote) =
+		find_curseforge_for_update(folder_name, tracked.as_ref(), title.as_deref()).await
+	{
 		remote
-	} else {
+	} else if let Some(tracked) = tracked.as_ref() {
+		// Previously tracked CurseForge installs can fall back to stored metadata.
+		let slug = tracked
+			.curseforge_slug
+			.clone()
+			.ok_or_else(|| {
+				format!("未在 CurseForge 找到与「{folder_name}」同名的插件，无法在线更新")
+			})?;
 		AddonSummary {
 			id: tracked.curseforge_id.unwrap_or(0),
 			slug,
-			name: tracked.name.clone().unwrap_or_else(|| folder_name.to_string()),
+			name: tracked
+				.name
+				.clone()
+				.unwrap_or_else(|| folder_name.to_string()),
 			author: tracked.author.clone().unwrap_or_default(),
 			summary: tracked.summary.clone().unwrap_or_default(),
 			thumbnail_url: tracked.thumbnail_url.clone().unwrap_or_default(),
@@ -304,10 +371,13 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 			website_url: tracked.website_url.clone().unwrap_or_default(),
 			latest_file_id: tracked.file_id,
 		}
+	} else {
+		return Err(format!(
+			"未在 CurseForge 找到与「{folder_name}」同名的插件，无法在线更新"
+		));
 	};
 
-	let installed_at = tracked.installed_at.clone();
-	let addons_path = PathBuf::from(&install.addons_path);
+	let installed_at = tracked.and_then(|t| t.installed_at.clone());
 	let target = addons_path.join(folder_name);
 	let backup = addons_path.join(format!(
 		".wam-backup-{}-{}",
@@ -401,6 +471,47 @@ fn write_placeholder_toc(dir: &Path, folder: &str, addon: &AddonSummary) -> Resu
 mod tests {
 	use super::*;
 	use std::time::{SystemTime, UNIX_EPOCH};
+
+	fn sample_remote(id: i64, slug: &str, name: &str) -> AddonSummary {
+		AddonSummary {
+			id,
+			slug: slug.into(),
+			name: name.into(),
+			author: "Author".into(),
+			summary: String::new(),
+			thumbnail_url: String::new(),
+			download_count: 0,
+			updated_at: String::new(),
+			latest_game_version: String::new(),
+			categories: vec![],
+			flavors: vec![],
+			website_url: String::new(),
+			latest_file_id: Some(1),
+		}
+	}
+
+	#[test]
+	fn remote_matches_manual_folder_or_title() {
+		let item = sample_remote(42, "DeadlyBossMods", "Deadly Boss Mods");
+		assert!(remote_matches_local(
+			&item,
+			"DeadlyBossMods",
+			None,
+			Some("Deadly Boss Mods")
+		));
+		assert!(remote_matches_local(
+			&item,
+			"SomeOtherFolder",
+			None,
+			Some("Deadly Boss Mods")
+		));
+		assert!(!remote_matches_local(
+			&item,
+			"Unrelated",
+			None,
+			Some("Something Else")
+		));
+	}
 
 	#[test]
 	fn rejected_staging_folder_leaves_live_addon_intact() {

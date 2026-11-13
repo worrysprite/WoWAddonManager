@@ -1,5 +1,7 @@
 use crate::curseforge;
-use crate::types::{AddonScanCache, InstalledAddon, SearchParams, WowInstall};
+use crate::types::{
+	AddonScanCache, AddonSummary, InstalledAddon, ManifestAddon, SearchParams, WowInstall,
+};
 use crate::wow::manifest;
 use chrono::Utc;
 use std::collections::HashMap;
@@ -21,8 +23,9 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 					cache.addons.len()
 				);
 				let before = cache.addons.len();
-				let filtered = filter_unsupported_addons(install, cache.addons);
-				if filtered.len() != before {
+				let mut filtered = filter_unsupported_addons(install, cache.addons);
+				let enriched = enrich_missing_curseforge_metadata(install, &mut filtered).await;
+				if filtered.len() != before || enriched {
 					let _ = save_scan_cache(&addons_path, &filtered);
 				}
 				return Ok(filtered);
@@ -151,18 +154,67 @@ fn write_scan_cache(addons_path: &Path, cache: &AddonScanCache) -> Result<(), St
 	fs::write(scan_cache_path(addons_path), content).map_err(|e| e.to_string())
 }
 
+fn strip_manual_category(addon: &mut InstalledAddon) {
+	addon
+		.categories
+		.retain(|c| !c.eq_ignore_ascii_case("Manual"));
+}
+
+/// Fill CurseForge icon / ids for addons that still lack them (e.g. manual installs).
+/// Returns true if any in-memory addon fields changed.
+async fn enrich_missing_curseforge_metadata(
+	install: &WowInstall,
+	results: &mut [InstalledAddon],
+) -> bool {
+	let addons_path = PathBuf::from(&install.addons_path);
+	let mut stored = manifest::load(&addons_path);
+	let mut manifest_dirty = false;
+	let mut changed = false;
+
+	for addon in results.iter_mut() {
+		strip_manual_category(addon);
+		if !needs_thumbnail(addon) && addon.curseforge_id.is_some() {
+			continue;
+		}
+		if let Some(remote) = find_remote_for_installed(addon, false).await {
+			if apply_remote_metadata(addon, &remote) {
+				upsert_remote_enrichment(&mut stored, addon);
+				manifest_dirty = true;
+				changed = true;
+			}
+		}
+	}
+
+	if manifest_dirty {
+		let _ = manifest::save(&addons_path, &stored);
+	}
+	changed
+}
+
 async fn scan_disk_with_updates(
 	install: &WowInstall,
 	force_refresh: bool,
 ) -> Result<Vec<InstalledAddon>, String> {
 	let mut results = scan_disk_only(install)?;
+	let addons_path = PathBuf::from(&install.addons_path);
+	let mut stored = manifest::load(&addons_path);
+	let mut manifest_dirty = false;
+
 	for addon in &mut results {
-		if let Some(update) = check_update(addon, force_refresh).await {
-			addon.has_update = true;
-			addon.remote_version = update.0;
-			addon.remote_file_id = update.1;
+		strip_manual_category(addon);
+		if let Some(remote) = find_remote_for_installed(addon, force_refresh).await {
+			apply_update_flags(addon, &remote);
+			if apply_remote_metadata(addon, &remote) {
+				upsert_remote_enrichment(&mut stored, addon);
+				manifest_dirty = true;
+			}
 		}
 	}
+
+	if manifest_dirty {
+		let _ = manifest::save(&addons_path, &stored);
+	}
+
 	results.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
 	Ok(results)
 }
@@ -229,8 +281,18 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 			curseforge_id: tracked.and_then(|t| t.curseforge_id),
 			curseforge_slug: tracked.and_then(|t| t.curseforge_slug.clone()),
 			file_id: tracked.and_then(|t| t.file_id),
-			thumbnail_url: tracked.and_then(|t| t.thumbnail_url.clone()),
-			categories: tracked.map(|t| t.categories.clone()).unwrap_or_default(),
+			thumbnail_url: tracked
+				.and_then(|t| t.thumbnail_url.clone())
+				.filter(|u| !u.is_empty()),
+			categories: tracked
+				.map(|t| {
+					t.categories
+						.iter()
+						.filter(|c| !c.eq_ignore_ascii_case("Manual"))
+						.cloned()
+						.collect()
+				})
+				.unwrap_or_default(),
 			installed_at: tracked.and_then(|t| t.installed_at.clone()),
 			updated_at: tracked.and_then(|t| t.updated_at.clone()),
 			download_count: tracked.and_then(|t| t.download_count),
@@ -247,41 +309,35 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 	Ok(results)
 }
 
-async fn check_update(
-	addon: &InstalledAddon,
-	force_refresh: bool,
-) -> Option<(Option<String>, Option<i64>)> {
-	let search_term = addon
-		.curseforge_slug
-		.clone()
-		.or_else(|| Some(addon.title.clone()))?;
-	let result = curseforge::search_addons(
-		SearchParams {
-			search: Some(search_term),
-			page: Some(1),
-			page_size: Some(5),
-			categories: None,
-			game_version_type_ids: None,
-			sort_by: Some("relevancy".into()),
-		},
-		force_refresh,
-	)
-	.await;
-
-	let remote = result.items.into_iter().find(|item| {
-		if let Some(id) = addon.curseforge_id {
-			return item.id == id;
+fn remote_matches_installed(addon: &InstalledAddon, item: &AddonSummary) -> bool {
+	if let Some(id) = addon.curseforge_id {
+		if item.id == id {
+			return true;
 		}
-		if let Some(slug) = &addon.curseforge_slug {
-			return item.slug == *slug;
+	}
+	if let Some(slug) = &addon.curseforge_slug {
+		if item.slug.eq_ignore_ascii_case(slug) {
+			return true;
 		}
-		item.name.eq_ignore_ascii_case(&addon.title)
-	})?;
+	}
+	item.slug.eq_ignore_ascii_case(&addon.folder_name)
+		|| item.name.eq_ignore_ascii_case(&addon.folder_name)
+		|| item.name.eq_ignore_ascii_case(&addon.title)
+}
 
+fn needs_thumbnail(addon: &InstalledAddon) -> bool {
+	addon
+		.thumbnail_url
+		.as_ref()
+		.map(|u| u.trim().is_empty())
+		.unwrap_or(true)
+}
+
+fn apply_update_flags(addon: &mut InstalledAddon, remote: &AddonSummary) {
 	let remote_file = remote.latest_file_id;
 	let local_file = addon.file_id;
 	let newer_file = match (local_file, remote_file) {
-		(Some(local), Some(remote)) if remote > local => true,
+		(Some(local), Some(remote_id)) if remote_id > local => true,
 		(None, Some(_)) => true,
 		_ => match (&addon.updated_at, &remote.updated_at) {
 			(Some(local), remote_date) if !remote_date.is_empty() => remote_date > local,
@@ -291,17 +347,246 @@ async fn check_update(
 	};
 
 	if newer_file {
-		Some((Some(remote.updated_at), remote_file))
-	} else {
-		None
+		addon.has_update = true;
+		addon.remote_version = Some(remote.updated_at.clone());
+		addon.remote_file_id = remote_file;
 	}
+}
+
+/// Fill missing CurseForge metadata (icon, ids, categories). Returns true if anything changed.
+fn apply_remote_metadata(addon: &mut InstalledAddon, remote: &AddonSummary) -> bool {
+	let mut changed = false;
+
+	if needs_thumbnail(addon) && !remote.thumbnail_url.trim().is_empty() {
+		addon.thumbnail_url = Some(remote.thumbnail_url.clone());
+		changed = true;
+	}
+
+	if addon.curseforge_id.is_none() {
+		addon.curseforge_id = Some(remote.id);
+		changed = true;
+	}
+	if addon.curseforge_slug.is_none() {
+		addon.curseforge_slug = Some(remote.slug.clone());
+		changed = true;
+	}
+	if addon.website_url.as_ref().map(|u| u.is_empty()).unwrap_or(true)
+		&& !remote.website_url.is_empty()
+	{
+		addon.website_url = Some(remote.website_url.clone());
+		changed = true;
+	}
+
+	let categories_empty_or_manual = addon.categories.is_empty()
+		|| addon
+			.categories
+			.iter()
+			.all(|c| c.eq_ignore_ascii_case("Manual"));
+	if categories_empty_or_manual && !remote.categories.is_empty() {
+		addon.categories = remote.categories.clone();
+		changed = true;
+	}
+
+	if addon.flavors.is_empty() && !remote.flavors.is_empty() {
+		addon.flavors = remote.flavors.clone();
+		changed = true;
+	}
+	if addon
+		.latest_game_version
+		.as_ref()
+		.map(|v| v.is_empty())
+		.unwrap_or(true)
+		&& !remote.latest_game_version.is_empty()
+	{
+		addon.latest_game_version = Some(remote.latest_game_version.clone());
+		changed = true;
+	}
+
+	changed
+}
+
+fn upsert_remote_enrichment(stored: &mut crate::types::AddonManifest, addon: &InstalledAddon) {
+	if let Some(entry) = stored
+		.addons
+		.iter_mut()
+		.find(|a| a.folder_name == addon.folder_name)
+	{
+		if entry.thumbnail_url.as_ref().map(|u| u.is_empty()).unwrap_or(true) {
+			entry.thumbnail_url = addon.thumbnail_url.clone();
+		}
+		if entry.curseforge_id.is_none() {
+			entry.curseforge_id = addon.curseforge_id;
+		}
+		if entry.curseforge_slug.is_none() {
+			entry.curseforge_slug = addon.curseforge_slug.clone();
+		}
+		if entry.website_url.as_ref().map(|u| u.is_empty()).unwrap_or(true) {
+			entry.website_url = addon.website_url.clone();
+		}
+		let cats_empty_or_manual = entry.categories.is_empty()
+			|| entry
+				.categories
+				.iter()
+				.all(|c| c.eq_ignore_ascii_case("Manual"));
+		if cats_empty_or_manual && !addon.categories.is_empty() {
+			entry.categories = addon.categories.clone();
+		}
+		if entry.flavors.is_empty() && !addon.flavors.is_empty() {
+			entry.flavors = addon.flavors.clone();
+		}
+		if entry
+			.latest_game_version
+			.as_ref()
+			.map(|v| v.is_empty())
+			.unwrap_or(true)
+		{
+			entry.latest_game_version = addon.latest_game_version.clone();
+		}
+	} else {
+		stored.addons.push(ManifestAddon {
+			folder_name: addon.folder_name.clone(),
+			curseforge_id: addon.curseforge_id,
+			curseforge_slug: addon.curseforge_slug.clone(),
+			file_id: addon.file_id,
+			name: Some(addon.title.clone()),
+			author: addon.author.clone(),
+			summary: addon.notes.clone(),
+			thumbnail_url: addon.thumbnail_url.clone(),
+			categories: addon.categories.clone(),
+			flavors: addon.flavors.clone(),
+			download_count: addon.download_count,
+			latest_game_version: addon.latest_game_version.clone(),
+			website_url: addon.website_url.clone(),
+			installed_at: addon.installed_at.clone(),
+			updated_at: addon.updated_at.clone(),
+			version: addon.version.clone(),
+			install_source: Some("manual".into()),
+			archive_name: None,
+		});
+	}
+	stored.version = 1;
+}
+
+async fn find_remote_for_installed(
+	addon: &InstalledAddon,
+	force_refresh: bool,
+) -> Option<AddonSummary> {
+	let mut terms = Vec::new();
+	if let Some(slug) = &addon.curseforge_slug {
+		terms.push(slug.clone());
+	}
+	terms.push(addon.folder_name.clone());
+	if !addon.title.is_empty()
+		&& !terms
+			.iter()
+			.any(|t| t.eq_ignore_ascii_case(&addon.title))
+	{
+		terms.push(addon.title.clone());
+	}
+
+	for term in terms {
+		let result = curseforge::search_addons(
+			SearchParams {
+				search: Some(term),
+				page: Some(1),
+				page_size: Some(10),
+				categories: None,
+				game_version_type_ids: None,
+				sort_by: Some("relevancy".into()),
+			},
+			force_refresh,
+		)
+		.await;
+		if let Some(item) = result
+			.items
+			.into_iter()
+			.find(|item| remote_matches_installed(addon, item))
+		{
+			return Some(item);
+		}
+	}
+	None
 }
 
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::types::WowInstall;
+	use crate::types::{AddonSummary, WowInstall};
+
+	fn sample_installed(title: &str) -> InstalledAddon {
+		InstalledAddon {
+			folder_name: title.into(),
+			title: title.into(),
+			author: None,
+			notes: None,
+			interface_version: None,
+			version: None,
+			curseforge_id: None,
+			curseforge_slug: None,
+			file_id: None,
+			thumbnail_url: None,
+			categories: vec!["Manual".into()],
+			installed_at: None,
+			updated_at: None,
+			download_count: None,
+			latest_game_version: None,
+			flavors: vec![],
+			has_update: false,
+			remote_version: None,
+			remote_file_id: None,
+			website_url: None,
+		}
+	}
+
+	#[test]
+	fn remote_matches_by_folder_name_without_curseforge_meta() {
+		let addon = sample_installed("WeakAuras");
+		let item = AddonSummary {
+			id: 1,
+			slug: "weakauras-2".into(),
+			name: "WeakAuras".into(),
+			author: String::new(),
+			summary: String::new(),
+			thumbnail_url: String::new(),
+			download_count: 0,
+			updated_at: String::new(),
+			latest_game_version: String::new(),
+			categories: vec![],
+			flavors: vec![],
+			website_url: String::new(),
+			latest_file_id: Some(99),
+		};
+		assert!(remote_matches_installed(&addon, &item));
+	}
+
+	#[test]
+	fn apply_remote_metadata_fills_missing_thumbnail_and_clears_manual() {
+		let mut addon = sample_installed("WeakAuras");
+		let remote = AddonSummary {
+			id: 42,
+			slug: "weakauras-2".into(),
+			name: "WeakAuras".into(),
+			author: "Author".into(),
+			summary: String::new(),
+			thumbnail_url: "https://example.com/icon.png".into(),
+			download_count: 10,
+			updated_at: "2026-01-01".into(),
+			latest_game_version: "11.0.0".into(),
+			categories: vec!["Buffs & Debuffs".into()],
+			flavors: vec!["Retail".into()],
+			website_url: "https://www.curseforge.com/wow/addons/weakauras-2".into(),
+			latest_file_id: Some(99),
+		};
+		assert!(apply_remote_metadata(&mut addon, &remote));
+		assert_eq!(
+			addon.thumbnail_url.as_deref(),
+			Some("https://example.com/icon.png")
+		);
+		assert_eq!(addon.curseforge_id, Some(42));
+		assert_eq!(addon.categories, vec!["Buffs & Debuffs".to_string()]);
+		assert!(!needs_thumbnail(&addon));
+	}
 
 	fn temp_install() -> (std::path::PathBuf, WowInstall) {
 		let dir = std::env::temp_dir().join(format!(

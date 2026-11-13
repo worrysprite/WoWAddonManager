@@ -1,4 +1,5 @@
 import { useI18n } from "../i18n";
+import { translateInstallLabel } from "../i18n/catalogLabels";
 import type { AddonSummary, InstalledAddon, WowInstall } from "../types";
 import {
 	compatibleInstalls,
@@ -51,7 +52,7 @@ function Thumb({ url, name }: { url?: string | null; name: string }) {
 }
 
 export function AddonCard(props: Props) {
-	const { t } = useI18n();
+	const { t, locale } = useI18n();
 
 	if (props.mode === "browse") {
 		const { addon, installs, busy, onInstall } = props;
@@ -98,7 +99,13 @@ export function AddonCard(props: Props) {
 										disabled={busy}
 										onClick={() => onInstall(install.id)}
 									>
-										{t("card.installTo", { label: install.label })}
+										{t("card.installTo", {
+											label: translateInstallLabel(
+												install.flavorKey,
+												install.label,
+												locale,
+											),
+										})}
 									</button>
 								));
 							})()
@@ -110,7 +117,10 @@ export function AddonCard(props: Props) {
 	}
 
 	const { addon, busy, onUpdate, onDelete } = props;
-	const extra = extraCategoryCount(addon.categories);
+	const categories = addon.categories.filter(
+		(c) => c.trim() && c.toLowerCase() !== "manual",
+	);
+	const extra = extraCategoryCount(categories);
 	return (
 		<article className="addon-card addon-card-installed">
 			<Thumb url={addon.thumbnailUrl} name={addon.title} />
@@ -121,11 +131,12 @@ export function AddonCard(props: Props) {
 				</p>
 				<p className="card-summary">{addon.notes || t("card.installedAddon")}</p>
 				<div className="meta-row">
-					<span className="tag">
-						{primaryCategory(addon.categories)}
-						{extra > 0 ? <span className="tag-extra">+{extra}</span> : null}
-					</span>
-					<span className="meta-item">↓ {formatDownloads(addon.downloadCount)}</span>
+					{categories.length > 0 ? (
+						<span className="tag">
+							{primaryCategory(categories)}
+							{extra > 0 ? <span className="tag-extra">+{extra}</span> : null}
+						</span>
+					) : null}
 					<span className="meta-item">⏱ {formatDate(addon.updatedAt)}</span>
 					<span className="meta-item">
 						🎮 {addon.latestGameVersion || addon.interfaceVersion || "-"}

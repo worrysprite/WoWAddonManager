@@ -142,7 +142,22 @@ export type MessageKey =
 	| "settings.logLevelSet"
 	| "settings.logsCleared"
 	| "settings.logsSaved"
-	| "settings.saveLogTitle";
+	| "settings.saveLogTitle"
+	| "update.title"
+	| "update.current"
+	| "update.checking"
+	| "update.upToDate"
+	| "update.downloading"
+	| "update.ready"
+	| "update.readyAction"
+	| "update.availableManual"
+	| "update.openDownload"
+	| "update.checkNow"
+	| "update.installRestart"
+	| "update.installing"
+	| "update.portableHint"
+	| "update.error"
+	| "update.notes";
 
 export type Messages = Record<MessageKey, string>;
 
@@ -295,11 +310,27 @@ export const en: Messages = {
 	"settings.logsCleared": "Logs cleared",
 	"settings.logsSaved": "Logs saved: {path}",
 	"settings.saveLogTitle": "Save log file",
+	"update.title": "App updates",
+	"update.current": "Current version: {version}",
+	"update.checking": "Checking for updates…",
+	"update.upToDate": "You are on the latest version.",
+	"update.downloading": "Downloading update {version}…",
+	"update.ready": "Update {version} is ready.",
+	"update.readyAction": "Restart to install",
+	"update.availableManual": "Version {version} is available.",
+	"update.openDownload": "Open download page",
+	"update.checkNow": "Check for updates",
+	"update.installRestart": "Install and restart",
+	"update.installing": "Installing update…",
+	"update.portableHint":
+		"Portable builds cannot auto-install. Download the new installer or portable exe from GitHub Releases.",
+	"update.error": "Update check failed: {error}",
+	"update.notes": "Release notes",
 };
 
 export const zhCN: Messages = {
 	"app.brand": "WoW Addon Manager",
-	"nav.browse": "Browse All",
+	"nav.browse": "浏览全部",
 	"nav.settings": "设置",
 	"banner.noApiKey": "尚未配置 API Key，当前使用网页 GET。请到",
 	"banner.goSettings": "设置",
@@ -315,7 +346,7 @@ export const zhCN: Messages = {
 	"banner.rescanClientsFound": "客户端扫描完成，发现 {count} 个客户端",
 	"banner.rescanClientsNone": "客户端扫描完成，未发现客户端",
 	"banner.addonInstalled": "插件已安装（或写入占位目录）",
-	"browse.searchPlaceholder": "Search for World of Warcraft addons...",
+	"browse.searchPlaceholder": "搜索魔兽世界插件…",
 	"browse.searchAria": "搜索",
 	"browse.refreshTitle": "忽略缓存，重新请求",
 	"browse.refresh": "刷新",
@@ -329,14 +360,14 @@ export const zhCN: Messages = {
 	"browse.results": "{total} 个结果",
 	"browse.attributionBefore": "插件来自于 ",
 	"browse.attributionAfter": "，请尊重插件作者版权。",
-	"filters.title": "Filters",
-	"filters.clearAll": "Clear all",
-	"filters.categories": "Categories",
-	"filters.flavor": "Flavor",
-	"filters.gameVersion": "Game Version",
-	"card.by": "By {author}",
-	"card.unknownAuthor": "Unknown",
-	"card.noDescription": "No description",
+	"filters.title": "筛选",
+	"filters.clearAll": "清除全部",
+	"filters.categories": "分类",
+	"filters.flavor": "游戏版本类型",
+	"filters.gameVersion": "游戏版本号",
+	"card.by": "作者 {author}",
+	"card.unknownAuthor": "未知",
+	"card.noDescription": "暂无简介",
 	"card.needWowPath": "请先添加魔兽安装目录",
 	"card.noCompatibleInstall": "当前已检测到的客户端均不支持该插件",
 	"card.installTo": "安装到 {label}",
@@ -352,7 +383,7 @@ export const zhCN: Messages = {
 	"installed.rescanning": "正在扫描插件目录…",
 	"installed.loadingList": "正在读取插件列表…",
 	"installed.emptyTitle": "还没有已安装插件",
-	"installed.emptyHint": "可从 Browse All 安装，或点击右上角「手动安装」选择压缩包。",
+	"installed.emptyHint": "可从「浏览全部」安装，或点击右上角「手动安装」选择压缩包。",
 	"installed.rescanDone": "插件扫描完成，共 {count} 个插件",
 	"installed.manualDone": "已手动安装：{names}",
 	"installed.deleteConfirm": "确定删除插件 {name}？",
@@ -443,6 +474,22 @@ export const zhCN: Messages = {
 	"settings.logsCleared": "日志已清空",
 	"settings.logsSaved": "日志已保存：{path}",
 	"settings.saveLogTitle": "保存日志文件",
+	"update.title": "应用更新",
+	"update.current": "当前版本：{version}",
+	"update.checking": "正在检查更新…",
+	"update.upToDate": "已是最新版本。",
+	"update.downloading": "正在下载更新 {version}…",
+	"update.ready": "更新 {version} 已就绪。",
+	"update.readyAction": "重启以安装",
+	"update.availableManual": "发现新版本 {version}。",
+	"update.openDownload": "打开下载页",
+	"update.checkNow": "检查更新",
+	"update.installRestart": "安装并重启",
+	"update.installing": "正在安装更新…",
+	"update.portableHint":
+		"便携版无法自动安装。请到 GitHub Releases 下载新的安装包或便携 exe。",
+	"update.error": "检查更新失败：{error}",
+	"update.notes": "更新说明",
 };
 
 export const catalogs: Record<LocaleCode, Messages> = {

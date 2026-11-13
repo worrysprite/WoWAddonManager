@@ -1,16 +1,26 @@
 # Windows 预编译包
 
-当前版本：**0.4.2**
+当前版本：**1.0.0**
 
-- `WoW-Addon-Manager_0.4.2_x64-setup.exe`：安装包（推荐）
-- `WoW-Addon-Manager.exe`：免安装便携版
+- 安装包（推荐，支持应用内自动更新）：见 [GitHub Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 中的 `*-setup.exe`
+- 便携版：同页的 `WoW-Addon-Manager.exe`（需手动下载替换）
 
 首次运行若被 SmartScreen 拦截，选择“仍要运行”。需已安装 WebView2（Win10/11 通常自带）。
 
-下载：
+## 自动更新
 
-- 安装包：https://github.com/worrysprite/WoWAddonManager/raw/main/releases/WoW-Addon-Manager_0.4.2_x64-setup.exe
-- 便携版：https://github.com/worrysprite/WoWAddonManager/raw/main/releases/WoW-Addon-Manager.exe
+- **安装包**：启动后会静默检查 GitHub Releases；有新版本时后台下载，提示「重启以安装」。
+- **便携版**：仅提示新版本并打开 [Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 下载页。
+- 发版：推送 `v*` 标签触发 `.github/workflows/release.yml`，生成 NSIS 安装包、签名、`latest.json` 与便携 exe。
+- 仓库 Secrets 需配置 `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。
+
+下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
+
+## 1.0.0 更新
+- 应用内自动更新（安装版静默下载，重启安装；便携版引导下载）
+- 手工安装插件支持 CurseForge 同名在线更新与官方图标补全
+- API 启用横幅与版权声明仅在浏览页显示；移除设置绿点与已安装列表 Manual/下载数
+- 简体中文：筛选菜单与顶部客户端标签本地化
 
 ## 0.4.2 更新
 - 日志从启动起始终按 INFO 记录（设置页仅查看）；级别可持久化

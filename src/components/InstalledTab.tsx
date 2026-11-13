@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
 import { useI18n } from "../i18n";
+import { translateInstallLabel } from "../i18n/catalogLabels";
 import type { InstalledAddon, SyncReport, WowInstall } from "../types";
 import { AddonCard } from "./AddonCard";
 
@@ -25,7 +26,8 @@ export function InstalledTab({
 	onNeedBackupPath,
 }: Props) {
 	const hasBackupPath = Boolean(install.backupPath?.trim());
-	const { t } = useI18n();
+	const { t, locale } = useI18n();
+	const installLabel = translateInstallLabel(install.flavorKey, install.label, locale);
 	const [addons, setAddons] = useState<InstalledAddon[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [scanning, setScanning] = useState(false);
@@ -313,7 +315,7 @@ export function InstalledTab({
 			return;
 		}
 		const confirmed = await ask(
-			t("installed.restoreConfirm", { label: install.label }),
+			t("installed.restoreConfirm", { label: installLabel }),
 			{
 				title: t("installed.restoreTitle"),
 				kind: "warning",
@@ -379,7 +381,7 @@ export function InstalledTab({
 		<section className="installed-layout">
 			<div className="installed-toolbar">
 				<div>
-					<h2>{t("installed.title", { label: install.label })}</h2>
+					<h2>{t("installed.title", { label: installLabel })}</h2>
 					<div className="muted">
 						{install.installPath}
 						{install.gameVersion ? ` · ${install.gameVersion}` : ""}
