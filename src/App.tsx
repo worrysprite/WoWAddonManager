@@ -4,13 +4,14 @@ import { BrowseTab } from "./components/BrowseTab";
 import { InstalledTab } from "./components/InstalledTab";
 import { SettingsPage } from "./components/SettingsPage";
 import { useI18n, type LocalePreference } from "./i18n";
+import { translateInstallLabel } from "./i18n/catalogLabels";
 import type { ApiHelp, SettingsView, WowInstall } from "./types";
 import "./styles.css";
 
 type TabId = "browse" | "settings" | string;
 
 export default function App() {
-	const { t, setPreference, setSystemLocale } = useI18n();
+	const { t, locale, setPreference, setSystemLocale } = useI18n();
 	const [tab, setTab] = useState<TabId>("browse");
 	const [previousTab, setPreviousTab] = useState<TabId>("browse");
 	const [installs, setInstalls] = useState<WowInstall[]>([]);
@@ -89,7 +90,7 @@ export default function App() {
 							className={`tab-btn ${tab === install.id ? "active" : ""}`}
 							onClick={() => setTab(install.id)}
 						>
-							{install.label}
+							{translateInstallLabel(install.flavorKey, install.label, locale)}
 						</button>
 					))}
 				</nav>
