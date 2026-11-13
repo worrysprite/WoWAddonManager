@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
 import { useI18n, type LocalePreference } from "../i18n";
+import { translateInstallLabel } from "../i18n/catalogLabels";
 import type { LogEntry, SettingsView } from "../types";
 
 type Props = {
@@ -19,7 +20,7 @@ export function SettingsPage({
 	focusInstallId = null,
 	onFocusHandled,
 }: Props) {
-	const { t, preference, setPreference } = useI18n();
+	const { t, locale, preference, setPreference } = useI18n();
 	const [settings, setSettings] = useState<SettingsView | null>(null);
 	const [apiKey, setApiKey] = useState("");
 	const [localeDraft, setLocaleDraft] = useState<LocalePreference>("system");
@@ -413,6 +414,11 @@ export function SettingsPage({
 						<div className="settings-list-label">{t("settings.detectedClients")}</div>
 						{settings.detectedInstalls.map((install) => {
 							const backupPath = install.backupPath?.trim() || "";
+							const installLabel = translateInstallLabel(
+								install.flavorKey,
+								install.label,
+								locale,
+							);
 							return (
 								<div
 									key={install.id}
@@ -425,7 +431,7 @@ export function SettingsPage({
 								>
 									<div className="settings-client-main">
 										<div className="settings-client-header">
-											<strong>{install.label}</strong>
+											<strong>{installLabel}</strong>
 											<span className="muted">
 												{install.gameVersion || t("settings.versionUnknown")}
 											</span>
@@ -449,7 +455,7 @@ export function SettingsPage({
 											type="button"
 											disabled={busy || !ready}
 											onClick={() =>
-												handleChooseBackupPath(install.id, install.label, backupPath)
+												handleChooseBackupPath(install.id, installLabel, backupPath)
 											}
 										>
 											{t("settings.chooseBackupPath")}
@@ -460,7 +466,7 @@ export function SettingsPage({
 												type="button"
 												disabled={busy}
 												onClick={() =>
-													handleClearBackupPath(install.id, install.label)
+													handleClearBackupPath(install.id, installLabel)
 												}
 											>
 												{t("settings.clearBackupPath")}

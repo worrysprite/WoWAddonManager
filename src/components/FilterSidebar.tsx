@@ -1,4 +1,8 @@
 import { useI18n } from "../i18n";
+import {
+	translateCategoryLabel,
+	translateFlavorLabel,
+} from "../i18n/catalogLabels";
 import type { FilterCatalog } from "../types";
 
 type Props = {
@@ -18,7 +22,7 @@ export function FilterSidebar({
 	onToggleFlavor,
 	onClear,
 }: Props) {
-	const { t } = useI18n();
+	const { t, locale } = useI18n();
 	const activeCount = categories.length + flavors.length;
 
 	return (
@@ -45,7 +49,9 @@ export function FilterSidebar({
 								checked={categories.includes(item.value)}
 								onChange={() => onToggleCategory(item.value)}
 							/>
-							<span>{item.label}</span>
+							<span>
+								{translateCategoryLabel(item.value, item.label, locale)}
+							</span>
 						</label>
 					))}
 				</div>
@@ -61,7 +67,9 @@ export function FilterSidebar({
 								checked={flavors.includes(item.gameVersionTypeId)}
 								onChange={() => onToggleFlavor(item.gameVersionTypeId)}
 							/>
-							<span>{item.label}</span>
+							<span>
+								{translateFlavorLabel(item.id, item.label, locale)}
+							</span>
 						</label>
 					))}
 				</div>

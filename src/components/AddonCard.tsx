@@ -1,4 +1,5 @@
 import { useI18n } from "../i18n";
+import { translateInstallLabel } from "../i18n/catalogLabels";
 import type { AddonSummary, InstalledAddon, WowInstall } from "../types";
 import {
 	compatibleInstalls,
@@ -51,7 +52,7 @@ function Thumb({ url, name }: { url?: string | null; name: string }) {
 }
 
 export function AddonCard(props: Props) {
-	const { t } = useI18n();
+	const { t, locale } = useI18n();
 
 	if (props.mode === "browse") {
 		const { addon, installs, busy, onInstall } = props;
@@ -98,7 +99,13 @@ export function AddonCard(props: Props) {
 										disabled={busy}
 										onClick={() => onInstall(install.id)}
 									>
-										{t("card.installTo", { label: install.label })}
+										{t("card.installTo", {
+											label: translateInstallLabel(
+												install.flavorKey,
+												install.label,
+												locale,
+											),
+										})}
 									</button>
 								));
 							})()
