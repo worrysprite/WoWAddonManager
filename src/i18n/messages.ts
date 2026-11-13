@@ -21,8 +21,6 @@ export type MessageKey =
 	| "banner.addonInstalled"
 	| "browse.searchPlaceholder"
 	| "browse.searchAria"
-	| "browse.refreshTitle"
-	| "browse.refresh"
 	| "browse.loading"
 	| "browse.loadingList"
 	| "browse.noMatchTitle"
@@ -184,8 +182,6 @@ export const en: Messages = {
 	"banner.addonInstalled": "Addon installed (or placeholder written).",
 	"browse.searchPlaceholder": "Search for World of Warcraft addons...",
 	"browse.searchAria": "Search",
-	"browse.refreshTitle": "Fetch the list again",
-	"browse.refresh": "Refresh",
 	"browse.loading": "Loading…",
 	"browse.loadingList": "Loading addon list…",
 	"browse.noMatchTitle": "No matching addons",
@@ -353,8 +349,6 @@ export const zhCN: Messages = {
 	"banner.addonInstalled": "插件已安装（或写入占位目录）",
 	"browse.searchPlaceholder": "搜索魔兽世界插件…",
 	"browse.searchAria": "搜索",
-	"browse.refreshTitle": "重新请求列表",
-	"browse.refresh": "刷新",
 	"browse.loading": "加载中…",
 	"browse.loadingList": "正在加载插件列表…",
 	"browse.noMatchTitle": "没有匹配的插件",

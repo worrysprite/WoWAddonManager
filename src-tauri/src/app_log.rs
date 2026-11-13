@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::Local;
 use log::{LevelFilter, Log, Metadata, Record};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -131,7 +131,7 @@ pub fn save_to_path(path: &str) -> Result<(), String> {
 	lines.push(format!(
 		"# WoW Addon Manager log  level={}  exportedAt={}",
 		view.level,
-		Utc::now().to_rfc3339()
+		Local::now().to_rfc3339()
 	));
 	for entry in &view.entries {
 		lines.push(format!(
@@ -161,7 +161,7 @@ impl Log for MemoryLogger {
 			return;
 		}
 		let entry = LogEntry {
-			timestamp: Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+			timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
 			level: record.level().as_str().to_string(),
 			target: record.target().to_string(),
 			message: format!("{}", record.args()),

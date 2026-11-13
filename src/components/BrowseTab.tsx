@@ -28,7 +28,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 		api.getFilterCatalog().then(setCatalog).catch(console.error);
 	}, []);
 
-	async function load(forceRefresh: boolean) {
+	async function load() {
 		const seq = ++requestSeq.current;
 		setLoading(true);
 		setError(null);
@@ -42,7 +42,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 					gameVersionTypeIds: flavors,
 					sortBy: "relevancy",
 				},
-				forceRefresh,
+				false,
 			);
 			if (seq === requestSeq.current) {
 				setResult(data);
@@ -59,7 +59,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 	}
 
 	useEffect(() => {
-		load(false);
+		load();
 	}, [search, page, categories, flavors]);
 
 	const totalPages = useMemo(() => {
@@ -143,15 +143,6 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 							</svg>
 						</button>
 					</form>
-					<button
-						type="button"
-						className="btn browse-refresh-btn"
-						disabled={loading}
-						onClick={() => load(true)}
-						title={t("browse.refreshTitle")}
-					>
-						{loading ? t("browse.loading") : t("browse.refresh")}
-					</button>
 				</div>
 
 				{result?.message ? <div className="banner">{result.message}</div> : null}

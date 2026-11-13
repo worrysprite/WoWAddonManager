@@ -184,11 +184,6 @@ button {
 	overflow: hidden;
 }
 
-.browse-refresh-btn {
-	flex: 0 0 auto;
-	height: 42px;
-}
-
 .browse-search input {
 	flex: 1;
 	min-width: 0;
