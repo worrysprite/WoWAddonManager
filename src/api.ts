@@ -139,3 +139,11 @@ export function saveLogs(path: string) {
 export function openDir(path: string) {
 	return invoke<void>("open_dir", { path });
 }
+
+export function getAppVersion() {
+	return invoke<string>("get_app_version");
+}
+
+export function getUpdateInstallKind() {
+	return invoke<string>("get_update_install_kind");
+}

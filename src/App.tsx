@@ -3,14 +3,20 @@ import * as api from "./api";
 import { BrowseTab } from "./components/BrowseTab";
 import { InstalledTab } from "./components/InstalledTab";
 import { SettingsPage } from "./components/SettingsPage";
+import { useAppUpdater } from "./hooks/useAppUpdater";
 import { useI18n, type LocalePreference } from "./i18n";
 import type { ApiHelp, SettingsView, WowInstall } from "./types";
+import {
+	installDownloadedUpdate,
+	openLatestReleasePage,
+} from "./updater";
 import "./styles.css";
 
 type TabId = "browse" | "settings" | string;
 
 export default function App() {
 	const { t, setPreference, setSystemLocale } = useI18n();
+	const updater = useAppUpdater({ autoCheck: true });
 	const [tab, setTab] = useState<TabId>("browse");
 	const [previousTab, setPreviousTab] = useState<TabId>("browse");
 	const [installs, setInstalls] = useState<WowInstall[]>([]);
@@ -22,6 +28,7 @@ export default function App() {
 	const [settingsFocusInstallId, setSettingsFocusInstallId] = useState<string | null>(
 		null,
 	);
+	const [updateBusy, setUpdateBusy] = useState(false);
 
 	async function applySettings(next: SettingsView) {
 		setSettings(next);
@@ -68,6 +75,16 @@ export default function App() {
 	const showWowWarning = Boolean(settings && !settings.hasWowInstall);
 	const showInvalidWowWarning = Boolean(settings?.invalidWowRoots?.length);
 
+	async function handleRestartToUpdate() {
+		setUpdateBusy(true);
+		try {
+			await installDownloadedUpdate();
+		} catch (err) {
+			setStatus(String(err));
+			setUpdateBusy(false);
+		}
+	}
+
 	return (
 		<div className="app-shell">
 			<header className="topbar">
@@ -95,6 +112,18 @@ export default function App() {
 				</nav>
 
 				<div className="toolbar-actions">
+					{updater.status === "ready" ? (
+						<button
+							className="btn primary update-toolbar-btn"
+							disabled={updateBusy}
+							onClick={handleRestartToUpdate}
+							title={t("update.ready", {
+								version: updater.remoteVersion || "",
+							})}
+						>
+							{t("update.readyAction")}
+						</button>
+					) : null}
 					<button
 						className={`btn settings-btn ${tab === "settings" ? "active-settings" : ""}`}
 						onClick={() => openSettings()}
@@ -105,6 +134,54 @@ export default function App() {
 					</button>
 				</div>
 			</header>
+
+			{updater.status === "ready" ? (
+				<div className="banner ok-banner">
+					{t("update.ready", { version: updater.remoteVersion || "" })}{" "}
+					<button
+						className="linkish"
+						disabled={updateBusy}
+						onClick={handleRestartToUpdate}
+					>
+						{t("update.readyAction")}
+					</button>
+				</div>
+			) : null}
+
+			{updater.status === "availableManual" ? (
+				<div className="banner">
+					{t("update.availableManual", {
+						version: updater.remoteVersion || "",
+					})}{" "}
+					{updater.installKind === "portable"
+						? t("update.portableHint")
+						: null}{" "}
+					<button
+						className="linkish"
+						onClick={() => {
+							openLatestReleasePage().catch((err) => setStatus(String(err)));
+						}}
+					>
+						{t("update.openDownload")}
+					</button>
+				</div>
+			) : null}
+
+			{updater.status === "downloading" ? (
+				<div className="banner">
+					{t("update.downloading", {
+						version: updater.remoteVersion || "",
+					})}
+					{updater.totalBytes
+						? ` (${Math.min(
+								100,
+								Math.round(
+									(updater.downloadedBytes / updater.totalBytes) * 100,
+								),
+							)}%)`
+						: ""}
+				</div>
+			) : null}
 
 			{status ? <div className="banner">{status}</div> : null}
 

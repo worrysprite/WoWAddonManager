@@ -2,15 +2,23 @@
 
 当前版本：**0.4.2**
 
-- `WoW-Addon-Manager_0.4.2_x64-setup.exe`：安装包（推荐）
-- `WoW-Addon-Manager.exe`：免安装便携版
+- `WoW-Addon-Manager_0.4.2_x64-setup.exe`：安装包（推荐，支持应用内自动更新）
+- `WoW-Addon-Manager.exe`：免安装便携版（需手动下载替换）
 
 首次运行若被 SmartScreen 拦截，选择“仍要运行”。需已安装 WebView2（Win10/11 通常自带）。
+
+## 自动更新
+
+- **安装包**：启动后会静默检查 GitHub Releases；有新版本时后台下载，提示「重启以安装」。
+- **便携版**：仅提示新版本并打开 [Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 下载页。
+- 发版：推送 `v*` 标签触发 `.github/workflows/release.yml`，生成 NSIS 安装包、签名与 `latest.json`。
+- 仓库 Secrets 需配置 `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。公钥已写入 `src-tauri/tauri.conf.json`。
 
 下载：
 
 - 安装包：https://github.com/worrysprite/WoWAddonManager/raw/main/releases/WoW-Addon-Manager_0.4.2_x64-setup.exe
 - 便携版：https://github.com/worrysprite/WoWAddonManager/raw/main/releases/WoW-Addon-Manager.exe
+- 最新 Release：https://github.com/worrysprite/WoWAddonManager/releases/latest
 
 ## 0.4.2 更新
 - 日志从启动起始终按 INFO 记录（设置页仅查看）；级别可持久化
