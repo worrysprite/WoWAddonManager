@@ -247,36 +247,63 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 	Ok(results)
 }
 
+fn remote_matches_installed(addon: &InstalledAddon, item: &crate::types::AddonSummary) -> bool {
+	if let Some(id) = addon.curseforge_id {
+		if item.id == id {
+			return true;
+		}
+	}
+	if let Some(slug) = &addon.curseforge_slug {
+		if item.slug.eq_ignore_ascii_case(slug) {
+			return true;
+		}
+	}
+	item.slug.eq_ignore_ascii_case(&addon.folder_name)
+		|| item.name.eq_ignore_ascii_case(&addon.folder_name)
+		|| item.name.eq_ignore_ascii_case(&addon.title)
+}
+
 async fn check_update(
 	addon: &InstalledAddon,
 	force_refresh: bool,
 ) -> Option<(Option<String>, Option<i64>)> {
-	let search_term = addon
-		.curseforge_slug
-		.clone()
-		.or_else(|| Some(addon.title.clone()))?;
-	let result = curseforge::search_addons(
-		SearchParams {
-			search: Some(search_term),
-			page: Some(1),
-			page_size: Some(5),
-			categories: None,
-			game_version_type_ids: None,
-			sort_by: Some("relevancy".into()),
-		},
-		force_refresh,
-	)
-	.await;
+	let mut terms = Vec::new();
+	if let Some(slug) = &addon.curseforge_slug {
+		terms.push(slug.clone());
+	}
+	terms.push(addon.folder_name.clone());
+	if !addon.title.is_empty()
+		&& !terms
+			.iter()
+			.any(|t| t.eq_ignore_ascii_case(&addon.title))
+	{
+		terms.push(addon.title.clone());
+	}
 
-	let remote = result.items.into_iter().find(|item| {
-		if let Some(id) = addon.curseforge_id {
-			return item.id == id;
+	let mut remote = None;
+	for term in terms {
+		let result = curseforge::search_addons(
+			SearchParams {
+				search: Some(term),
+				page: Some(1),
+				page_size: Some(10),
+				categories: None,
+				game_version_type_ids: None,
+				sort_by: Some("relevancy".into()),
+			},
+			force_refresh,
+		)
+		.await;
+		if let Some(item) = result
+			.items
+			.into_iter()
+			.find(|item| remote_matches_installed(addon, item))
+		{
+			remote = Some(item);
+			break;
 		}
-		if let Some(slug) = &addon.curseforge_slug {
-			return item.slug == *slug;
-		}
-		item.name.eq_ignore_ascii_case(&addon.title)
-	})?;
+	}
+	let remote = remote?;
 
 	let remote_file = remote.latest_file_id;
 	let local_file = addon.file_id;
@@ -301,7 +328,49 @@ async fn check_update(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::types::WowInstall;
+	use crate::types::{AddonSummary, WowInstall};
+
+	#[test]
+	fn remote_matches_by_folder_name_without_curseforge_meta() {
+		let addon = InstalledAddon {
+			folder_name: "WeakAuras".into(),
+			title: "WeakAuras".into(),
+			author: None,
+			notes: None,
+			interface_version: None,
+			version: None,
+			curseforge_id: None,
+			curseforge_slug: None,
+			file_id: None,
+			thumbnail_url: None,
+			categories: vec![],
+			installed_at: None,
+			updated_at: None,
+			download_count: None,
+			latest_game_version: None,
+			flavors: vec![],
+			has_update: false,
+			remote_version: None,
+			remote_file_id: None,
+			website_url: None,
+		};
+		let item = AddonSummary {
+			id: 1,
+			slug: "weakauras-2".into(),
+			name: "WeakAuras".into(),
+			author: String::new(),
+			summary: String::new(),
+			thumbnail_url: String::new(),
+			download_count: 0,
+			updated_at: String::new(),
+			latest_game_version: String::new(),
+			categories: vec![],
+			flavors: vec![],
+			website_url: String::new(),
+			latest_file_id: Some(99),
+		};
+		assert!(remote_matches_installed(&addon, &item));
+	}
 
 	fn temp_install() -> (std::path::PathBuf, WowInstall) {
 		let dir = std::env::temp_dir().join(format!(

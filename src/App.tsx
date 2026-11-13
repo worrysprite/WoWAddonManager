@@ -130,7 +130,18 @@ export default function App() {
 			) : null}
 
 			{settings?.hasApiKey ? (
-				<div className="banner ok-banner">{t("banner.apiEnabled")}</div>
+				<div className="banner ok-banner">
+					{t("banner.apiEnabled")}{" "}
+					{t("browse.attributionBefore")}
+					<a
+						href="https://www.curseforge.com/"
+						target="_blank"
+						rel="noreferrer"
+					>
+						CurseForge
+					</a>
+					{t("browse.attributionAfter")}
+				</div>
 			) : null}
 
 			{showWowWarning ? (

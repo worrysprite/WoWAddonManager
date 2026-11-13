@@ -218,20 +218,13 @@ button {
 	background: #222228;
 }
 
-.browse-attribution {
-	margin: 10px 18px 0;
-	font-size: 12px;
-	line-height: 1.45;
-	color: var(--text-muted);
-}
-
-.browse-attribution a {
-	color: var(--accent-strong);
+.ok-banner a {
+	color: #d7f5e4;
 	text-decoration: underline;
 	text-underline-offset: 2px;
 }
 
-.browse-attribution a:hover {
+.ok-banner a:hover {
 	color: #fff;
 }
 
