@@ -33,7 +33,7 @@ const FLAVOR_ZH: Record<string, string> = {
 	retail: "正式服",
 	classic: "经典旧世",
 	"classic-tbc": "经典燃烧的远征",
-	forever: "Forever",
+	forever: "无限",
 	"mop-classic": "熊猫人之谜经典版",
 	cataclysm: "大地的裂变经典版",
 	wotlk: "巫妖王之怒经典版",
