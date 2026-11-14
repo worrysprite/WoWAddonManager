@@ -48,6 +48,8 @@ const INITIAL: UpdaterState = {
 let state: UpdaterState = { ...INITIAL };
 let pendingUpdate: Update | null = null;
 let inFlight: Promise<void> | null = null;
+/** True while exit path is installing so a second close cannot race shutdown. */
+let exitInstallInFlight = false;
 const listeners = new Set<Listener>();
 
 function emit() {
@@ -226,10 +228,15 @@ export async function installDownloadedUpdate(options?: {
 export async function setupInstallOnClose(): Promise<() => void> {
 	const win = getCurrentWindow();
 	return win.onCloseRequested(async (event) => {
+		if (exitInstallInFlight) {
+			event.preventDefault();
+			return;
+		}
 		if (state.status !== "ready" || !pendingUpdate) {
 			return;
 		}
 		event.preventDefault();
+		exitInstallInFlight = true;
 		try {
 			await installDownloadedUpdate({ restartAfterInstall: false });
 		} catch {
@@ -243,6 +250,8 @@ export async function setupInstallOnClose(): Promise<() => void> {
 			} catch {
 				/* ignore */
 			}
+		} finally {
+			exitInstallInFlight = false;
 		}
 	});
 }
