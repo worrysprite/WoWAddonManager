@@ -2,6 +2,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export const RELEASES_LATEST_URL =
 	"https://github.com/worrysprite/WoWAddonManager/releases/latest";
@@ -182,19 +183,26 @@ export async function runUpdateCheck(options?: {
 	return inFlight;
 }
 
-/** Install a previously downloaded update (Windows exits; installer relaunches). */
-export async function installDownloadedUpdate(): Promise<void> {
+/** Install a previously downloaded update. */
+export async function installDownloadedUpdate(options?: {
+	restartAfterInstall?: boolean;
+}): Promise<void> {
 	if (!pendingUpdate) {
 		throw new Error("No downloaded update ready to install");
 	}
+	const restartAfterInstall = options?.restartAfterInstall ?? true;
 	setState({ status: "installing", error: null });
 	try {
-		await pendingUpdate.install({ restartAfterInstall: true });
+		await pendingUpdate.install({ restartAfterInstall });
+		pendingUpdate = null;
+		if (!restartAfterInstall) {
+			return;
+		}
 		// Non-Windows: relaunch into the new build.
 		try {
 			await relaunch();
 		} catch {
-			/* Windows already exited on install */
+			/* Windows already exited / relaunched via installer */
 		}
 	} catch (err) {
 		setState({
@@ -203,6 +211,34 @@ export async function installDownloadedUpdate(): Promise<void> {
 		});
 		throw err;
 	}
+}
+
+/**
+ * On window close: if an update was already downloaded, install it quietly
+ * without relaunching, then destroy the window.
+ */
+export async function setupInstallOnClose(): Promise<() => void> {
+	const win = getCurrentWindow();
+	return win.onCloseRequested(async (event) => {
+		if (state.status !== "ready" || !pendingUpdate) {
+			return;
+		}
+		event.preventDefault();
+		try {
+			await installDownloadedUpdate({ restartAfterInstall: false });
+		} catch {
+			/* still close the app */
+		}
+		try {
+			await win.destroy();
+		} catch {
+			try {
+				await win.close();
+			} catch {
+				/* ignore */
+			}
+		}
+	});
 }
 
 /** Download (if needed) then install — used by Settings "Check for updates". */
