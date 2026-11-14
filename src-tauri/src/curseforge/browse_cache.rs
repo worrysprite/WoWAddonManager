@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 const CACHE_TTL: Duration = Duration::from_secs(30 * 60);
-const MAX_ENTRIES: usize = 48;
+const MAX_ENTRIES: usize = 300;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
