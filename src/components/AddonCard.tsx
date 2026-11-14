@@ -157,6 +157,13 @@ export function AddonCard(props: Props) {
 					<span className="meta-item">
 						{t("card.installedAt", { date: formatDate(addon.installedAt) })}
 					</span>
+					{(addon.relatedFolders?.length ?? 0) > 1 ? (
+						<span className="meta-item">
+							{t("card.suiteFolders", {
+								count: String(addon.relatedFolders!.length),
+							})}
+						</span>
+					) : null}
 				</div>
 			</div>
 			<div className="card-actions card-actions-side">

@@ -83,6 +83,10 @@ export interface InstalledAddon {
 	remoteVersion?: string | null;
 	remoteFileId?: number | null;
 	websiteUrl?: string | null;
+	/** All AddOns folders in this CurseForge/manual package (including primary). */
+	relatedFolders?: string[];
+	isPrimary?: boolean;
+	archiveName?: string | null;
 }
 
 export interface ApiHelp {

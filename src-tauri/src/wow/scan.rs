@@ -26,6 +26,11 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 				// thumbnail URLs into %AppData%/icons (no-op once already local).
 				let before = cache.addons.len();
 				let mut filtered = filter_unsupported_addons(install, cache.addons);
+				filtered = crate::wow::suite::collapse_suite_rows(filtered);
+				let _ = crate::wow::suite::sync_suite_flags_to_manifest(
+					Path::new(&install.addons_path),
+					&filtered,
+				);
 				let had_remote_thumbs = filtered.iter().any(|a| {
 					a.thumbnail_url
 						.as_deref()
@@ -89,11 +94,14 @@ pub fn refresh_local_cache(install: &WowInstall) -> Result<Vec<InstalledAddon>, 
 			if addon.website_url.as_ref().map(|u| u.is_empty()).unwrap_or(true) {
 				addon.website_url = prev.website_url.clone();
 			}
+			if addon.related_folders.len() <= 1 && prev.related_folders.len() > 1 {
+				addon.related_folders = prev.related_folders.clone();
+				addon.is_primary = prev.is_primary;
+			}
 		}
 	}
 
 	save_scan_cache(install, &results)?;
-	// Icon files are resolved asynchronously on next list/rescan; keep URLs for now.
 	Ok(results)
 }
 
@@ -101,7 +109,12 @@ pub fn remove_from_cache(install: &WowInstall, folder_name: &str) -> Result<(), 
 	let Some(mut cache) = load_scan_cache(install) else {
 		return Ok(());
 	};
-	cache.addons.retain(|a| a.folder_name != folder_name);
+	cache.addons.retain(|a| {
+		if a.folder_name == folder_name {
+			return false;
+		}
+		!a.related_folders.iter().any(|f| f == folder_name)
+	});
 	cache.scanned_at = Some(Utc::now().to_rfc3339());
 	cache.addons_path = Some(install.addons_path.clone());
 	write_scan_cache(install, &cache)
@@ -242,6 +255,10 @@ async fn scan_disk_with_updates(
 		strip_manual_category(addon);
 	}
 
+	// Collapse suites first so update checks run once per CurseForge package.
+	results = crate::wow::suite::collapse_suite_rows(results);
+	let _ = crate::wow::suite::sync_suite_flags_to_manifest(&addons_path, &results);
+
 	if check_remote {
 		// One batch request for all known CurseForge ids instead of N searches.
 		let ids: Vec<i64> = results.iter().filter_map(|a| a.curseforge_id).collect();
@@ -377,9 +394,16 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 			remote_version: None,
 			remote_file_id: None,
 			website_url: tracked.and_then(|t| t.website_url.clone()),
+			related_folders: tracked
+				.map(|t| t.related_folders.clone())
+				.unwrap_or_default(),
+			is_primary: tracked.map(|t| t.is_primary).unwrap_or(false),
+			archive_name: tracked.and_then(|t| t.archive_name.clone()),
 		});
 	}
 
+	let mut results = crate::wow::suite::collapse_suite_rows(results);
+	let _ = crate::wow::suite::sync_suite_flags_to_manifest(&addons_path, &results);
 	results.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
 	Ok(results)
 }
@@ -536,7 +560,9 @@ fn upsert_remote_enrichment(stored: &mut crate::types::AddonManifest, addon: &In
 			updated_at: addon.updated_at.clone(),
 			version: addon.version.clone(),
 			install_source: Some("manual".into()),
-			archive_name: None,
+			archive_name: addon.archive_name.clone(),
+			related_folders: addon.related_folders.clone(),
+			is_primary: addon.is_primary,
 		});
 	}
 	stored.version = 1;
@@ -628,6 +654,9 @@ mod tests {
 			remote_version: None,
 			remote_file_id: None,
 			website_url: None,
+			related_folders: vec![],
+			is_primary: false,
+			archive_name: None,
 		}
 	}
 

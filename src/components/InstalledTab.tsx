@@ -133,12 +133,18 @@ export function InstalledTab({
 
 	async function handleDelete(folderName: string) {
 		const forInstallId = install.id;
-		const title =
-			addons.find((a) => a.folderName === folderName)?.title || folderName;
+		const target = addons.find((a) => a.folderName === folderName);
+		const title = target?.title || folderName;
+		const suiteCount = target?.relatedFolders?.length ?? 1;
 		// Native async dialog — window.confirm blocks the WebView and the list
 		// appears empty behind the dialog until the user dismisses it.
 		const confirmed = await ask(
-			t("installed.deleteConfirm", { name: title }),
+			suiteCount > 1
+				? t("installed.deleteSuiteConfirm", {
+						name: title,
+						count: String(suiteCount),
+					})
+				: t("installed.deleteConfirm", { name: title }),
 			{
 				title: t("installed.deleteTitle"),
 				kind: "warning",

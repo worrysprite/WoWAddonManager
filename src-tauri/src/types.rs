@@ -103,6 +103,15 @@ pub struct InstalledAddon {
 	pub remote_version: Option<String>,
 	pub remote_file_id: Option<i64>,
 	pub website_url: Option<String>,
+	/// All AddOns folders belonging to this CurseForge/manual zip package.
+	#[serde(default)]
+	pub related_folders: Vec<String>,
+	/// True when this row is the suite's primary (shown in the installed list).
+	#[serde(default)]
+	pub is_primary: bool,
+	/// Manual zip name when installed from an archive (used to group suites).
+	#[serde(default)]
+	pub archive_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +165,11 @@ pub struct ManifestAddon {
 	pub install_source: Option<String>,
 	#[serde(default)]
 	pub archive_name: Option<String>,
+	/// Full suite folder list when this entry was installed from a multi-folder package.
+	#[serde(default)]
+	pub related_folders: Vec<String>,
+	#[serde(default)]
+	pub is_primary: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

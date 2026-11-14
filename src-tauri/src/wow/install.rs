@@ -66,10 +66,11 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 		));
 	}
 
-	let primary = accepted
-		.first()
-		.cloned()
-		.unwrap_or_else(|| sanitize_folder(&addon.slug));
+	let primary = crate::wow::suite::pick_primary_folder(
+		&accepted,
+		Some(&addon.slug),
+		Some(&addon.name),
+	);
 	let now = Utc::now().to_rfc3339();
 	let thumbnail_url = crate::icon_cache::ensure_cached(Some(addon.id), &addon.thumbnail_url)
 		.await
@@ -98,6 +99,8 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 			version: Some(addon.updated_at.clone()),
 			install_source: Some("curseforge".into()),
 			archive_name: None,
+			related_folders: accepted.clone(),
+			is_primary: folder == &primary,
 		};
 		manifest::upsert(&addons_path, entry)?;
 	}
@@ -198,6 +201,7 @@ pub async fn install_from_archive(
 	}
 
 	let mut accepted = Vec::new();
+	let mut pending_meta = Vec::new();
 	for (folder, meta) in pending {
 		let src = staging.join(&folder);
 		let dest = addons_path.join(&folder);
@@ -205,6 +209,21 @@ pub async fn install_from_archive(
 			let _ = fs::remove_dir_all(&staging);
 			return Err(err);
 		}
+		pending_meta.push((folder.clone(), meta));
+		accepted.push(folder);
+	}
+
+	let archive_stem = PathBuf::from(&archive_name)
+		.file_stem()
+		.and_then(|s| s.to_str())
+		.map(|s| s.to_string());
+	let primary = crate::wow::suite::pick_primary_folder(
+		&accepted,
+		archive_stem.as_deref(),
+		archive_stem.as_deref(),
+	);
+
+	for (folder, meta) in pending_meta {
 		let title = meta.as_ref().and_then(|m| m.title.clone());
 		let author = meta.as_ref().and_then(|m| m.author.clone());
 		let notes = meta.as_ref().and_then(|m| m.notes.clone());
@@ -228,12 +247,13 @@ pub async fn install_from_archive(
 			version,
 			install_source: Some("manual".into()),
 			archive_name: Some(archive_name.clone()),
+			related_folders: accepted.clone(),
+			is_primary: folder == primary,
 		};
 		if let Err(err) = manifest::upsert(&addons_path, entry) {
 			let _ = fs::remove_dir_all(&staging);
 			return Err(err);
 		}
-		accepted.push(folder);
 	}
 
 	let _ = fs::remove_dir_all(&staging);
@@ -248,7 +268,7 @@ pub async fn install_from_archive(
 	let list = scan::refresh_local_cache(&install)?;
 	let installed = list
 		.into_iter()
-		.filter(|a| accepted.iter().any(|f| f == &a.folder_name))
+		.filter(|a| a.folder_name == primary || accepted.iter().any(|f| f == &a.folder_name))
 		.collect::<Vec<_>>();
 
 	Ok(installed)
@@ -384,44 +404,56 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 	};
 
 	let installed_at = tracked.and_then(|t| t.installed_at.clone());
-	let target = addons_path.join(folder_name);
-	let backup = addons_path.join(format!(
-		".wam-backup-{}-{}",
+	let suite_folders = crate::wow::suite::suite_folders_for(&addons_path, folder_name);
+	let backup_root = addons_path.join(format!(
+		".wam-backup-suite-{}-{}",
 		folder_name,
 		Utc::now().timestamp_millis()
 	));
+	fs::create_dir_all(&backup_root).map_err(|e| e.to_string())?;
 
-	// Move aside the live folder so a failed/rejected install can restore it.
-	if target.exists() {
-		fs::rename(&target, &backup).map_err(|e| e.to_string())?;
+	// Move aside every suite folder so a failed install can restore the whole package.
+	for folder in &suite_folders {
+		let target = addons_path.join(folder);
+		if target.exists() {
+			let dest = backup_root.join(folder);
+			fs::rename(&target, &dest).map_err(|e| e.to_string())?;
+		}
+		let _ = manifest::remove(&addons_path, folder);
 	}
 
 	let install_result = install_addon(install_id, summary).await;
 	match install_result {
 		Ok(mut installed) => {
-			let _ = fs::remove_dir_all(&backup);
+			let _ = fs::remove_dir_all(&backup_root);
 			if let Some(installed_at) = installed_at {
 				let mut manifest = manifest::load(&addons_path);
-				if let Some(entry) = manifest
-					.addons
-					.iter_mut()
-					.find(|a| a.folder_name == installed.folder_name)
-				{
-					entry.installed_at = Some(installed_at.clone());
-					manifest::save(&addons_path, &manifest)?;
-					installed.installed_at = Some(installed_at);
+				for entry in manifest.addons.iter_mut() {
+					if installed.related_folders.iter().any(|f| f == &entry.folder_name)
+						|| entry.folder_name == installed.folder_name
+					{
+						entry.installed_at = Some(installed_at.clone());
+					}
 				}
+				manifest::save(&addons_path, &manifest)?;
+				installed.installed_at = Some(installed_at);
 				let _ = scan::refresh_local_cache(&install);
 			}
 			Ok(installed)
 		}
 		Err(err) => {
-			if backup.exists() {
-				if target.exists() {
-					let _ = fs::remove_dir_all(&target);
+			// Restore previous suite folders.
+			if let Ok(entries) = fs::read_dir(&backup_root) {
+				for entry in entries.flatten() {
+					let name = entry.file_name();
+					let dest = addons_path.join(&name);
+					if dest.exists() {
+						let _ = fs::remove_dir_all(&dest);
+					}
+					let _ = fs::rename(entry.path(), dest);
 				}
-				let _ = fs::rename(&backup, &target);
 			}
+			let _ = fs::remove_dir_all(&backup_root);
 			let _ = scan::refresh_local_cache(&install);
 			Err(err)
 		}
@@ -431,12 +463,15 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 pub async fn delete_addon(install_id: &str, folder_name: &str) -> Result<(), String> {
 	let install = resolve_install(install_id)?;
 	let addons_path = PathBuf::from(&install.addons_path);
-	let target = addons_path.join(folder_name);
-	if target.exists() {
-		fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+	let suite_folders = crate::wow::suite::suite_folders_for(&addons_path, folder_name);
+	for folder in &suite_folders {
+		let target = addons_path.join(folder);
+		if target.exists() {
+			fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+		}
+		manifest::remove(&addons_path, folder)?;
+		scan::remove_from_cache(&install, folder)?;
 	}
-	manifest::remove(&addons_path, folder_name)?;
-	scan::remove_from_cache(&install, folder_name)?;
 	Ok(())
 }
 

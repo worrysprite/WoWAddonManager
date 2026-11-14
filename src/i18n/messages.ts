@@ -48,6 +48,7 @@ export type MessageKey =
 	| "card.installedAt"
 	| "card.update"
 	| "card.delete"
+	| "card.suiteFolders"
 	| "installed.title"
 	| "installed.manual"
 	| "installed.rescan"
@@ -60,6 +61,7 @@ export type MessageKey =
 	| "installed.rescanDone"
 	| "installed.manualDone"
 	| "installed.deleteConfirm"
+	| "installed.deleteSuiteConfirm"
 	| "installed.deleteTitle"
 	| "installed.deleteOk"
 	| "installed.deleteCancel"
@@ -209,6 +211,7 @@ export const en: Messages = {
 	"card.installedAt": "Installed {date}",
 	"card.update": "Update",
 	"card.delete": "Delete",
+	"card.suiteFolders": "{count} folders in package",
 	"installed.title": "{label} installed addons",
 	"installed.manual": "Manual install",
 	"installed.rescan": "Scan Addons",
@@ -222,6 +225,8 @@ export const en: Messages = {
 	"installed.rescanDone": "Addon scan complete. {count} addon(s).",
 	"installed.manualDone": "Manually installed: {names}",
 	"installed.deleteConfirm": "Delete addon {name}?",
+	"installed.deleteSuiteConfirm":
+		"Delete {name}? This removes the whole package ({count} folders).",
 	"installed.deleteTitle": "Delete addon",
 	"installed.deleteOk": "Delete",
 	"installed.deleteCancel": "Cancel",
@@ -375,6 +380,7 @@ export const zhCN: Messages = {
 	"card.installedAt": "安装于 {date}",
 	"card.update": "更新",
 	"card.delete": "删除",
+	"card.suiteFolders": "含 {count} 个插件目录",
 	"installed.title": "{label} 已安装插件",
 	"installed.manual": "手动安装",
 	"installed.rescan": "扫描插件",
@@ -387,6 +393,8 @@ export const zhCN: Messages = {
 	"installed.rescanDone": "插件扫描完成，共 {count} 个插件",
 	"installed.manualDone": "已手动安装：{names}",
 	"installed.deleteConfirm": "确定删除插件 {name}？",
+	"installed.deleteSuiteConfirm":
+		"确定删除 {name}？将一并删除整个合集（共 {count} 个插件目录）。",
 	"installed.deleteTitle": "删除插件",
 	"installed.deleteOk": "删除",
 	"installed.deleteCancel": "取消",
