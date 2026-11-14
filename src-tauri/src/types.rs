@@ -128,6 +128,47 @@ pub struct UpdateRequest {
 	pub folder_name: String,
 }
 
+/// Progress events for install / update jobs (download → extract → install).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddonJobProgress {
+	/// `download` | `extract` | `install`
+	pub stage: String,
+	/// 0–100 when known (download with Content-Length).
+	pub percent: Option<u32>,
+	pub received: Option<u64>,
+	pub total: Option<u64>,
+}
+
+impl AddonJobProgress {
+	pub fn download(percent: Option<u32>, received: Option<u64>, total: Option<u64>) -> Self {
+		Self {
+			stage: "download".into(),
+			percent,
+			received,
+			total,
+		}
+	}
+
+	pub fn extract() -> Self {
+		Self {
+			stage: "extract".into(),
+			percent: None,
+			received: None,
+			total: None,
+		}
+	}
+
+	pub fn install() -> Self {
+		Self {
+			stage: "install".into(),
+			percent: None,
+			received: None,
+			total: None,
+		}
+	}
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteRequest {

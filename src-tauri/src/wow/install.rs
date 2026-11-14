@@ -1,9 +1,20 @@
 use crate::curseforge;
-use crate::types::{AddonSummary, InstalledAddon, ManifestAddon, SearchParams, WowInstall};
+use crate::types::{
+	AddonJobProgress, AddonSummary, InstalledAddon, ManifestAddon, SearchParams, WowInstall,
+};
 use crate::wow::{archive, detect, manifest, scan, toc};
 use chrono::Utc;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+type ProgressCb = Arc<dyn Fn(AddonJobProgress) + Send + Sync>;
+
+fn emit_progress(on_progress: Option<&ProgressCb>, progress: AddonJobProgress) {
+	if let Some(cb) = on_progress {
+		cb(progress);
+	}
+}
 
 fn resolve_install(install_id: &str) -> Result<WowInstall, String> {
 	let cfg = crate::config::load();
@@ -12,6 +23,14 @@ fn resolve_install(install_id: &str) -> Result<WowInstall, String> {
 }
 
 pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<InstalledAddon, String> {
+	install_addon_with_progress(install_id, addon, None).await
+}
+
+pub async fn install_addon_with_progress(
+	install_id: &str,
+	addon: AddonSummary,
+	on_progress: Option<ProgressCb>,
+) -> Result<InstalledAddon, String> {
 	let install = resolve_install(install_id)?;
 	let addons_path = PathBuf::from(&install.addons_path);
 	fs::create_dir_all(&addons_path).map_err(|e| e.to_string())?;
@@ -21,10 +40,14 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 		&addon.slug,
 		addon.latest_file_id,
 		install.game_version_type_id,
+		on_progress.as_ref().map(|cb| cb.as_ref() as _),
 	)
 	.await
 	{
-		Ok(bytes) => archive::extract_zip_bytes(&bytes, &addons_path)?,
+		Ok(bytes) => {
+			emit_progress(on_progress.as_ref(), AddonJobProgress::extract());
+			archive::extract_zip_bytes(&bytes, &addons_path)?
+		}
 		Err(err) => {
 			let folder = sanitize_folder(&addon.slug);
 			let target = addons_path.join(&folder);
@@ -34,6 +57,8 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 			vec![folder]
 		}
 	};
+
+	emit_progress(on_progress.as_ref(), AddonJobProgress::install());
 
 	let toc_ctx = crate::wow::toc::ClientContext::from_install(
 		&install.flavor_key,
@@ -369,7 +394,11 @@ async fn find_curseforge_for_update(
 	None
 }
 
-pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<InstalledAddon, String> {
+pub async fn update_addon_with_progress(
+	install_id: &str,
+	folder_name: &str,
+	on_progress: Option<ProgressCb>,
+) -> Result<InstalledAddon, String> {
 	let install = resolve_install(install_id)?;
 	let addons_path = PathBuf::from(&install.addons_path);
 	let stored = manifest::load(&addons_path);
@@ -386,6 +415,11 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 		.and_then(|t| t.name.clone())
 		.or(toc_meta.title.clone())
 		.or_else(|| Some(folder_name.to_string()));
+
+	emit_progress(
+		on_progress.as_ref(),
+		AddonJobProgress::download(Some(0), None, None),
+	);
 
 	let summary = find_curseforge_for_update(
 		folder_name,
@@ -429,7 +463,8 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 		let _ = manifest::remove(&addons_path, folder);
 	}
 
-	let install_result = install_addon(install_id, summary).await;
+	let install_result =
+		install_addon_with_progress(install_id, summary, on_progress.clone()).await;
 	match install_result {
 		Ok(mut installed) => {
 			let _ = fs::remove_dir_all(&backup_root);

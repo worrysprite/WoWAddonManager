@@ -89,6 +89,13 @@ export interface InstalledAddon {
 	archiveName?: string | null;
 }
 
+export interface AddonJobProgress {
+	stage: "download" | "extract" | "install" | string;
+	percent?: number | null;
+	received?: number | null;
+	total?: number | null;
+}
+
 export interface ApiHelp {
 	docs: string;
 	apply: string;

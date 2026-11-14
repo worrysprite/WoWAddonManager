@@ -73,15 +73,27 @@ pub async fn download_addon_zip(
 	slug: &str,
 	file_id: Option<i64>,
 	preferred_type_id: Option<i64>,
+	on_progress: Option<&(dyn Fn(crate::types::AddonJobProgress) + Send + Sync)>,
 ) -> Result<Vec<u8>, String> {
 	if let Some(api_key) = config::api_key() {
-		api::download_addon_zip(&api_key, mod_id, file_id, preferred_type_id)
+		api::download_addon_zip(&api_key, mod_id, file_id, preferred_type_id, on_progress)
 			.await
 			.map_err(|e| e.to_string())
 	} else {
-		web::download_addon_zip(slug, file_id)
+		if let Some(cb) = on_progress {
+			cb(crate::types::AddonJobProgress::download(Some(0), None, None));
+		}
+		let bytes = web::download_addon_zip(slug, file_id)
 			.await
-			.map_err(|e| e.to_string())
+			.map_err(|e| e.to_string())?;
+		if let Some(cb) = on_progress {
+			cb(crate::types::AddonJobProgress::download(
+				Some(100),
+				Some(bytes.len() as u64),
+				Some(bytes.len() as u64),
+			));
+		}
+		Ok(bytes)
 	}
 }
 

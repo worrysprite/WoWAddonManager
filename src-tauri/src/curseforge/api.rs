@@ -235,7 +235,11 @@ pub async fn download_addon_zip(
 	mod_id: i64,
 	file_id: Option<i64>,
 	preferred_type_id: Option<i64>,
+	on_progress: Option<&(dyn Fn(crate::types::AddonJobProgress) + Send + Sync)>,
 ) -> Result<Vec<u8>, ApiError> {
+	if let Some(cb) = on_progress {
+		cb(crate::types::AddonJobProgress::download(Some(0), Some(0), None));
+	}
 	// When installing into a specific client (e.g. Forever), always resolve that
 	// flavor's latestFilesIndexes entry — never fall back to a Retail hint fileId.
 	let file_id = if preferred_type_id.is_some() {
@@ -268,13 +272,59 @@ pub async fn download_addon_zip(
 		.and_then(|v| v.as_str())
 		.ok_or_else(|| ApiError::Parse("缺少 download url".into()))?;
 
-	let response = client()?.get(url).send().await?;
+	let mut response = client()?.get(url).send().await?;
 	let status = response.status();
 	if !status.is_success() {
 		log::error!("CurseForge 下载失败 HTTP {}", status.as_u16());
 		return Err(ApiError::Http(status.as_u16(), "下载失败".into()));
 	}
-	let bytes = response.bytes().await?.to_vec();
+
+	let total = response.content_length();
+	let mut received = 0u64;
+	let mut bytes = Vec::with_capacity(total.unwrap_or(0) as usize);
+	let mut last_pct = 0u32;
+	if let Some(cb) = on_progress {
+		cb(crate::types::AddonJobProgress::download(
+			Some(0),
+			Some(0),
+			total,
+		));
+	}
+	loop {
+		match response.chunk().await? {
+			Some(chunk) => {
+				received += chunk.len() as u64;
+				bytes.extend_from_slice(&chunk);
+				if let Some(cb) = on_progress {
+					let percent = total.map(|t| {
+						if t == 0 {
+							100
+						} else {
+							((received.saturating_mul(100)) / t).min(100) as u32
+						}
+					});
+					let pct = percent.unwrap_or(0);
+					// Throttle UI updates to whole-percent steps when size is known.
+					if total.is_none() || pct != last_pct || received == total.unwrap_or(u64::MAX) {
+						last_pct = pct;
+						cb(crate::types::AddonJobProgress::download(
+							percent,
+							Some(received),
+							total,
+						));
+					}
+				}
+			}
+			None => break,
+		}
+	}
+	if let Some(cb) = on_progress {
+		cb(crate::types::AddonJobProgress::download(
+			Some(100),
+			Some(received),
+			total.or(Some(received)),
+		));
+	}
 	log::info!("CurseForge 下载完成 bytes={}", bytes.len());
 	Ok(bytes)
 }

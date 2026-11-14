@@ -3,7 +3,12 @@ import { ask, open } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
 import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
-import type { InstalledAddon, SyncReport, WowInstall } from "../types";
+import type {
+	AddonJobProgress,
+	InstalledAddon,
+	SyncReport,
+	WowInstall,
+} from "../types";
 import { AddonCard } from "./AddonCard";
 
 type SyncDialogState = {
@@ -32,6 +37,9 @@ export function InstalledTab({
 	const [loading, setLoading] = useState(false);
 	const [scanning, setScanning] = useState(false);
 	const [busy, setBusy] = useState<string | null>(null);
+	const [updateProgress, setUpdateProgress] = useState<AddonJobProgress | null>(
+		null,
+	);
 	const [error, setError] = useState<string | null>(null);
 	const [status, setStatus] = useState<string | null>(null);
 	const [syncDialog, setSyncDialog] = useState<SyncDialogState | null>(null);
@@ -106,6 +114,7 @@ export function InstalledTab({
 			setError(null);
 			setStatus(null);
 			setBusy(null);
+			setUpdateProgress(null);
 			setScanning(false);
 			setSyncDialog(null);
 		}
@@ -116,9 +125,14 @@ export function InstalledTab({
 	async function handleUpdate(folderName: string) {
 		const forInstallId = install.id;
 		setBusy(folderName);
+		setUpdateProgress({ stage: "download", percent: 0 });
 		setStatus(null);
+		setError(null);
 		try {
-			await api.updateAddon(forInstallId, folderName);
+			await api.updateAddon(forInstallId, folderName, (progress) => {
+				if (installIdRef.current !== forInstallId) return;
+				setUpdateProgress(progress);
+			});
 			if (installIdRef.current !== forInstallId) return;
 			await loadCached(forInstallId);
 		} catch (err) {
@@ -127,6 +141,7 @@ export function InstalledTab({
 		} finally {
 			if (installIdRef.current === forInstallId) {
 				setBusy(null);
+				setUpdateProgress(null);
 			}
 		}
 	}
@@ -509,6 +524,9 @@ export function InstalledTab({
 						mode="installed"
 						addon={addon}
 						busy={busy === addon.folderName}
+						updateProgress={
+							busy === addon.folderName ? updateProgress : null
+						}
 						onUpdate={() => handleUpdate(addon.folderName)}
 						onDelete={() => handleDelete(addon.folderName)}
 					/>

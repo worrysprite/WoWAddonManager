@@ -9,9 +9,10 @@ use app_log::LogView;
 use config::{SaveSettingsRequest, SettingsView};
 use curseforge::catalog;
 use types::{
-	DeleteRequest, FilterCatalog, InstallRequest, InstalledAddon, ManualInstallRequest,
-	SearchParams, SearchResult, UpdateRequest, WowInstall,
+	AddonJobProgress, DeleteRequest, FilterCatalog, InstallRequest, InstalledAddon,
+	ManualInstallRequest, SearchParams, SearchResult, UpdateRequest, WowInstall,
 };
+use std::sync::Arc;
 use wow::backup::SyncReport;
 use wow::{backup, detect, install, scan};
 
@@ -126,8 +127,19 @@ async fn install_addon(request: InstallRequest) -> Result<InstalledAddon, String
 }
 
 #[tauri::command]
-async fn update_addon(request: UpdateRequest) -> Result<InstalledAddon, String> {
-	install::update_addon(&request.install_id, &request.folder_name).await
+async fn update_addon(
+	request: UpdateRequest,
+	on_progress: tauri::ipc::Channel<AddonJobProgress>,
+) -> Result<InstalledAddon, String> {
+	let progress = Arc::new(move |p: AddonJobProgress| {
+		let _ = on_progress.send(p);
+	});
+	install::update_addon_with_progress(
+		&request.install_id,
+		&request.folder_name,
+		Some(progress),
+	)
+	.await
 }
 
 #[tauri::command]

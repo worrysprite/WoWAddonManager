@@ -1,7 +1,12 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
-import type { AddonSummary, InstalledAddon, WowInstall } from "../types";
+import type {
+	AddonJobProgress,
+	AddonSummary,
+	InstalledAddon,
+	WowInstall,
+} from "../types";
 import {
 	compatibleInstalls,
 	extraCategoryCount,
@@ -33,6 +38,7 @@ type InstalledProps = {
 	mode: "installed";
 	addon: InstalledAddon;
 	busy?: boolean;
+	updateProgress?: AddonJobProgress | null;
 	onUpdate: () => void;
 	onDelete: () => void;
 };
@@ -129,11 +135,29 @@ export function AddonCard(props: Props) {
 		);
 	}
 
-	const { addon, busy, onUpdate, onDelete } = props;
+	const { addon, busy, updateProgress, onUpdate, onDelete } = props;
 	const categories = addon.categories.filter(
 		(c) => c.trim() && c.toLowerCase() !== "manual",
 	);
 	const extra = extraCategoryCount(categories);
+	const updating = Boolean(busy && updateProgress);
+	const progressLabel = (() => {
+		if (!updateProgress) return null;
+		if (updateProgress.stage === "extract") return t("card.updatingExtract");
+		if (updateProgress.stage === "install") return t("card.updatingInstall");
+		const pct = updateProgress.percent;
+		if (typeof pct === "number") {
+			return t("card.updatingDownloadPct", { percent: String(pct) });
+		}
+		return t("card.updatingDownload");
+	})();
+	const progressPct =
+		updateProgress?.stage === "download" && typeof updateProgress.percent === "number"
+			? Math.max(0, Math.min(100, updateProgress.percent))
+			: updateProgress?.stage === "extract" || updateProgress?.stage === "install"
+				? 100
+				: 0;
+
 	return (
 		<article className="addon-card addon-card-installed">
 			<Thumb url={addon.thumbnailUrl} name={addon.title} />
@@ -167,14 +191,33 @@ export function AddonCard(props: Props) {
 				</div>
 			</div>
 			<div className="card-actions card-actions-side">
-				{addon.hasUpdate ? (
-					<button className="btn primary" disabled={busy} onClick={onUpdate}>
-						{t("card.update")}
-					</button>
-				) : null}
-				<button className="btn danger" disabled={busy} onClick={onDelete}>
-					{t("card.delete")}
-				</button>
+				{updating && progressLabel ? (
+					<div
+						className="update-progress"
+						role="status"
+						aria-live="polite"
+						aria-label={progressLabel}
+					>
+						<div
+							className="update-progress-bar"
+							style={{ width: `${progressPct}%` }}
+						/>
+						<span className="update-progress-label">{progressLabel}</span>
+					</div>
+				) : (
+					<>
+						{addon.hasUpdate ? (
+							<button className="btn primary" disabled={busy} onClick={onUpdate}>
+								{t("card.update")}
+							</button>
+						) : null}
+						{!busy ? (
+							<button className="btn danger" onClick={onDelete}>
+								{t("card.delete")}
+							</button>
+						) : null}
+					</>
+				)}
 			</div>
 		</article>
 	);

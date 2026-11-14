@@ -46,6 +46,10 @@ export type MessageKey =
 	| "card.installedAt"
 	| "card.update"
 	| "card.delete"
+	| "card.updatingDownload"
+	| "card.updatingDownloadPct"
+	| "card.updatingExtract"
+	| "card.updatingInstall"
 	| "card.suiteFolders"
 	| "installed.title"
 	| "installed.manual"
@@ -207,6 +211,10 @@ export const en: Messages = {
 	"card.installedAt": "Installed {date}",
 	"card.update": "Update",
 	"card.delete": "Delete",
+	"card.updatingDownload": "Downloading…",
+	"card.updatingDownloadPct": "Downloading {percent}%",
+	"card.updatingExtract": "Extracting…",
+	"card.updatingInstall": "Installing…",
 	"card.suiteFolders": "{count} folders in package",
 	"installed.title": "{label} installed addons",
 	"installed.manual": "Manual install",
@@ -374,6 +382,10 @@ export const zhCN: Messages = {
 	"card.installedAt": "安装于 {date}",
 	"card.update": "更新",
 	"card.delete": "删除",
+	"card.updatingDownload": "下载中…",
+	"card.updatingDownloadPct": "下载中 {percent}%",
+	"card.updatingExtract": "解压中…",
+	"card.updatingInstall": "安装中…",
 	"card.suiteFolders": "含 {count} 个插件目录",
 	"installed.title": "{label} 已安装插件",
 	"installed.manual": "手动安装",

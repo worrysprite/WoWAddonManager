@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
+	AddonJobProgress,
 	AddonSummary,
 	ApiHelp,
 	FilterCatalog,
@@ -50,9 +51,18 @@ export function installAddon(installId: string, addon: AddonSummary) {
 	});
 }
 
-export function updateAddon(installId: string, folderName: string) {
+export function updateAddon(
+	installId: string,
+	folderName: string,
+	onProgress?: (progress: AddonJobProgress) => void,
+) {
+	const channel = new Channel<AddonJobProgress>();
+	channel.onmessage = (progress) => {
+		onProgress?.(progress);
+	};
 	return invoke<InstalledAddon>("update_addon", {
 		request: { installId, folderName },
+		onProgress: channel,
 	});
 }
 
