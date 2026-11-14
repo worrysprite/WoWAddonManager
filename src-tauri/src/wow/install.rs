@@ -16,8 +16,13 @@ pub async fn install_addon(install_id: &str, addon: AddonSummary) -> Result<Inst
 	let addons_path = PathBuf::from(&install.addons_path);
 	fs::create_dir_all(&addons_path).map_err(|e| e.to_string())?;
 
-	let folders = match curseforge::download_addon_zip(addon.id, &addon.slug, addon.latest_file_id)
-		.await
+	let folders = match curseforge::download_addon_zip(
+		addon.id,
+		&addon.slug,
+		addon.latest_file_id,
+		install.game_version_type_id,
+	)
+	.await
 	{
 		Ok(bytes) => archive::extract_zip_bytes(&bytes, &addons_path)?,
 		Err(err) => {
@@ -308,7 +313,16 @@ async fn find_curseforge_for_update(
 	folder_name: &str,
 	tracked: Option<&ManifestAddon>,
 	title: Option<&str>,
+	preferred_type_id: Option<i64>,
 ) -> Option<AddonSummary> {
+	// Prefer a direct mod lookup when we already know the CurseForge id — and
+	// pick the file for this client flavor (Forever vs Retail, etc.).
+	if let Some(id) = tracked.and_then(|t| t.curseforge_id) {
+		if let Some(item) = curseforge::get_addon_for_flavor(id, preferred_type_id).await {
+			return Some(item);
+		}
+	}
+
 	let mut terms = Vec::new();
 	if let Some(slug) = tracked.and_then(|t| t.curseforge_slug.clone()) {
 		terms.push(slug);
@@ -332,10 +346,10 @@ async fn find_curseforge_for_update(
 				page: Some(1),
 				page_size: Some(10),
 				categories: None,
-				game_version_type_ids: None,
+				game_version_type_ids: preferred_type_id.map(|id| vec![id]),
 				sort_by: Some("relevancy".into()),
 			},
-			true,
+			false,
 		)
 		.await;
 		if let Some(item) = result
@@ -343,6 +357,12 @@ async fn find_curseforge_for_update(
 			.into_iter()
 			.find(|item| remote_matches_local(item, folder_name, tracked, title))
 		{
+			// Search hits may carry a Retail latestFileId; re-resolve for this client.
+			if let Some(resolved) =
+				curseforge::get_addon_for_flavor(item.id, preferred_type_id).await
+			{
+				return Some(resolved);
+			}
 			return Some(item);
 		}
 	}
@@ -367,41 +387,19 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 		.or(toc_meta.title.clone())
 		.or_else(|| Some(folder_name.to_string()));
 
-	let summary = if let Some(remote) =
-		find_curseforge_for_update(folder_name, tracked.as_ref(), title.as_deref()).await
-	{
-		remote
-	} else if let Some(tracked) = tracked.as_ref() {
-		// Previously tracked CurseForge installs can fall back to stored metadata.
-		let slug = tracked
-			.curseforge_slug
-			.clone()
-			.ok_or_else(|| {
-				format!("未在 CurseForge 找到与「{folder_name}」同名的插件，无法在线更新")
-			})?;
-		AddonSummary {
-			id: tracked.curseforge_id.unwrap_or(0),
-			slug,
-			name: tracked
-				.name
-				.clone()
-				.unwrap_or_else(|| folder_name.to_string()),
-			author: tracked.author.clone().unwrap_or_default(),
-			summary: tracked.summary.clone().unwrap_or_default(),
-			thumbnail_url: tracked.thumbnail_url.clone().unwrap_or_default(),
-			download_count: tracked.download_count.unwrap_or(0),
-			updated_at: tracked.updated_at.clone().unwrap_or_default(),
-			latest_game_version: tracked.latest_game_version.clone().unwrap_or_default(),
-			categories: tracked.categories.clone(),
-			flavors: tracked.flavors.clone(),
-			website_url: tracked.website_url.clone().unwrap_or_default(),
-			latest_file_id: tracked.file_id,
-		}
-	} else {
-		return Err(format!(
-			"未在 CurseForge 找到与「{folder_name}」同名的插件，无法在线更新"
-		));
-	};
+	let summary = find_curseforge_for_update(
+		folder_name,
+		tracked.as_ref(),
+		title.as_deref(),
+		install.game_version_type_id,
+	)
+	.await
+	.ok_or_else(|| {
+		format!(
+			"未在 CurseForge 找到适用于当前客户端（{}）的「{folder_name}」更新包",
+			install.flavor_key
+		)
+	})?;
 
 	let installed_at = tracked.and_then(|t| t.installed_at.clone());
 	let suite_folders = crate::wow::suite::suite_folders_for(&addons_path, folder_name);

@@ -72,9 +72,10 @@ pub async fn download_addon_zip(
 	mod_id: i64,
 	slug: &str,
 	file_id: Option<i64>,
+	preferred_type_id: Option<i64>,
 ) -> Result<Vec<u8>, String> {
 	if let Some(api_key) = config::api_key() {
-		api::download_addon_zip(&api_key, mod_id, file_id)
+		api::download_addon_zip(&api_key, mod_id, file_id, preferred_type_id)
 			.await
 			.map_err(|e| e.to_string())
 	} else {
@@ -86,8 +87,16 @@ pub async fn download_addon_zip(
 
 /// Fetch one mod by CurseForge id (official API only).
 pub async fn get_addon(mod_id: i64) -> Option<AddonSummary> {
+	get_addon_for_flavor(mod_id, None).await
+}
+
+/// Fetch one mod, preferring a client's gameVersionTypeId when picking latestFileId.
+pub async fn get_addon_for_flavor(
+	mod_id: i64,
+	preferred_type_id: Option<i64>,
+) -> Option<AddonSummary> {
 	let api_key = config::api_key()?;
-	match api::get_mod(&api_key, mod_id).await {
+	match api::get_mod(&api_key, mod_id, preferred_type_id).await {
 		Ok(item) => Some(item),
 		Err(err) => {
 			log::warn!("CurseForge get mod {mod_id} failed: {err}");
@@ -97,7 +106,10 @@ pub async fn get_addon(mod_id: i64) -> Option<AddonSummary> {
 }
 
 /// Batch-fetch mods by id. Returns a map keyed by CurseForge mod id.
-pub async fn get_addons_by_ids(mod_ids: &[i64]) -> HashMap<i64, AddonSummary> {
+pub async fn get_addons_by_ids(
+	mod_ids: &[i64],
+	preferred_type_id: Option<i64>,
+) -> HashMap<i64, AddonSummary> {
 	let mut out = HashMap::new();
 	if mod_ids.is_empty() {
 		return out;
@@ -108,7 +120,7 @@ pub async fn get_addons_by_ids(mod_ids: &[i64]) -> HashMap<i64, AddonSummary> {
 	let mut unique = mod_ids.to_vec();
 	unique.sort_unstable();
 	unique.dedup();
-	match api::get_mods(&api_key, &unique).await {
+	match api::get_mods(&api_key, &unique, preferred_type_id).await {
 		Ok(items) => {
 			for item in items {
 				out.insert(item.id, item);

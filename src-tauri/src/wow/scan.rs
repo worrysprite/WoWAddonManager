@@ -262,7 +262,8 @@ async fn scan_disk_with_updates(
 	if check_remote {
 		// One batch request for all known CurseForge ids instead of N searches.
 		let ids: Vec<i64> = results.iter().filter_map(|a| a.curseforge_id).collect();
-		let by_id = curseforge::get_addons_by_ids(&ids).await;
+		let by_id =
+			curseforge::get_addons_by_ids(&ids, install.game_version_type_id).await;
 
 		let batch_ok = !ids.is_empty() && !by_id.is_empty();
 		for addon in &mut results {
@@ -272,7 +273,7 @@ async fn scan_disk_with_updates(
 						Some(item.clone())
 					} else if !batch_ok {
 						// Batch failed or empty key — fall back to a single GET, never search.
-						curseforge::get_addon(id).await
+						curseforge::get_addon_for_flavor(id, install.game_version_type_id).await
 					} else {
 						None
 					}

@@ -136,8 +136,8 @@ fn parse_search_result(json: &Value, params: &SearchParams) -> Result<SearchResu
 
 	let mut items = Vec::new();
 	let mut skipped = 0usize;
-	for entry in data {
-		if let Some(item) = map_mod(entry) {
+		for entry in data {
+		if let Some(item) = map_mod(entry, None) {
 			items.push(item);
 		} else {
 			skipped += 1;
@@ -234,12 +234,32 @@ pub async fn download_addon_zip(
 	api_key: &str,
 	mod_id: i64,
 	file_id: Option<i64>,
+	preferred_type_id: Option<i64>,
 ) -> Result<Vec<u8>, ApiError> {
-	let file_id = match file_id {
-		Some(id) => id,
-		None => latest_file_id(api_key, mod_id).await?,
+	// When installing into a specific client (e.g. Forever), always prefer that
+	// flavor's latestFilesIndexes entry over a browse/search hint that may be Retail.
+	let file_id = if preferred_type_id.is_some() {
+		match latest_file_id(api_key, mod_id, preferred_type_id).await {
+			Ok(id) => id,
+			Err(err) => match file_id {
+				Some(id) => {
+					log::warn!(
+						"CurseForge 无法按 flavor 解析文件 mod_id={mod_id} preferred={preferred_type_id:?}: {err}; 回退 hint={id}"
+					);
+					id
+				}
+				None => return Err(err),
+			},
+		}
+	} else {
+		match file_id {
+			Some(id) => id,
+			None => latest_file_id(api_key, mod_id, None).await?,
+		}
 	};
-	log::info!("CurseForge 下载 mod_id={mod_id} file_id={file_id}");
+	log::info!(
+		"CurseForge 下载 mod_id={mod_id} file_id={file_id} preferred_type={preferred_type_id:?}"
+	);
 
 	let json = get_json(
 		api_key,
@@ -263,15 +283,24 @@ pub async fn download_addon_zip(
 	Ok(bytes)
 }
 
-pub async fn get_mod(api_key: &str, mod_id: i64) -> Result<AddonSummary, ApiError> {
+pub async fn get_mod(
+	api_key: &str,
+	mod_id: i64,
+	preferred_type_id: Option<i64>,
+) -> Result<AddonSummary, ApiError> {
 	let json = get_json(api_key, &format!("/v1/mods/{mod_id}"), &[]).await?;
 	let data = json
 		.get("data")
 		.ok_or_else(|| ApiError::Parse("缺少 data".into()))?;
-	map_mod(data).ok_or_else(|| ApiError::Parse(format!("无法解析 mod {mod_id}")))
+	map_mod(data, preferred_type_id)
+		.ok_or_else(|| ApiError::Parse(format!("无法解析 mod {mod_id}")))
 }
 
-pub async fn get_mods(api_key: &str, mod_ids: &[i64]) -> Result<Vec<AddonSummary>, ApiError> {
+pub async fn get_mods(
+	api_key: &str,
+	mod_ids: &[i64],
+	preferred_type_id: Option<i64>,
+) -> Result<Vec<AddonSummary>, ApiError> {
 	if mod_ids.is_empty() {
 		return Ok(Vec::new());
 	}
@@ -288,7 +317,7 @@ pub async fn get_mods(api_key: &str, mod_ids: &[i64]) -> Result<Vec<AddonSummary
 			.and_then(|v| v.as_array())
 			.ok_or_else(|| ApiError::Parse("缺少 data".into()))?;
 		for entry in data {
-			if let Some(item) = map_mod(entry) {
+			if let Some(item) = map_mod(entry, preferred_type_id) {
 				items.push(item);
 			}
 		}
@@ -296,14 +325,50 @@ pub async fn get_mods(api_key: &str, mod_ids: &[i64]) -> Result<Vec<AddonSummary
 	Ok(items)
 }
 
-async fn latest_file_id(api_key: &str, mod_id: i64) -> Result<i64, ApiError> {
-	let summary = get_mod(api_key, mod_id).await?;
+/// Pick the latest file for a client flavor (e.g. Forever=88568) from mod JSON.
+pub async fn latest_file_id(
+	api_key: &str,
+	mod_id: i64,
+	preferred_type_id: Option<i64>,
+) -> Result<i64, ApiError> {
+	let summary = get_mod(api_key, mod_id, preferred_type_id).await?;
 	summary
 		.latest_file_id
 		.ok_or_else(|| ApiError::Parse("无法确定最新文件".into()))
 }
 
-fn map_mod(value: &Value) -> Option<AddonSummary> {
+fn pick_file_from_indexes(
+	indexes: &[Value],
+	preferred_type_id: Option<i64>,
+) -> (Option<i64>, String) {
+	if let Some(want) = preferred_type_id {
+		for index in indexes {
+			if index.get("gameVersionTypeId").and_then(|v| v.as_i64()) != Some(want) {
+				continue;
+			}
+			if let Some(file_id) = index.get("fileId").and_then(|v| v.as_i64()) {
+				let ver = index
+					.get("gameVersion")
+					.and_then(|v| v.as_str())
+					.unwrap_or("")
+					.to_string();
+				return (Some(file_id), ver);
+			}
+		}
+	}
+	if let Some(index) = indexes.first() {
+		let file_id = index.get("fileId").and_then(|v| v.as_i64());
+		let ver = index
+			.get("gameVersion")
+			.and_then(|v| v.as_str())
+			.unwrap_or("")
+			.to_string();
+		return (file_id, ver);
+	}
+	(None, String::new())
+}
+
+fn map_mod(value: &Value, preferred_type_id: Option<i64>) -> Option<AddonSummary> {
 	let id = value.get("id")?.as_i64()?;
 	let slug = value
 		.get("slug")
@@ -342,15 +407,6 @@ fn map_mod(value: &Value) -> Option<AddonSummary> {
 		.and_then(|v| v.as_str())
 		.unwrap_or("")
 		.to_string();
-	let latest_game_version = value
-		.pointer("/latestFilesIndexes/0/gameVersion")
-		.and_then(|v| v.as_str())
-		.unwrap_or("")
-		.to_string();
-	let latest_file_id = value
-		.pointer("/latestFilesIndexes/0/fileId")
-		.or_else(|| value.get("mainFileId"))
-		.and_then(|v| v.as_i64());
 	let categories = value
 		.get("categories")
 		.and_then(|v| v.as_array())
@@ -361,18 +417,34 @@ fn map_mod(value: &Value) -> Option<AddonSummary> {
 		})
 		.unwrap_or_default();
 
+	let indexes = value
+		.get("latestFilesIndexes")
+		.and_then(|v| v.as_array())
+		.cloned()
+		.unwrap_or_default();
+
 	let mut flavors = Vec::new();
-	if let Some(indexes) = value.get("latestFilesIndexes").and_then(|v| v.as_array()) {
-		for index in indexes {
-			if let Some(type_id) = index.get("gameVersionTypeId").and_then(|v| v.as_i64()) {
-				if let Some(label) = crate::curseforge::catalog::flavor_label(type_id) {
-					if !flavors.iter().any(|f| f == label) {
-						flavors.push(label.to_string());
-					}
+	for index in &indexes {
+		if let Some(type_id) = index.get("gameVersionTypeId").and_then(|v| v.as_i64()) {
+			if let Some(label) = crate::curseforge::catalog::flavor_label(type_id) {
+				if !flavors.iter().any(|f| f == label) {
+					flavors.push(label.to_string());
 				}
 			}
 		}
 	}
+
+	let (picked_file_id, picked_version) = pick_file_from_indexes(&indexes, preferred_type_id);
+	let latest_file_id = picked_file_id.or_else(|| value.get("mainFileId").and_then(|v| v.as_i64()));
+	let latest_game_version = if picked_version.is_empty() {
+		value
+			.pointer("/latestFilesIndexes/0/gameVersion")
+			.and_then(|v| v.as_str())
+			.unwrap_or("")
+			.to_string()
+	} else {
+		picked_version
+	};
 
 	Some(AddonSummary {
 		id,
@@ -438,8 +510,29 @@ mod tests {
 			"categories": [],
 			"latestFilesIndexes": []
 		});
-		let item = map_mod(&value).unwrap();
+		let item = map_mod(&value, None).unwrap();
 		assert_eq!(item.slug, "42");
 		assert_eq!(item.name, "Demo");
+	}
+
+	#[test]
+	fn pick_file_prefers_forever_type_id() {
+		let indexes = vec![
+			serde_json::json!({
+				"fileId": 111,
+				"gameVersion": "12.0.0",
+				"gameVersionTypeId": 517
+			}),
+			serde_json::json!({
+				"fileId": 222,
+				"gameVersion": "1.60.0",
+				"gameVersionTypeId": 88568
+			}),
+		];
+		let (id, ver) = pick_file_from_indexes(&indexes, Some(88568));
+		assert_eq!(id, Some(222));
+		assert_eq!(ver, "1.60.0");
+		let (fallback, _) = pick_file_from_indexes(&indexes, None);
+		assert_eq!(fallback, Some(111));
 	}
 }
