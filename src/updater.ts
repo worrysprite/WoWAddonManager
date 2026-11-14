@@ -4,6 +4,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+export const WEBSITE_URL = "https://github.com/worrysprite/WoWAddonManager";
+
 export const RELEASES_LATEST_URL =
 	"https://github.com/worrysprite/WoWAddonManager/releases/latest";
 
@@ -69,6 +71,10 @@ export function subscribeUpdater(listener: Listener): () => void {
 	return () => {
 		listeners.delete(listener);
 	};
+}
+
+export async function openWebsite(): Promise<void> {
+	await openUrl(WEBSITE_URL);
 }
 
 export async function openLatestReleasePage(): Promise<void> {

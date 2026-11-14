@@ -155,6 +155,7 @@ export type MessageKey =
 	| "update.readyAction"
 	| "update.availableManual"
 	| "update.openDownload"
+	| "update.openWebsite"
 	| "update.checkNow"
 	| "update.installRestart"
 	| "update.installing"
@@ -326,6 +327,7 @@ export const en: Messages = {
 	"update.readyAction": "Restart to install",
 	"update.availableManual": "Version {version} is available.",
 	"update.openDownload": "Open download page",
+	"update.openWebsite": "Open website",
 	"update.checkNow": "Check for updates",
 	"update.installRestart": "Install and restart",
 	"update.installing": "Installing update…",
@@ -494,6 +496,7 @@ export const zhCN: Messages = {
 	"update.readyAction": "重启以安装",
 	"update.availableManual": "发现新版本 {version}。",
 	"update.openDownload": "打开下载页",
+	"update.openWebsite": "打开官网",
 	"update.checkNow": "检查更新",
 	"update.installRestart": "安装并重启",
 	"update.installing": "正在安装更新…",

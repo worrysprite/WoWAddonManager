@@ -8,6 +8,7 @@ import type { LogEntry, SettingsView } from "../types";
 import {
 	installDownloadedUpdate,
 	openLatestReleasePage,
+	openWebsite,
 	runUpdateCheck,
 } from "../updater";
 
@@ -408,6 +409,20 @@ export function SettingsPage({
 						}}
 					>
 						{t("update.checkNow")}
+					</button>
+					<button
+						className="btn"
+						type="button"
+						onClick={async () => {
+							setError(null);
+							try {
+								await openWebsite();
+							} catch (err) {
+								setError(String(err));
+							}
+						}}
+					>
+						{t("update.openWebsite")}
 					</button>
 					{updater.status === "ready" ? (
 						<button
