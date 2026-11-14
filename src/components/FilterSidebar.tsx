@@ -41,7 +41,7 @@ export function FilterSidebar({
 
 			<details className="filter-section" open>
 				<summary>{t("filters.categories")}</summary>
-				<div className="filter-list">
+				<div className="filter-list filter-list-categories">
 					{(catalog?.categories ?? []).map((item) => (
 						<label key={item.id} className="filter-item">
 							<input
@@ -70,18 +70,6 @@ export function FilterSidebar({
 							<span>
 								{translateFlavorLabel(item.id, item.label, locale)}
 							</span>
-						</label>
-					))}
-				</div>
-			</details>
-
-			<details className="filter-section" open>
-				<summary>{t("filters.gameVersion")}</summary>
-				<div className="filter-list">
-					{(catalog?.gameVersions ?? []).map((item) => (
-						<label key={item.id} className="filter-item">
-							<input type="checkbox" disabled />
-							<span>{item.label}</span>
 						</label>
 					))}
 				</div>
