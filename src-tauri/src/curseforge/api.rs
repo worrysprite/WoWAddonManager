@@ -236,21 +236,17 @@ pub async fn download_addon_zip(
 	file_id: Option<i64>,
 	preferred_type_id: Option<i64>,
 ) -> Result<Vec<u8>, ApiError> {
-	// When installing into a specific client (e.g. Forever), always prefer that
-	// flavor's latestFilesIndexes entry over a browse/search hint that may be Retail.
+	// When installing into a specific client (e.g. Forever), always resolve that
+	// flavor's latestFilesIndexes entry — never fall back to a Retail hint fileId.
 	let file_id = if preferred_type_id.is_some() {
-		match latest_file_id(api_key, mod_id, preferred_type_id).await {
-			Ok(id) => id,
-			Err(err) => match file_id {
-				Some(id) => {
-					log::warn!(
-						"CurseForge 无法按 flavor 解析文件 mod_id={mod_id} preferred={preferred_type_id:?}: {err}; 回退 hint={id}"
-					);
-					id
-				}
-				None => return Err(err),
-			},
-		}
+		latest_file_id(api_key, mod_id, preferred_type_id).await.map_err(|err| {
+			log::error!(
+				"CurseForge 无适用于当前客户端的文件 mod_id={mod_id} preferred={preferred_type_id:?}: {err}"
+			);
+			ApiError::Parse(format!(
+				"该插件没有适用于当前客户端的 CurseForge 文件（gameVersionTypeId={preferred_type_id:?}）"
+			))
+		})?
 	} else {
 		match file_id {
 			Some(id) => id,
@@ -355,6 +351,8 @@ fn pick_file_from_indexes(
 				return (Some(file_id), ver);
 			}
 		}
+		// Do not silently fall back to Retail when a flavor was requested.
+		return (None, String::new());
 	}
 	if let Some(index) = indexes.first() {
 		let file_id = index.get("fileId").and_then(|v| v.as_i64());
@@ -435,15 +433,21 @@ fn map_mod(value: &Value, preferred_type_id: Option<i64>) -> Option<AddonSummary
 	}
 
 	let (picked_file_id, picked_version) = pick_file_from_indexes(&indexes, preferred_type_id);
-	let latest_file_id = picked_file_id.or_else(|| value.get("mainFileId").and_then(|v| v.as_i64()));
-	let latest_game_version = if picked_version.is_empty() {
+	let latest_file_id = if preferred_type_id.is_some() {
+		picked_file_id
+	} else {
+		picked_file_id.or_else(|| value.get("mainFileId").and_then(|v| v.as_i64()))
+	};
+	let latest_game_version = if !picked_version.is_empty() {
+		picked_version
+	} else if preferred_type_id.is_none() {
 		value
 			.pointer("/latestFilesIndexes/0/gameVersion")
 			.and_then(|v| v.as_str())
 			.unwrap_or("")
 			.to_string()
 	} else {
-		picked_version
+		String::new()
 	};
 
 	Some(AddonSummary {
@@ -534,5 +538,17 @@ mod tests {
 		assert_eq!(ver, "1.60.0");
 		let (fallback, _) = pick_file_from_indexes(&indexes, None);
 		assert_eq!(fallback, Some(111));
+	}
+
+	#[test]
+	fn pick_file_does_not_fall_back_to_retail_when_flavor_missing() {
+		let indexes = vec![serde_json::json!({
+			"fileId": 111,
+			"gameVersion": "12.0.0",
+			"gameVersionTypeId": 517
+		})];
+		let (id, ver) = pick_file_from_indexes(&indexes, Some(88568));
+		assert_eq!(id, None);
+		assert!(ver.is_empty());
 	}
 }

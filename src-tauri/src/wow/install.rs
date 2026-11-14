@@ -410,6 +410,15 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 	));
 	fs::create_dir_all(&backup_root).map_err(|e| e.to_string())?;
 
+	// Snapshot manifest rows so a failed update can restore metadata too.
+	let mut prior_manifest = manifest::load(&addons_path);
+	let suite_manifest: Vec<_> = prior_manifest
+		.addons
+		.iter()
+		.filter(|a| suite_folders.iter().any(|f| f == &a.folder_name))
+		.cloned()
+		.collect();
+
 	// Move aside every suite folder so a failed install can restore the whole package.
 	for folder in &suite_folders {
 		let target = addons_path.join(folder);
@@ -440,7 +449,7 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 			Ok(installed)
 		}
 		Err(err) => {
-			// Restore previous suite folders.
+			// Restore previous suite folders + manifest metadata.
 			if let Ok(entries) = fs::read_dir(&backup_root) {
 				for entry in entries.flatten() {
 					let name = entry.file_name();
@@ -452,6 +461,19 @@ pub async fn update_addon(install_id: &str, folder_name: &str) -> Result<Install
 				}
 			}
 			let _ = fs::remove_dir_all(&backup_root);
+			prior_manifest = manifest::load(&addons_path);
+			for entry in suite_manifest {
+				if let Some(existing) = prior_manifest
+					.addons
+					.iter_mut()
+					.find(|a| a.folder_name == entry.folder_name)
+				{
+					*existing = entry;
+				} else {
+					prior_manifest.addons.push(entry);
+				}
+			}
+			let _ = manifest::save(&addons_path, &prior_manifest);
 			let _ = scan::refresh_local_cache(&install);
 			Err(err)
 		}
