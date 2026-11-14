@@ -123,6 +123,23 @@ fn build_search_query(params: &SearchParams, include_class_id: bool) -> Vec<(&'s
 		}
 	}
 
+	if let Some(categories) = &params.categories {
+		let category_ids = crate::curseforge::catalog::resolve_category_ids(categories);
+		// Official API filters server-side; local retain previously emptied pages.
+		match category_ids.as_slice() {
+			[] => {}
+			[id] => query.push(("categoryId", id.to_string())),
+			ids => {
+				let joined = ids
+					.iter()
+					.map(|id| id.to_string())
+					.collect::<Vec<_>>()
+					.join(",");
+				query.push(("categoryIds", format!("[{joined}]")));
+			}
+		}
+	}
+
 	query
 }
 
@@ -145,23 +162,6 @@ fn parse_search_result(json: &Value, params: &SearchParams) -> Result<SearchResu
 	}
 	if skipped > 0 {
 		log::warn!("CurseForge 搜索跳过无法解析的条目: {skipped}");
-	}
-
-	if let Some(categories) = &params.categories {
-		if !categories.is_empty() {
-			let before = items.len();
-			items.retain(|item| {
-				categories.iter().any(|c| {
-					item.categories
-						.iter()
-						.any(|ic| ic.eq_ignore_ascii_case(c) || slugify(ic) == *c)
-				})
-			});
-			log::info!(
-				"CurseForge 分类过滤 categories={categories:?} before={before} after={}",
-				items.len()
-			);
-		}
 	}
 
 	let total = json
@@ -209,15 +209,10 @@ pub async fn search(api_key: &str, params: &SearchParams) -> Result<SearchResult
 			params.categories
 		);
 		if result.message.is_none() {
-			result.message = Some(if result.total == 0 {
+			result.message = Some(
 				"官方 API 返回 0 条结果。可清空左侧筛选后重试，或检查 API Key 是否有 WoW 搜索权限。"
-					.into()
-			} else {
-				format!(
-					"API 返回了 {total} 条，但当前分类筛选后无可显示项。请清空左侧分类后重试。",
-					total = result.total
-				)
-			});
+					.into(),
+			);
 		}
 	} else {
 		log::info!(
@@ -528,18 +523,6 @@ fn sort_field(sort_by: Option<&str>) -> i32 {
 	}
 }
 
-fn slugify(value: &str) -> String {
-	value
-		.to_lowercase()
-		.chars()
-		.map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-		.collect::<String>()
-		.split('-')
-		.filter(|s| !s.is_empty())
-		.collect::<Vec<_>>()
-		.join("-")
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -600,5 +583,43 @@ mod tests {
 		let (id, ver) = pick_file_from_indexes(&indexes, Some(88568));
 		assert_eq!(id, None);
 		assert!(ver.is_empty());
+	}
+
+	#[test]
+	fn search_query_includes_category_id() {
+		let params = SearchParams {
+			search: None,
+			page: Some(1),
+			page_size: Some(20),
+			categories: Some(vec!["action-bars".into()]),
+			game_version_type_ids: None,
+			sort_by: Some("popularity".into()),
+		};
+		let query = build_search_query(&params, true);
+		assert!(
+			query
+				.iter()
+				.any(|(k, v)| *k == "categoryId" && v == "1018"),
+			"query={query:?}"
+		);
+		assert!(!query.iter().any(|(k, _)| *k == "categoryIds"));
+	}
+
+	#[test]
+	fn search_query_includes_category_ids_list() {
+		let params = SearchParams {
+			search: None,
+			page: Some(1),
+			page_size: Some(20),
+			categories: Some(vec!["action-bars".into(), "combat".into()]),
+			game_version_type_ids: None,
+			sort_by: None,
+		};
+		let query = build_search_query(&params, true);
+		let value = query
+			.iter()
+			.find(|(k, _)| *k == "categoryIds")
+			.map(|(_, v)| v.as_str());
+		assert_eq!(value, Some("[1018,1019]"));
 	}
 }

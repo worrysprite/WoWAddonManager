@@ -77,3 +77,69 @@ pub fn flavor_label(game_version_type_id: i64) -> Option<&'static str> {
 		_ => None,
 	}
 }
+
+/// CurseForge WoW addon category ids (classId 5 / CF2WowAddonCategory).
+pub fn category_id_for_slug(slug: &str) -> Option<i64> {
+	match slug.trim().to_ascii_lowercase().as_str() {
+		"action-bars" => Some(1018),
+		"achievements" => Some(1067),
+		"artwork" => Some(1006),
+		"auction-economy" => Some(1002),
+		"audio-video" => Some(1003),
+		"bags-inventory" => Some(1009),
+		"boss-encounters" => Some(1014),
+		"buffs-debuffs" => Some(1005),
+		"chat-communication" => Some(1001),
+		"class" => Some(1020),
+		"combat" => Some(1019),
+		"companions" => Some(1085),
+		"data-export" => Some(1007),
+		"development-tools" => Some(1031),
+		"guild" => Some(1008),
+		"huds" => Some(1039),
+		"map-minimap" => Some(1011),
+		"miscellaneous" => Some(1017),
+		"plugins" => Some(1063),
+		"professions" => Some(1015),
+		"quests-leveling" => Some(1013),
+		"raid-frames" => Some(1037),
+		"roleplay" => Some(1060),
+		"tooltips" => Some(1055),
+		"unit-frames" => Some(1016),
+		_ => None,
+	}
+}
+
+pub fn resolve_category_ids(categories: &[String]) -> Vec<i64> {
+	let mut ids = Vec::new();
+	for slug in categories {
+		if let Some(id) = category_id_for_slug(slug) {
+			if !ids.contains(&id) {
+				ids.push(id);
+			}
+		}
+	}
+	ids
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn maps_known_category_slugs() {
+		assert_eq!(category_id_for_slug("action-bars"), Some(1018));
+		assert_eq!(category_id_for_slug("Combat"), Some(1019));
+		assert_eq!(category_id_for_slug("unknown"), None);
+	}
+
+	#[test]
+	fn resolve_dedupes_ids() {
+		let ids = resolve_category_ids(&[
+			"action-bars".into(),
+			"Action-Bars".into(),
+			"combat".into(),
+		]);
+		assert_eq!(ids, vec![1018, 1019]);
+	}
+}
