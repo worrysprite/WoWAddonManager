@@ -35,7 +35,6 @@ export type MessageKey =
 	| "filters.clearAll"
 	| "filters.categories"
 	| "filters.flavor"
-	| "filters.gameVersion"
 	| "card.by"
 	| "card.unknownAuthor"
 	| "card.noDescription"
@@ -196,7 +195,6 @@ export const en: Messages = {
 	"filters.clearAll": "Clear all",
 	"filters.categories": "Categories",
 	"filters.flavor": "Flavor",
-	"filters.gameVersion": "Game Version",
 	"card.by": "By {author}",
 	"card.unknownAuthor": "Unknown",
 	"card.noDescription": "No description",
@@ -363,7 +361,6 @@ export const zhCN: Messages = {
 	"filters.clearAll": "清除全部",
 	"filters.categories": "分类",
 	"filters.flavor": "游戏版本类型",
-	"filters.gameVersion": "游戏版本号",
 	"card.by": "作者 {author}",
 	"card.unknownAuthor": "未知",
 	"card.noDescription": "暂无简介",
