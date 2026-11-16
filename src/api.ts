@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
+	AddonDetail,
 	AddonJobProgress,
 	AddonSummary,
 	ApiHelp,
@@ -15,6 +16,10 @@ import type {
 
 export function searchAddons(params: SearchParams, forceRefresh = false) {
 	return invoke<SearchResult>("search_addons", { params, forceRefresh });
+}
+
+export function getAddonDetail(modId: number) {
+	return invoke<AddonDetail>("get_addon_detail", { modId });
 }
 
 export function getFilterCatalog() {

@@ -42,6 +42,12 @@ export type MessageKey =
 	| "card.noCompatibleInstall"
 	| "card.installTo"
 	| "card.openDetail"
+	| "detail.title"
+	| "detail.close"
+	| "detail.loading"
+	| "detail.screenshots"
+	| "detail.description"
+	| "detail.noDescription"
 	| "card.installedAddon"
 	| "card.installedAt"
 	| "card.update"
@@ -207,7 +213,13 @@ export const en: Messages = {
 	"card.needWowPath": "Add a WoW install path first",
 	"card.noCompatibleInstall": "No compatible local client for this addon",
 	"card.installTo": "Install to {label}",
-	"card.openDetail": "Open CurseForge page",
+	"card.openDetail": "View addon details",
+	"detail.title": "Addon details",
+	"detail.close": "Close",
+	"detail.loading": "Loading details…",
+	"detail.screenshots": "Screenshots",
+	"detail.description": "Description",
+	"detail.noDescription": "No detailed description available.",
 	"card.installedAddon": "Installed addon",
 	"card.installedAt": "Installed {date}",
 	"card.update": "Update",
@@ -379,7 +391,13 @@ export const zhCN: Messages = {
 	"card.needWowPath": "请先添加魔兽安装目录",
 	"card.noCompatibleInstall": "当前已检测到的客户端均不支持该插件",
 	"card.installTo": "安装到 {label}",
-	"card.openDetail": "打开 CurseForge 详情页",
+	"card.openDetail": "查看插件详情",
+	"detail.title": "插件详情",
+	"detail.close": "关闭",
+	"detail.loading": "正在加载详情…",
+	"detail.screenshots": "截图",
+	"detail.description": "详细介绍",
+	"detail.noDescription": "暂无详细介绍。",
 	"card.installedAddon": "已安装插件",
 	"card.installedAt": "安装于 {date}",
 	"card.update": "更新",

@@ -3,6 +3,7 @@ import * as api from "../api";
 import { useI18n } from "../i18n";
 import type { AddonSummary, FilterCatalog, SearchResult, WowInstall } from "../types";
 import { AddonCard } from "./AddonCard";
+import { AddonDetailModal } from "./AddonDetailModal";
 import { FilterSidebar } from "./FilterSidebar";
 
 type Props = {
@@ -23,6 +24,9 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 	const [busyId, setBusyId] = useState<number | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [reloadToken, setReloadToken] = useState(0);
+	const [detail, setDetail] = useState<{ modId: number; title: string } | null>(
+		null,
+	);
 	const requestSeq = useRef(0);
 
 	useEffect(() => {
@@ -173,6 +177,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 									selectedFlavorTypeIds={flavors}
 									busy={busyId === addon.id}
 									onInstall={(installId) => handleInstall(addon, installId)}
+									onOpenDetail={(modId, title) => setDetail({ modId, title })}
 								/>
 							))}
 							{result && result.items.length === 0 ? (
@@ -206,6 +211,13 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 					</button>
 				</div>
 			</section>
+			{detail ? (
+				<AddonDetailModal
+					modId={detail.modId}
+					fallbackTitle={detail.title}
+					onClose={() => setDetail(null)}
+				/>
+			) : null}
 		</div>
 	);
 }

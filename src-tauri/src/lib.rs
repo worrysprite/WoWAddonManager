@@ -9,7 +9,7 @@ use app_log::LogView;
 use config::{SaveSettingsRequest, SettingsView};
 use curseforge::catalog;
 use types::{
-	AddonJobProgress, DeleteRequest, FilterCatalog, InstallRequest, InstalledAddon,
+	AddonDetail, AddonJobProgress, DeleteRequest, FilterCatalog, InstallRequest, InstalledAddon,
 	ManualInstallRequest, SearchParams, SearchResult, UpdateRequest, WowInstall,
 };
 use std::sync::Arc;
@@ -47,6 +47,12 @@ async fn search_addons(params: SearchParams, force_refresh: Option<bool>) -> Res
 #[tauri::command]
 fn get_filter_catalog() -> FilterCatalog {
 	catalog::filter_catalog()
+}
+
+#[tauri::command]
+async fn get_addon_detail(mod_id: i64) -> Result<AddonDetail, String> {
+	log::info!("get_addon_detail mod_id={mod_id}");
+	curseforge::get_addon_detail(mod_id).await
 }
 
 #[tauri::command]
@@ -304,6 +310,7 @@ pub fn run() {
 		.invoke_handler(tauri::generate_handler![
 			search_addons,
 			get_filter_catalog,
+			get_addon_detail,
 			detect_wow_installs,
 			add_wow_path,
 			remove_wow_path,

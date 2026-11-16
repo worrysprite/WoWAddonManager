@@ -11,6 +11,7 @@ import type {
 	WowInstall,
 } from "../types";
 import { AddonCard } from "./AddonCard";
+import { AddonDetailModal } from "./AddonDetailModal";
 
 type SyncDialogState = {
 	kind: "backup" | "restore";
@@ -44,6 +45,9 @@ export function InstalledTab({
 	);
 	const [error, setError] = useState<string | null>(null);
 	const [syncDialog, setSyncDialog] = useState<SyncDialogState | null>(null);
+	const [detail, setDetail] = useState<{ modId: number; title: string } | null>(
+		null,
+	);
 	const syncOutputRef = useRef<HTMLPreElement | null>(null);
 	const syncLiveLogRef = useRef("");
 	const syncFlushTimerRef = useRef<number | null>(null);
@@ -526,6 +530,7 @@ export function InstalledTab({
 								}
 								onUpdate={() => handleUpdate(addon.folderName)}
 								onDelete={() => handleDelete(addon.folderName)}
+								onOpenDetail={(modId, title) => setDetail({ modId, title })}
 							/>
 						))}
 						{addons.length === 0 ? (
@@ -537,6 +542,13 @@ export function InstalledTab({
 					</>
 				)}
 			</div>
+			{detail ? (
+				<AddonDetailModal
+					modId={detail.modId}
+					fallbackTitle={detail.title}
+					onClose={() => setDetail(null)}
+				/>
+			) : null}
 			{toastNode}
 		</section>
 	);

@@ -8,7 +8,7 @@ pub mod web;
 mod tests;
 
 use crate::config;
-use crate::types::{AddonSummary, SearchParams, SearchResult};
+use crate::types::{AddonDetail, AddonSummary, SearchParams, SearchResult};
 use std::collections::HashMap;
 
 pub async fn search_addons(params: SearchParams, force_refresh: bool) -> SearchResult {
@@ -100,6 +100,16 @@ pub async fn download_addon_zip(
 /// Fetch one mod by CurseForge id (official API only).
 pub async fn get_addon(mod_id: i64) -> Option<AddonSummary> {
 	get_addon_for_flavor(mod_id, None).await
+}
+
+/// Full detail page payload: summary fields + screenshots + HTML description.
+pub async fn get_addon_detail(mod_id: i64) -> Result<AddonDetail, String> {
+	let Some(api_key) = config::api_key() else {
+		return Err("查看详情需要配置 CurseForge API Key。".into());
+	};
+	api::get_mod_detail(&api_key, mod_id)
+		.await
+		.map_err(|err| format!("获取插件详情失败：{err}"))
 }
 
 /// Fetch one mod, preferring a client's gameVersionTypeId when picking latestFileId.

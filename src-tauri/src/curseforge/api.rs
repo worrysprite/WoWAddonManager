@@ -345,6 +345,81 @@ pub async fn get_mod(
 		.ok_or_else(|| ApiError::Parse(format!("无法解析 mod {mod_id}")))
 }
 
+pub async fn get_mod_detail(
+	api_key: &str,
+	mod_id: i64,
+) -> Result<crate::types::AddonDetail, ApiError> {
+	let json = get_json(api_key, &format!("/v1/mods/{mod_id}"), &[]).await?;
+	let data = json
+		.get("data")
+		.ok_or_else(|| ApiError::Parse("缺少 data".into()))?;
+	let addon = map_mod(data, None)
+		.ok_or_else(|| ApiError::Parse(format!("无法解析 mod {mod_id}")))?;
+	let screenshots = parse_screenshots(data);
+
+	let description_html = match get_json(
+		api_key,
+		&format!("/v1/mods/{mod_id}/description"),
+		&[],
+	)
+	.await
+	{
+		Ok(desc_json) => desc_json
+			.get("data")
+			.and_then(|v| v.as_str())
+			.unwrap_or("")
+			.to_string(),
+		Err(err) => {
+			log::warn!("CurseForge description mod_id={mod_id} failed: {err}");
+			String::new()
+		}
+	};
+
+	Ok(crate::types::AddonDetail {
+		addon,
+		description_html,
+		screenshots,
+	})
+}
+
+fn parse_screenshots(value: &Value) -> Vec<crate::types::AddonScreenshot> {
+	value
+		.get("screenshots")
+		.and_then(|v| v.as_array())
+		.map(|arr| {
+			arr.iter()
+				.filter_map(|shot| {
+					let id = shot.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+					let url = shot
+						.get("url")
+						.and_then(|v| v.as_str())
+						.unwrap_or("")
+						.to_string();
+					if url.is_empty() {
+						return None;
+					}
+					let thumbnail_url = shot
+						.get("thumbnailUrl")
+						.and_then(|v| v.as_str())
+						.unwrap_or(url.as_str())
+						.to_string();
+					let title = shot
+						.get("title")
+						.and_then(|v| v.as_str())
+						.unwrap_or("")
+						.to_string();
+					Some(crate::types::AddonScreenshot {
+						id,
+						title,
+						url,
+						thumbnail_url,
+					})
+				})
+				.collect()
+		})
+		.unwrap_or_default()
+}
+
 pub async fn get_mods(
 	api_key: &str,
 	mod_ids: &[i64],
