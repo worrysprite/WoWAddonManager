@@ -22,6 +22,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 	const [loading, setLoading] = useState(false);
 	const [busyId, setBusyId] = useState<number | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [reloadToken, setReloadToken] = useState(0);
 	const requestSeq = useRef(0);
 
 	useEffect(() => {
@@ -60,7 +61,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 
 	useEffect(() => {
 		load();
-	}, [search, page, categories, flavors]);
+	}, [search, page, categories, flavors, reloadToken]);
 
 	const totalPages = useMemo(() => {
 		if (!result) return 1;
@@ -110,8 +111,14 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 						className="browse-search"
 						onSubmit={(e) => {
 							e.preventDefault();
+							const next = draftSearch.trim();
 							setPage(1);
-							setSearch(draftSearch.trim());
+							if (next === search) {
+								// Same query still needs visible feedback / refresh.
+								setReloadToken((v) => v + 1);
+							} else {
+								setSearch(next);
+							}
 						}}
 					>
 						<input
@@ -123,6 +130,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 							type="submit"
 							className="browse-search-btn"
 							aria-label={t("browse.searchAria")}
+							disabled={loading}
 						>
 							<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
 								<circle
@@ -149,23 +157,31 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 				{error ? <div className="banner">{error}</div> : null}
 
 				<div className="list-pane">
-					{loading && !result ? <div className="empty">{t("browse.loadingList")}</div> : null}
-					{result?.items.map((addon) => (
-						<AddonCard
-							key={addon.id}
-							mode="browse"
-							addon={addon}
-							installs={installs}
-							busy={busyId === addon.id}
-							onInstall={(installId) => handleInstall(addon, installId)}
-						/>
-					))}
-					{result && result.items.length === 0 ? (
-						<div className="empty">
-							<strong>{t("browse.noMatchTitle")}</strong>
-							{t("browse.noMatchHint")}
+					{loading ? (
+						<div className="list-loading" role="status" aria-live="polite">
+							<div className="list-loading-spinner" aria-hidden="true" />
+							<span>{t("browse.loadingList")}</span>
 						</div>
-					) : null}
+					) : (
+						<>
+							{result?.items.map((addon) => (
+								<AddonCard
+									key={addon.id}
+									mode="browse"
+									addon={addon}
+									installs={installs}
+									busy={busyId === addon.id}
+									onInstall={(installId) => handleInstall(addon, installId)}
+								/>
+							))}
+							{result && result.items.length === 0 ? (
+								<div className="empty">
+									<strong>{t("browse.noMatchTitle")}</strong>
+									{t("browse.noMatchHint")}
+								</div>
+							) : null}
+						</>
+					)}
 				</div>
 
 				<div className="pagination">
