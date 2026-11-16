@@ -513,30 +513,36 @@ export function InstalledTab({
 			) : null}
 
 			<div className="list-pane">
-				{(loading || scanning) && addons.length === 0 ? (
-					<div className="empty">
-						{scanning ? t("installed.rescanning") : t("installed.loadingList")}
+				{loading || scanning ? (
+					<div className="list-loading" role="status" aria-live="polite">
+						<div className="list-loading-spinner" aria-hidden="true" />
+						<span>
+							{scanning ? t("installed.rescanning") : t("installed.loadingList")}
+						</span>
 					</div>
-				) : null}
-				{addons.map((addon) => (
-					<AddonCard
-						key={`${install.id}:${addon.folderName}`}
-						mode="installed"
-						addon={addon}
-						busy={busy === addon.folderName}
-						updateProgress={
-							busy === addon.folderName ? updateProgress : null
-						}
-						onUpdate={() => handleUpdate(addon.folderName)}
-						onDelete={() => handleDelete(addon.folderName)}
-					/>
-				))}
-				{!loading && !scanning && addons.length === 0 ? (
-					<div className="empty">
-						<strong>{t("installed.emptyTitle")}</strong>
-						{t("installed.emptyHint")}
-					</div>
-				) : null}
+				) : (
+					<>
+						{addons.map((addon) => (
+							<AddonCard
+								key={`${install.id}:${addon.folderName}`}
+								mode="installed"
+								addon={addon}
+								busy={busy === addon.folderName}
+								updateProgress={
+									busy === addon.folderName ? updateProgress : null
+								}
+								onUpdate={() => handleUpdate(addon.folderName)}
+								onDelete={() => handleDelete(addon.folderName)}
+							/>
+						))}
+						{addons.length === 0 ? (
+							<div className="empty">
+								<strong>{t("installed.emptyTitle")}</strong>
+								{t("installed.emptyHint")}
+							</div>
+						) : null}
+					</>
+				)}
 			</div>
 		</section>
 	);
