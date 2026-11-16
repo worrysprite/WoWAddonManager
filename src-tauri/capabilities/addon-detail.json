@@ -1,0 +1,7 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "addon-detail",
+	"description": "Capability for the CurseForge addon detail popup window",
+	"windows": ["addon-detail"],
+	"permissions": ["core:default"]
+}
