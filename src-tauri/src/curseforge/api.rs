@@ -124,7 +124,15 @@ fn build_search_query(params: &SearchParams, include_class_id: bool) -> Vec<(&'s
 	}
 
 	if let Some(categories) = &params.categories {
-		let category_ids = crate::curseforge::catalog::resolve_category_ids(categories);
+		let mut category_ids = crate::curseforge::catalog::resolve_category_ids(categories);
+		// CurseForge caps categoryIds at 10 per search request.
+		if category_ids.len() > 10 {
+			log::warn!(
+				"CurseForge categoryIds truncated from {} to 10",
+				category_ids.len()
+			);
+			category_ids.truncate(10);
+		}
 		// Official API filters server-side; local retain previously emptied pages.
 		match category_ids.as_slice() {
 			[] => {}
@@ -621,5 +629,46 @@ mod tests {
 			.find(|(k, _)| *k == "categoryIds")
 			.map(|(_, v)| v.as_str());
 		assert_eq!(value, Some("[1018,1019]"));
+	}
+
+	#[test]
+	fn search_query_truncates_category_ids_to_ten() {
+		let categories = vec![
+			"action-bars",
+			"achievements",
+			"artwork",
+			"auction-economy",
+			"audio-video",
+			"bags-inventory",
+			"boss-encounters",
+			"buffs-debuffs",
+			"chat-communication",
+			"class",
+			"combat",
+			"companions",
+		]
+		.into_iter()
+		.map(String::from)
+		.collect::<Vec<_>>();
+		let params = SearchParams {
+			search: None,
+			page: Some(1),
+			page_size: Some(20),
+			categories: Some(categories),
+			game_version_type_ids: None,
+			sort_by: None,
+		};
+		let query = build_search_query(&params, true);
+		let value = query
+			.iter()
+			.find(|(k, _)| *k == "categoryIds")
+			.map(|(_, v)| v.as_str())
+			.expect("categoryIds");
+		let ids = value
+			.trim_matches(|c| c == '[' || c == ']')
+			.split(',')
+			.filter(|s| !s.is_empty())
+			.count();
+		assert_eq!(ids, 10, "value={value}");
 	}
 }
