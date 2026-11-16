@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
 import { useAppUpdater } from "../hooks/useAppUpdater";
+import { useToast } from "../hooks/useToast";
 import { useI18n, type LocalePreference } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
 import type { LogEntry, SettingsView } from "../types";
@@ -28,6 +29,7 @@ export function SettingsPage({
 	onFocusHandled,
 }: Props) {
 	const { t, locale, preference, setPreference } = useI18n();
+	const { showToast, toastNode } = useToast();
 	const updater = useAppUpdater({ autoCheck: false });
 	const [settings, setSettings] = useState<SettingsView | null>(null);
 	const [apiKey, setApiKey] = useState("");
@@ -36,7 +38,6 @@ export function SettingsPage({
 	const [busy, setBusy] = useState(false);
 	const [updateBusy, setUpdateBusy] = useState(false);
 	const [ready, setReady] = useState(false);
-	const [message, setMessage] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [logLevel, setLogLevel] = useState("info");
 	const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
@@ -69,7 +70,7 @@ export function SettingsPage({
 	useEffect(() => {
 		if (!focusInstallId || !ready) return;
 		setHighlightInstallId(focusInstallId);
-		setMessage(t("settings.backupPathUnset"));
+		showToast(t("settings.backupPathUnset"));
 		const row = installRowRefs.current[focusInstallId];
 		if (row) {
 			row.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -92,7 +93,6 @@ export function SettingsPage({
 		e.preventDefault();
 		setSaving(true);
 		setError(null);
-		setMessage(null);
 		try {
 			const next = await enqueueSave(() =>
 				api.saveSettings({
@@ -103,7 +103,7 @@ export function SettingsPage({
 			);
 			setSettings(next);
 			setApiKey(next.curseforgeApiKey);
-			setMessage(next.hasApiKey ? t("settings.apiSaved") : t("settings.apiCleared"));
+			showToast(next.hasApiKey ? t("settings.apiSaved") : t("settings.apiCleared"));
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
@@ -117,7 +117,6 @@ export function SettingsPage({
 		setLocaleDraft(nextLocale);
 		setBusy(true);
 		setError(null);
-		setMessage(null);
 		try {
 			// Only patch locale — never send an empty API key draft.
 			const next = await enqueueSave(() =>
@@ -127,7 +126,7 @@ export function SettingsPage({
 			);
 			setSettings(next);
 			setPreference(nextLocale);
-			setMessage(t("settings.languageSaved"));
+			showToast(t("settings.languageSaved"));
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
@@ -139,7 +138,6 @@ export function SettingsPage({
 	async function handleAddWowPath() {
 		setBusy(true);
 		setError(null);
-		setMessage(null);
 		try {
 			const selected = await open({
 				directory: true,
@@ -149,7 +147,7 @@ export function SettingsPage({
 			if (!selected || Array.isArray(selected)) return;
 			const next = await api.addWowPath(selected);
 			setSettings(next);
-			setMessage(t("settings.pathAdded", { path: selected }));
+			showToast(t("settings.pathAdded", { path: selected }));
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
@@ -161,11 +159,10 @@ export function SettingsPage({
 	async function handleRemoveWowPath(path: string) {
 		setBusy(true);
 		setError(null);
-		setMessage(null);
 		try {
 			const next = await api.removeWowPath(path);
 			setSettings(next);
-			setMessage(t("settings.pathRemoved", { path }));
+			showToast(t("settings.pathRemoved", { path }));
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
@@ -177,11 +174,10 @@ export function SettingsPage({
 	async function handleRescan() {
 		setBusy(true);
 		setError(null);
-		setMessage(null);
 		try {
 			const next = await api.rescanWowInstalls();
 			setSettings(next);
-			setMessage(
+			showToast(
 				next.hasWowInstall
 					? t("settings.rescanDoneFound", { count: next.detectedInstalls.length })
 					: t("settings.rescanDoneNone"),
@@ -197,7 +193,6 @@ export function SettingsPage({
 	async function handleChooseBackupPath(installId: string, label: string, current?: string) {
 		setBusy(true);
 		setError(null);
-		setMessage(null);
 		try {
 			const selected = await open({
 				directory: true,
@@ -212,7 +207,7 @@ export function SettingsPage({
 				}),
 			);
 			setSettings(next);
-			setMessage(t("settings.backupPathSaved", { label, path: selected }));
+			showToast(t("settings.backupPathSaved", { label, path: selected }));
 			setHighlightInstallId(null);
 			onSaved(next);
 		} catch (err) {
@@ -225,7 +220,6 @@ export function SettingsPage({
 	async function handleClearBackupPath(installId: string, label: string) {
 		setBusy(true);
 		setError(null);
-		setMessage(null);
 		try {
 			const next = await enqueueSave(() =>
 				api.saveSettings({
@@ -233,7 +227,7 @@ export function SettingsPage({
 				}),
 			);
 			setSettings(next);
-			setMessage(t("settings.backupPathCleared", { label }));
+			showToast(t("settings.backupPathCleared", { label }));
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
@@ -268,7 +262,7 @@ export function SettingsPage({
 			const applied = await api.setLogLevel(nextLevel);
 			setLogLevel(applied);
 			await refreshLogs();
-			setMessage(t("settings.logLevelSet", { level: applied.toUpperCase() }));
+			showToast(t("settings.logLevelSet", { level: applied.toUpperCase() }));
 		} catch (err) {
 			setError(String(err));
 		} finally {
@@ -282,7 +276,7 @@ export function SettingsPage({
 		try {
 			await api.clearLogs();
 			await refreshLogs();
-			setMessage(t("settings.logsCleared"));
+			showToast(t("settings.logsCleared"));
 		} catch (err) {
 			setError(String(err));
 		} finally {
@@ -293,7 +287,6 @@ export function SettingsPage({
 	async function handleSaveLogs() {
 		setLogsBusy(true);
 		setError(null);
-		setMessage(null);
 		try {
 			const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 			const selected = await save({
@@ -303,7 +296,7 @@ export function SettingsPage({
 			});
 			if (!selected) return;
 			await api.saveLogs(selected);
-			setMessage(t("settings.logsSaved", { path: selected }));
+			showToast(t("settings.logsSaved", { path: selected }));
 			await refreshLogs();
 		} catch (err) {
 			setError(String(err));
@@ -338,7 +331,6 @@ export function SettingsPage({
 			</div>
 
 			{error ? <div className="banner">{error}</div> : null}
-			{message ? <div className="banner ok-banner">{message}</div> : null}
 
 			<div className="settings-card">
 				<h3 className="settings-card-title">{t("update.title")}</h3>
@@ -702,6 +694,7 @@ export function SettingsPage({
 					</>
 				) : null}
 			</div>
+			{toastNode}
 		</section>
 	);
 }

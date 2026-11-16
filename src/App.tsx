@@ -4,6 +4,7 @@ import { BrowseTab } from "./components/BrowseTab";
 import { InstalledTab } from "./components/InstalledTab";
 import { SettingsPage } from "./components/SettingsPage";
 import { useAppUpdater } from "./hooks/useAppUpdater";
+import { useToast } from "./hooks/useToast";
 import { useI18n, type LocalePreference } from "./i18n";
 import { translateInstallLabel } from "./i18n/catalogLabels";
 import type { ApiHelp, SettingsView, WowInstall } from "./types";
@@ -17,6 +18,7 @@ type TabId = "browse" | "settings" | string;
 
 export default function App() {
 	const { t, locale, setPreference, setSystemLocale } = useI18n();
+	const { showToast, toastNode } = useToast();
 	const updater = useAppUpdater({ autoCheck: true });
 	const [tab, setTab] = useState<TabId>("browse");
 	const [previousTab, setPreviousTab] = useState<TabId>("browse");
@@ -282,7 +284,7 @@ export default function App() {
 						installs={installs}
 						onInstalled={() => {
 							setRefreshKey((v) => v + 1);
-							setStatus(t("banner.addonInstalled"));
+							showToast(t("banner.addonInstalled"));
 						}}
 					/>
 				</div>
@@ -306,6 +308,7 @@ export default function App() {
 					<div className="empty">{t("installed.clientMissing")}</div>
 				) : null}
 			</main>
+			{toastNode}
 		</div>
 	);
 }
