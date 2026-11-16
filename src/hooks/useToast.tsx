@@ -5,7 +5,11 @@ type ToastState = {
 	message: string;
 };
 
-/** Floating toast: fade in, stay ~3s, fade out. */
+/**
+ * Floating toast for transient tips (success / info).
+ * Prefer this over sticky banners for one-shot feedback; keep banners for
+ * persistent warnings and errors that need to stay visible.
+ */
 export function useToast() {
 	const [toast, setToast] = useState<ToastState | null>(null);
 	const [visible, setVisible] = useState(false);

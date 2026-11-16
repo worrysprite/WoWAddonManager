@@ -43,7 +43,6 @@ export function InstalledTab({
 		null,
 	);
 	const [error, setError] = useState<string | null>(null);
-	const [status, setStatus] = useState<string | null>(null);
 	const [syncDialog, setSyncDialog] = useState<SyncDialogState | null>(null);
 	const syncOutputRef = useRef<HTMLPreElement | null>(null);
 	const syncLiveLogRef = useRef("");
@@ -89,7 +88,6 @@ export function InstalledTab({
 		if (seq === null) return;
 		setScanning(true);
 		setError(null);
-		setStatus(null);
 		try {
 			const list = await api.rescanInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
@@ -114,7 +112,6 @@ export function InstalledTab({
 		if (switched) {
 			setAddons([]);
 			setError(null);
-			setStatus(null);
 			setBusy(null);
 			setUpdateProgress(null);
 			setScanning(false);
@@ -128,7 +125,6 @@ export function InstalledTab({
 		const forInstallId = install.id;
 		setBusy(folderName);
 		setUpdateProgress({ stage: "download", percent: 0 });
-		setStatus(null);
 		setError(null);
 		try {
 			await api.updateAddon(forInstallId, folderName, (progress) => {
@@ -172,7 +168,6 @@ export function InstalledTab({
 		if (!confirmed) return;
 		if (installIdRef.current !== forInstallId) return;
 		setBusy(folderName);
-		setStatus(null);
 		try {
 			await api.deleteAddon(forInstallId, folderName);
 			if (installIdRef.current !== forInstallId) return;
@@ -191,7 +186,6 @@ export function InstalledTab({
 	async function handleManualInstall() {
 		const forInstallId = install.id;
 		setError(null);
-		setStatus(null);
 		try {
 			const selected = await open({
 				multiple: false,
@@ -211,7 +205,7 @@ export function InstalledTab({
 			await loadCached(forInstallId);
 			if (installIdRef.current !== forInstallId) return;
 			const names = installed.map((item) => item.title).join("、");
-			setStatus(t("installed.manualDone", { names: names || selected }));
+			showToast(t("installed.manualDone", { names: names || selected }));
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			setError(String(err));
@@ -297,9 +291,8 @@ export function InstalledTab({
 	async function handleBackup() {
 		const forInstallId = install.id;
 		setError(null);
-		setStatus(null);
 		if (!hasBackupPath) {
-			setStatus(t("installed.backupNeedPath"));
+			showToast(t("installed.backupNeedPath"));
 			onNeedBackupPath();
 			return;
 		}
@@ -309,13 +302,13 @@ export function InstalledTab({
 			const report = await api.backupInstall(forInstallId, appendSyncLine);
 			if (installIdRef.current !== forInstallId) return;
 			finishSyncDialog("backup", { report, error: null });
-			setStatus(t("installed.backupDone", { path: report.path }));
+			showToast(t("installed.backupDone", { path: report.path }));
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			const message = String(err);
 			if (message.includes("未设置备份路径")) {
 				setSyncDialog(null);
-				setStatus(t("installed.backupNeedPath"));
+				showToast(t("installed.backupNeedPath"));
 				onNeedBackupPath();
 				return;
 			}
@@ -331,9 +324,8 @@ export function InstalledTab({
 	async function handleRestore() {
 		const forInstallId = install.id;
 		setError(null);
-		setStatus(null);
 		if (!hasBackupPath) {
-			setStatus(t("installed.backupNeedPath"));
+			showToast(t("installed.backupNeedPath"));
 			onNeedBackupPath();
 			return;
 		}
@@ -358,7 +350,7 @@ export function InstalledTab({
 			const message = String(err);
 			if (message.includes("未设置备份路径")) {
 				setSyncDialog(null);
-				setStatus(t("installed.backupNeedPath"));
+				showToast(t("installed.backupNeedPath"));
 				onNeedBackupPath();
 				return;
 			}
@@ -380,7 +372,7 @@ export function InstalledTab({
 		}
 		if (installIdRef.current !== forInstallId) return;
 		finishSyncDialog("restore", { report, error: null });
-		setStatus(t("installed.restoreDone", { path: report.path }));
+		showToast(t("installed.restoreDone", { path: report.path }));
 		try {
 			const seq = beginRequest(forInstallId);
 			if (seq === null) return;
@@ -454,7 +446,6 @@ export function InstalledTab({
 			</div>
 
 			{error ? <div className="banner">{error}</div> : null}
-			{status ? <div className="banner ok-banner">{status}</div> : null}
 
 			{syncDialog ? (
 				<div className="modal-backdrop" role="presentation">
