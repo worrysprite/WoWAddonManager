@@ -170,6 +170,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 									mode="browse"
 									addon={addon}
 									installs={installs}
+									selectedFlavorTypeIds={flavors}
 									busy={busyId === addon.id}
 									onInstall={(installId) => handleInstall(addon, installId)}
 								/>

@@ -57,11 +57,24 @@ export function addonSupportsInstall(addon: AddonSummary, install: WowInstall): 
 	return false;
 }
 
+/**
+ * Install targets = addon flavors ∩ detected clients.
+ * When the browse sidebar selects game-version types, further intersect with those ids.
+ */
 export function compatibleInstalls(
 	addon: AddonSummary,
 	installs: WowInstall[],
+	selectedFlavorTypeIds: number[] = [],
 ): WowInstall[] {
-	return installs.filter((install) => addonSupportsInstall(addon, install));
+	let targets = installs.filter((install) => addonSupportsInstall(addon, install));
+	if (selectedFlavorTypeIds.length > 0) {
+		const selected = new Set(selectedFlavorTypeIds);
+		targets = targets.filter((install) => {
+			const typeId = install.gameVersionTypeId;
+			return typeof typeId === "number" && selected.has(typeId);
+		});
+	}
+	return targets;
 }
 
 export function formatDate(value?: string | null): string {
