@@ -1,5 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { openAddonDetailPage, resolveAddonWebsiteUrl } from "../addonDetail";
+import { resolveAddonModId } from "../addonDetail";
 import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
 import type {
@@ -35,6 +35,7 @@ type BrowseProps = {
 	selectedFlavorTypeIds?: number[];
 	busy?: boolean;
 	onInstall: (installId: string) => void;
+	onOpenDetail?: (modId: number, title: string) => void;
 };
 
 type InstalledProps = {
@@ -44,6 +45,7 @@ type InstalledProps = {
 	updateProgress?: AddonJobProgress | null;
 	onUpdate: () => void;
 	onDelete: () => void;
+	onOpenDetail?: (modId: number, title: string) => void;
 };
 
 type Props = BrowseProps | InstalledProps;
@@ -51,13 +53,13 @@ type Props = BrowseProps | InstalledProps;
 function Thumb({
 	url,
 	name,
-	href,
 	openLabel,
+	onOpen,
 }: {
 	url?: string | null;
 	name: string;
-	href?: string | null;
 	openLabel: string;
+	onOpen?: () => void;
 }) {
 	const initial = name.slice(0, 1).toUpperCase();
 	const body = !url ? (
@@ -79,7 +81,7 @@ function Thumb({
 		/>
 	);
 
-	if (!href) {
+	if (!onOpen) {
 		return <div className="thumb">{body}</div>;
 	}
 
@@ -89,9 +91,7 @@ function Thumb({
 			className="thumb thumb-link"
 			title={openLabel}
 			aria-label={openLabel}
-			onClick={() => {
-				openAddonDetailPage(href, name).catch(console.error);
-			}}
+			onClick={onOpen}
 		>
 			{body}
 		</button>
@@ -100,14 +100,14 @@ function Thumb({
 
 function TitleLink({
 	title,
-	href,
 	openLabel,
+	onOpen,
 }: {
 	title: string;
-	href?: string | null;
 	openLabel: string;
+	onOpen?: () => void;
 }) {
-	if (!href) {
+	if (!onOpen) {
 		return <h3 className="card-title">{title}</h3>;
 	}
 	return (
@@ -117,9 +117,7 @@ function TitleLink({
 				className="card-title-link"
 				title={openLabel}
 				aria-label={`${openLabel}: ${title}`}
-				onClick={() => {
-					openAddonDetailPage(href, title).catch(console.error);
-				}}
+				onClick={onOpen}
 			>
 				{title}
 			</button>
@@ -131,27 +129,35 @@ export function AddonCard(props: Props) {
 	const { t, locale } = useI18n();
 
 	if (props.mode === "browse") {
-		const { addon, installs, selectedFlavorTypeIds = [], busy, onInstall } = props;
+		const {
+			addon,
+			installs,
+			selectedFlavorTypeIds = [],
+			busy,
+			onInstall,
+			onOpenDetail,
+		} = props;
 		const extra = extraCategoryCount(addon.categories);
 		const targets =
 			installs.length === 0
 				? []
 				: compatibleInstalls(addon, installs, selectedFlavorTypeIds);
-		const detailUrl = resolveAddonWebsiteUrl({
-			websiteUrl: addon.websiteUrl,
-			slug: addon.slug,
-		});
+		const modId = resolveAddonModId({ id: addon.id });
 		const openLabel = t("card.openDetail");
+		const openDetail =
+			modId && onOpenDetail
+				? () => onOpenDetail(modId, addon.name)
+				: undefined;
 		return (
 			<article className="addon-card addon-card-browse">
 				<Thumb
 					url={addon.thumbnailUrl}
 					name={addon.name}
-					href={detailUrl}
 					openLabel={openLabel}
+					onOpen={openDetail}
 				/>
 				<div className="card-body">
-					<TitleLink title={addon.name} href={detailUrl} openLabel={openLabel} />
+					<TitleLink title={addon.name} openLabel={openLabel} onOpen={openDetail} />
 					<p className="card-author">
 						{t("card.by", { author: addon.author || t("card.unknownAuthor") })}
 					</p>
@@ -200,17 +206,16 @@ export function AddonCard(props: Props) {
 		);
 	}
 
-	const { addon, busy, updateProgress, onUpdate, onDelete } = props;
+	const { addon, busy, updateProgress, onUpdate, onDelete, onOpenDetail } = props;
 	const categories = addon.categories.filter(
 		(c) => c.trim() && c.toLowerCase() !== "manual",
 	);
 	const extra = extraCategoryCount(categories);
 	const updating = Boolean(busy && updateProgress);
-	const detailUrl = resolveAddonWebsiteUrl({
-		websiteUrl: addon.websiteUrl,
-		slug: addon.curseforgeSlug,
-	});
+	const modId = resolveAddonModId({ curseforgeId: addon.curseforgeId });
 	const openLabel = t("card.openDetail");
+	const openDetail =
+		modId && onOpenDetail ? () => onOpenDetail(modId, addon.title) : undefined;
 	const progressLabel = (() => {
 		if (!updateProgress) return null;
 		if (updateProgress.stage === "extract") return t("card.updatingExtract");
@@ -233,11 +238,11 @@ export function AddonCard(props: Props) {
 			<Thumb
 				url={addon.thumbnailUrl}
 				name={addon.title}
-				href={detailUrl}
 				openLabel={openLabel}
+				onOpen={openDetail}
 			/>
 			<div className="card-body">
-				<TitleLink title={addon.title} href={detailUrl} openLabel={openLabel} />
+				<TitleLink title={addon.title} openLabel={openLabel} onOpen={openDetail} />
 				<p className="card-author">
 					{t("card.by", { author: addon.author || t("card.unknownAuthor") })}
 				</p>

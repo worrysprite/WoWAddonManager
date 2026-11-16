@@ -14,6 +14,19 @@ export interface AddonSummary {
 	latestFileId?: number | null;
 }
 
+export interface AddonScreenshot {
+	id: number;
+	title: string;
+	url: string;
+	thumbnailUrl: string;
+}
+
+export interface AddonDetail {
+	addon: AddonSummary;
+	descriptionHtml: string;
+	screenshots: AddonScreenshot[];
+}
+
 export interface SearchResult {
 	items: AddonSummary[];
 	page: number;

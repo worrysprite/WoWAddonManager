@@ -20,6 +20,23 @@ pub struct AddonSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AddonScreenshot {
+	pub id: i64,
+	pub title: String,
+	pub url: String,
+	pub thumbnail_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddonDetail {
+	pub addon: AddonSummary,
+	pub description_html: String,
+	pub screenshots: Vec<AddonScreenshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchResult {
 	pub items: Vec<AddonSummary>,
 	pub page: u32,
