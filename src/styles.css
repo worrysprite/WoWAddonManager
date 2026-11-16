@@ -413,7 +413,8 @@ button {
 	transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.addon-card-installed {
+.addon-card-installed,
+.addon-card-browse {
 	grid-template-columns: 96px minmax(0, 1fr) auto;
 	align-items: center;
 }
@@ -554,11 +555,13 @@ button {
 }
 
 @media (max-width: 720px) {
-	.addon-card-installed {
+	.addon-card-installed,
+	.addon-card-browse {
 		grid-template-columns: 72px minmax(0, 1fr);
 	}
 
-	.addon-card-installed .card-actions-side {
+	.addon-card-installed .card-actions-side,
+	.addon-card-browse .card-actions-side {
 		grid-column: 1 / -1;
 		flex-direction: row;
 		justify-content: flex-end;

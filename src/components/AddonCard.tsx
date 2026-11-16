@@ -30,6 +30,8 @@ type BrowseProps = {
 	mode: "browse";
 	addon: AddonSummary;
 	installs: WowInstall[];
+	/** Sidebar-selected CurseForge gameVersionTypeIds; empty = no extra filter. */
+	selectedFlavorTypeIds?: number[];
 	busy?: boolean;
 	onInstall: (installId: string) => void;
 };
@@ -74,10 +76,14 @@ export function AddonCard(props: Props) {
 	const { t, locale } = useI18n();
 
 	if (props.mode === "browse") {
-		const { addon, installs, busy, onInstall } = props;
+		const { addon, installs, selectedFlavorTypeIds = [], busy, onInstall } = props;
 		const extra = extraCategoryCount(addon.categories);
+		const targets =
+			installs.length === 0
+				? []
+				: compatibleInstalls(addon, installs, selectedFlavorTypeIds);
 		return (
-			<article className="addon-card">
+			<article className="addon-card addon-card-browse">
 				<Thumb url={addon.thumbnailUrl} name={addon.name} />
 				<div className="card-body">
 					<h3 className="card-title">{addon.name}</h3>
@@ -100,36 +106,30 @@ export function AddonCard(props: Props) {
 							</span>
 						) : null}
 					</div>
-					<div className="card-actions">
-						{installs.length === 0 ? (
-							<span className="muted">{t("card.needWowPath")}</span>
-						) : (
-							(() => {
-								const targets = compatibleInstalls(addon, installs);
-								if (targets.length === 0) {
-									return (
-										<span className="muted">{t("card.noCompatibleInstall")}</span>
-									);
-								}
-								return targets.map((install) => (
-									<button
-										key={install.id}
-										className="btn primary"
-										disabled={busy}
-										onClick={() => onInstall(install.id)}
-									>
-										{t("card.installTo", {
-											label: translateInstallLabel(
-												install.flavorKey,
-												install.label,
-												locale,
-											),
-										})}
-									</button>
-								));
-							})()
-						)}
-					</div>
+				</div>
+				<div className="card-actions card-actions-side">
+					{installs.length === 0 ? (
+						<span className="muted">{t("card.needWowPath")}</span>
+					) : targets.length === 0 ? (
+						<span className="muted">{t("card.noCompatibleInstall")}</span>
+					) : (
+						targets.map((install) => (
+							<button
+								key={install.id}
+								className="btn primary"
+								disabled={busy}
+								onClick={() => onInstall(install.id)}
+							>
+								{t("card.installTo", {
+									label: translateInstallLabel(
+										install.flavorKey,
+										install.label,
+										locale,
+									),
+								})}
+							</button>
+						))
+					)}
 				</div>
 			</article>
 		);
