@@ -706,6 +706,30 @@ button {
 	color: #b7e0c7 !important;
 }
 
+.toast {
+	position: fixed;
+	left: 50%;
+	bottom: 36px;
+	z-index: 80;
+	transform: translateX(-50%) translateY(10px);
+	opacity: 0;
+	pointer-events: none;
+	padding: 10px 18px;
+	border-radius: 8px;
+	border: 1px solid #2f5a42;
+	background: rgba(20, 32, 25, 0.94);
+	color: #b7e0c7;
+	font-size: 13px;
+	line-height: 1.4;
+	box-shadow: var(--shadow);
+	transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.toast-visible {
+	opacity: 1;
+	transform: translateX(-50%) translateY(0);
+}
+
 .settings-page {
 	width: 100%;
 	max-width: 720px;
