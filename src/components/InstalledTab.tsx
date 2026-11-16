@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
+import { useToast } from "../hooks/useToast";
 import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
 import type {
@@ -32,6 +33,7 @@ export function InstalledTab({
 }: Props) {
 	const hasBackupPath = Boolean(install.backupPath?.trim());
 	const { t, locale } = useI18n();
+	const { showToast, toastNode } = useToast();
 	const installLabel = translateInstallLabel(install.flavorKey, install.label, locale);
 	const [addons, setAddons] = useState<InstalledAddon[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -92,7 +94,7 @@ export function InstalledTab({
 			const list = await api.rescanInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
 			setAddons(list);
-			setStatus(t("installed.rescanDone", { count: list.length }));
+			showToast(t("installed.rescanDone", { count: list.length }));
 		} catch (err) {
 			if (!isCurrent(forInstallId, seq)) return;
 			setError(String(err));
@@ -544,6 +546,7 @@ export function InstalledTab({
 					</>
 				)}
 			</div>
+			{toastNode}
 		</section>
 	);
 }
