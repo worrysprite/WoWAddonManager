@@ -1,4 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { openAddonDetailPage, resolveAddonWebsiteUrl } from "../addonDetail";
 import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
 import type {
@@ -47,28 +48,82 @@ type InstalledProps = {
 
 type Props = BrowseProps | InstalledProps;
 
-function Thumb({ url, name }: { url?: string | null; name: string }) {
+function Thumb({
+	url,
+	name,
+	href,
+	openLabel,
+}: {
+	url?: string | null;
+	name: string;
+	href?: string | null;
+	openLabel: string;
+}) {
 	const initial = name.slice(0, 1).toUpperCase();
-	if (!url) {
-		return <div className="thumb">{initial}</div>;
+	const body = !url ? (
+		<span className="thumb-fallback">{initial}</span>
+	) : (
+		<img
+			src={resolveThumbSrc(url)}
+			alt=""
+			onError={(e) => {
+				const img = e.currentTarget;
+				img.style.display = "none";
+				if (img.parentElement && !img.parentElement.querySelector(".thumb-fallback")) {
+					const span = document.createElement("span");
+					span.className = "thumb-fallback";
+					span.textContent = initial;
+					img.parentElement.appendChild(span);
+				}
+			}}
+		/>
+	);
+
+	if (!href) {
+		return <div className="thumb">{body}</div>;
 	}
-	const src = resolveThumbSrc(url);
+
 	return (
-		<div className="thumb">
-			<img
-				src={src}
-				alt=""
-				onError={(e) => {
-					const img = e.currentTarget;
-					img.style.display = "none";
-					if (img.parentElement && !img.parentElement.querySelector("span")) {
-						const span = document.createElement("span");
-						span.textContent = initial;
-						img.parentElement.appendChild(span);
-					}
+		<button
+			type="button"
+			className="thumb thumb-link"
+			title={openLabel}
+			aria-label={openLabel}
+			onClick={() => {
+				openAddonDetailPage(href, name).catch(console.error);
+			}}
+		>
+			{body}
+		</button>
+	);
+}
+
+function TitleLink({
+	title,
+	href,
+	openLabel,
+}: {
+	title: string;
+	href?: string | null;
+	openLabel: string;
+}) {
+	if (!href) {
+		return <h3 className="card-title">{title}</h3>;
+	}
+	return (
+		<h3 className="card-title">
+			<button
+				type="button"
+				className="card-title-link"
+				title={openLabel}
+				aria-label={`${openLabel}: ${title}`}
+				onClick={() => {
+					openAddonDetailPage(href, title).catch(console.error);
 				}}
-			/>
-		</div>
+			>
+				{title}
+			</button>
+		</h3>
 	);
 }
 
@@ -82,11 +137,21 @@ export function AddonCard(props: Props) {
 			installs.length === 0
 				? []
 				: compatibleInstalls(addon, installs, selectedFlavorTypeIds);
+		const detailUrl = resolveAddonWebsiteUrl({
+			websiteUrl: addon.websiteUrl,
+			slug: addon.slug,
+		});
+		const openLabel = t("card.openDetail");
 		return (
 			<article className="addon-card addon-card-browse">
-				<Thumb url={addon.thumbnailUrl} name={addon.name} />
+				<Thumb
+					url={addon.thumbnailUrl}
+					name={addon.name}
+					href={detailUrl}
+					openLabel={openLabel}
+				/>
 				<div className="card-body">
-					<h3 className="card-title">{addon.name}</h3>
+					<TitleLink title={addon.name} href={detailUrl} openLabel={openLabel} />
 					<p className="card-author">
 						{t("card.by", { author: addon.author || t("card.unknownAuthor") })}
 					</p>
@@ -141,6 +206,11 @@ export function AddonCard(props: Props) {
 	);
 	const extra = extraCategoryCount(categories);
 	const updating = Boolean(busy && updateProgress);
+	const detailUrl = resolveAddonWebsiteUrl({
+		websiteUrl: addon.websiteUrl,
+		slug: addon.curseforgeSlug,
+	});
+	const openLabel = t("card.openDetail");
 	const progressLabel = (() => {
 		if (!updateProgress) return null;
 		if (updateProgress.stage === "extract") return t("card.updatingExtract");
@@ -160,9 +230,14 @@ export function AddonCard(props: Props) {
 
 	return (
 		<article className="addon-card addon-card-installed">
-			<Thumb url={addon.thumbnailUrl} name={addon.title} />
+			<Thumb
+				url={addon.thumbnailUrl}
+				name={addon.title}
+				href={detailUrl}
+				openLabel={openLabel}
+			/>
 			<div className="card-body">
-				<h3 className="card-title">{addon.title}</h3>
+				<TitleLink title={addon.title} href={detailUrl} openLabel={openLabel} />
 				<p className="card-author">
 					{t("card.by", { author: addon.author || t("card.unknownAuthor") })}
 				</p>
