@@ -15,6 +15,11 @@ import "./styles.css";
 
 type TabId = "browse" | "settings" | string;
 
+type ToastState = {
+	id: number;
+	message: string;
+};
+
 export default function App() {
 	const { t, locale, setPreference, setSystemLocale } = useI18n();
 	const updater = useAppUpdater({ autoCheck: true });
@@ -26,6 +31,8 @@ export default function App() {
 	const [apiHelp, setApiHelp] = useState<ApiHelp | null>(null);
 	const [settings, setSettings] = useState<SettingsView | null>(null);
 	const [status, setStatus] = useState<string | null>(null);
+	const [toast, setToast] = useState<ToastState | null>(null);
+	const [toastVisible, setToastVisible] = useState(false);
 	const [settingsFocusInstallId, setSettingsFocusInstallId] = useState<string | null>(
 		null,
 	);
@@ -77,6 +84,24 @@ export default function App() {
 		refreshAll();
 		api.getApiHelp().then(setApiHelp).catch(console.error);
 	}, []);
+
+	useEffect(() => {
+		if (!toast) {
+			setToastVisible(false);
+			return;
+		}
+		setToastVisible(false);
+		const showFrame = window.requestAnimationFrame(() => {
+			setToastVisible(true);
+		});
+		const hideTimer = window.setTimeout(() => setToastVisible(false), 3000);
+		const clearTimer = window.setTimeout(() => setToast(null), 3400);
+		return () => {
+			window.cancelAnimationFrame(showFrame);
+			window.clearTimeout(hideTimer);
+			window.clearTimeout(clearTimer);
+		};
+	}, [toast]);
 
 	function openSettings(focusInstallId: string | null = null) {
 		if (tab !== "settings") {
@@ -282,7 +307,10 @@ export default function App() {
 						installs={installs}
 						onInstalled={() => {
 							setRefreshKey((v) => v + 1);
-							setStatus(t("banner.addonInstalled"));
+							setToast({
+								id: Date.now(),
+								message: t("banner.addonInstalled"),
+							});
 						}}
 					/>
 				</div>
@@ -306,6 +334,16 @@ export default function App() {
 					<div className="empty">{t("installed.clientMissing")}</div>
 				) : null}
 			</main>
+
+			{toast ? (
+				<div
+					className={`toast${toastVisible ? " toast-visible" : ""}`}
+					role="status"
+					aria-live="polite"
+				>
+					{toast.message}
+				</div>
+			) : null}
 		</div>
 	);
 }
