@@ -299,6 +299,27 @@ fn get_update_install_kind() -> String {
 	}
 }
 
+/// Default window size: 70% of monitor width × 80% of monitor height.
+fn apply_default_window_size(window: &tauri::WebviewWindow) {
+	let monitor = match window.current_monitor() {
+		Ok(Some(monitor)) => monitor,
+		_ => match window.primary_monitor() {
+			Ok(Some(monitor)) => monitor,
+			_ => return,
+		},
+	};
+	let size = monitor.size();
+	let width = ((size.width as f64) * 0.70).round().max(1.0) as u32;
+	let height = ((size.height as f64) * 0.80).round().max(1.0) as u32;
+	if let Err(err) = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height })) {
+		log::warn!("failed to set default window size: {err}");
+		return;
+	}
+	if let Err(err) = window.center() {
+		log::warn!("failed to center window: {err}");
+	}
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
 	app_log::init();
@@ -307,6 +328,13 @@ pub fn run() {
 		.plugin(tauri_plugin_dialog::init())
 		.plugin(tauri_plugin_process::init())
 		.plugin(tauri_plugin_updater::Builder::new().build())
+		.setup(|app| {
+			use tauri::Manager;
+			if let Some(window) = app.get_webview_window("main") {
+				apply_default_window_size(&window);
+			}
+			Ok(())
+		})
 		.invoke_handler(tauri::generate_handler![
 			search_addons,
 			get_filter_catalog,

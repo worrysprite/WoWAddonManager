@@ -1,6 +1,7 @@
 pub mod api;
 pub mod browse_cache;
 pub mod catalog;
+pub mod detail_cache;
 pub mod web;
 
 #[cfg(test)]
@@ -104,12 +105,17 @@ pub async fn get_addon(mod_id: i64) -> Option<AddonSummary> {
 
 /// Full detail page payload: summary fields + screenshots + HTML description.
 pub async fn get_addon_detail(mod_id: i64) -> Result<AddonDetail, String> {
+	if let Some(cached) = detail_cache::get(mod_id) {
+		return Ok(cached);
+	}
 	let Some(api_key) = config::api_key() else {
 		return Err("查看详情需要配置 CurseForge API Key。".into());
 	};
-	api::get_mod_detail(&api_key, mod_id)
+	let detail = api::get_mod_detail(&api_key, mod_id)
 		.await
-		.map_err(|err| format!("获取插件详情失败：{err}"))
+		.map_err(|err| format!("获取插件详情失败：{err}"))?;
+	detail_cache::put(mod_id, &detail);
+	Ok(detail)
 }
 
 /// Fetch one mod, preferring a client's gameVersionTypeId when picking latestFileId.
