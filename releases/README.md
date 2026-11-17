@@ -1,6 +1,6 @@
 # Windows 预编译包
 
-当前版本：**1.0.0**
+当前版本：**1.2.0**
 
 - 安装包（推荐，支持应用内自动更新）：见 [GitHub Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 中的 `*-setup.exe`
 - 便携版：同页的 `WoW-Addon-Manager.exe`（需手动下载替换）
@@ -15,6 +15,15 @@
 - 仓库 Secrets 需配置 `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。
 
 下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
+
+## 1.2.0 更新
+- Forever（无限）：更新匹配优先 TOC `X-Curse-Project-ID`，无 ID 时按名称回退；无 Forever 文件时给出明确提示，不再写占位 TOC 误报「不兼容」
+- 插件详情截图切换时显示加载转圈（已缓存图片不闪）
+- 详情结果按插件缓存（最多 100）；默认窗口约屏幕 70%×80%；详情弹窗随窗口放大
+
+## 1.1.0 更新
+- 浏览页分类 API 过滤、搜索/扫描加载态、浮动 toast
+- 安装按钮按客户端版本交集；应用内插件详情（截图 + 介绍）
 
 ## 1.0.0 更新
 - 应用内自动更新（安装版静默下载，重启安装；便携版引导下载）
