@@ -245,15 +245,15 @@ pub async fn download_addon_zip(
 	}
 	// When installing into a specific client (e.g. Forever), always resolve that
 	// flavor's latestFilesIndexes entry — never fall back to a Retail hint fileId.
-	let file_id = if preferred_type_id.is_some() {
-		latest_file_id(api_key, mod_id, preferred_type_id).await.map_err(|err| {
-			log::error!(
-				"CurseForge 无适用于当前客户端的文件 mod_id={mod_id} preferred={preferred_type_id:?}: {err}"
-			);
-			ApiError::Parse(format!(
-				"该插件没有适用于当前客户端的 CurseForge 文件（gameVersionTypeId={preferred_type_id:?}）"
-			))
-		})?
+	let file_id = if let Some(want) = preferred_type_id {
+		latest_file_id(api_key, mod_id, Some(want))
+			.await
+			.map_err(|err| {
+				log::error!(
+					"CurseForge 无适用于当前客户端的文件 mod_id={mod_id} preferred={want}: {err}"
+				);
+				err
+			})?
 	} else {
 		match file_id {
 			Some(id) => id,
@@ -456,9 +456,67 @@ pub async fn latest_file_id(
 	preferred_type_id: Option<i64>,
 ) -> Result<i64, ApiError> {
 	let summary = get_mod(api_key, mod_id, preferred_type_id).await?;
-	summary
-		.latest_file_id
-		.ok_or_else(|| ApiError::Parse("无法确定最新文件".into()))
+	if let Some(id) = summary.latest_file_id {
+		return Ok(id);
+	}
+	// latestFilesIndexes can omit a flavor that still has files; query /files.
+	if let Some(want) = preferred_type_id {
+		if let Some(id) = latest_file_id_from_files_api(api_key, mod_id, want).await? {
+			log::info!(
+				"CurseForge files API resolved flavor file mod_id={mod_id} type={want} file_id={id}"
+			);
+			return Ok(id);
+		}
+		return Err(ApiError::Parse(
+			crate::curseforge::catalog::missing_flavor_file_message(want),
+		));
+	}
+	Err(ApiError::Parse("无法确定最新文件".into()))
+}
+
+/// Fallback: list files filtered by gameVersionTypeId and pick the newest release.
+async fn latest_file_id_from_files_api(
+	api_key: &str,
+	mod_id: i64,
+	game_version_type_id: i64,
+) -> Result<Option<i64>, ApiError> {
+	let json = get_json(
+		api_key,
+		&format!("/v1/mods/{mod_id}/files"),
+		&[
+			(
+				"gameVersionTypeId",
+				game_version_type_id.to_string(),
+			),
+			("pageSize", "50".into()),
+		],
+	)
+	.await?;
+	let Some(files) = json.get("data").and_then(|v| v.as_array()) else {
+		return Ok(None);
+	};
+	Ok(pick_newest_file_id(files))
+}
+
+fn pick_newest_file_id(files: &[Value]) -> Option<i64> {
+	// Prefer Release (1) over Beta (2) / Alpha (3); then highest file id.
+	let mut best: Option<(i64, i64)> = None; // (rank, file_id)
+	for file in files {
+		let Some(file_id) = file.get("id").and_then(|v| v.as_i64()) else {
+			continue;
+		};
+		let release_type = file
+			.get("releaseType")
+			.and_then(|v| v.as_i64())
+			.unwrap_or(99);
+		// Lower releaseType is better (1=release); use negative so max() works.
+		let rank = -release_type;
+		let candidate = (rank, file_id);
+		if best.map(|b| candidate > b).unwrap_or(true) {
+			best = Some(candidate);
+		}
+	}
+	best.map(|(_, id)| id)
 }
 
 fn pick_file_from_indexes(
@@ -666,6 +724,39 @@ mod tests {
 		let (id, ver) = pick_file_from_indexes(&indexes, Some(88568));
 		assert_eq!(id, None);
 		assert!(ver.is_empty());
+	}
+
+	#[test]
+	fn pick_newest_file_prefers_release_then_higher_id() {
+		let files = vec![
+			serde_json::json!({"id": 10, "releaseType": 2}),
+			serde_json::json!({"id": 11, "releaseType": 1}),
+			serde_json::json!({"id": 12, "releaseType": 1}),
+		];
+		assert_eq!(pick_newest_file_id(&files), Some(12));
+	}
+
+	#[test]
+	fn map_mod_omits_file_id_when_forever_missing() {
+		let value = serde_json::json!({
+			"id": 1680332,
+			"slug": "postbox",
+			"name": "PostBox",
+			"summary": "x",
+			"authors": [{"name": "A"}],
+			"downloadCount": 1,
+			"dateModified": "2026-01-01",
+			"categories": [],
+			"latestFilesIndexes": [{
+				"fileId": 111,
+				"gameVersion": "12.1.5",
+				"gameVersionTypeId": 517
+			}]
+		});
+		let item = map_mod(&value, Some(88568)).unwrap();
+		assert_eq!(item.latest_file_id, None);
+		assert!(item.latest_game_version.is_empty());
+		assert_eq!(item.flavors, vec!["Retail".to_string()]);
 	}
 
 	#[test]

@@ -78,6 +78,23 @@ pub fn flavor_label(game_version_type_id: i64) -> Option<&'static str> {
 	}
 }
 
+/// User-facing flavor name for errors (Forever → 「无限」).
+pub fn flavor_display_name(game_version_type_id: i64) -> String {
+	match game_version_type_id {
+		88568 => "Forever（无限）".into(),
+		other => flavor_label(other)
+			.map(|s| s.to_string())
+			.unwrap_or_else(|| format!("gameVersionTypeId={other}")),
+	}
+}
+
+pub fn missing_flavor_file_message(game_version_type_id: i64) -> String {
+	format!(
+		"该插件在 CurseForge 上没有适用于 {} 的文件",
+		flavor_display_name(game_version_type_id)
+	)
+}
+
 /// CurseForge WoW addon category ids (classId 5 / CF2WowAddonCategory).
 pub fn category_id_for_slug(slug: &str) -> Option<i64> {
 	match slug.trim().to_ascii_lowercase().as_str() {
@@ -141,5 +158,11 @@ mod tests {
 			"combat".into(),
 		]);
 		assert_eq!(ids, vec![1018, 1019]);
+	}
+
+	#[test]
+	fn forever_display_name_includes_chinese() {
+		assert!(flavor_display_name(88568).contains("无限"));
+		assert!(missing_flavor_file_message(88568).contains("无限"));
 	}
 }

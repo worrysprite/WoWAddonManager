@@ -290,7 +290,23 @@ async fn scan_disk_with_updates(
 						None
 					}
 				}
-				None => find_remote_via_search(addon).await,
+				None => find_remote_via_search(addon, install.game_version_type_id).await,
+			};
+			// Retail-only CurseForge ids bound by mistake (e.g. PostBox 1680332 on
+			// Forever) have no latest_file_id for this flavor — search again.
+			let remote = match remote {
+				Some(item)
+					if install.game_version_type_id.is_some() && item.latest_file_id.is_none() =>
+				{
+					log::warn!(
+						"installed {} bound to mod {} with no file for preferred={:?}; re-searching",
+						addon.folder_name,
+						item.id,
+						install.game_version_type_id
+					);
+					find_remote_via_search(addon, install.game_version_type_id).await
+				}
+				other => other,
 			};
 			if let Some(remote) = remote {
 				apply_update_flags(addon, &remote);
@@ -307,7 +323,9 @@ async fn scan_disk_with_updates(
 			if !needs_thumbnail(addon) && addon.curseforge_id.is_some() {
 				continue;
 			}
-			if let Some(remote) = find_remote_for_installed(addon).await {
+			if let Some(remote) =
+				find_remote_for_installed(addon, install.game_version_type_id).await
+			{
 				if apply_remote_metadata(addon, &remote) {
 					upsert_remote_enrichment(&mut stored, addon);
 					manifest_dirty = true;
@@ -492,9 +510,9 @@ fn remote_matches_installed(addon: &InstalledAddon, item: &AddonSummary) -> bool
 			return true;
 		}
 	}
-	item.slug.eq_ignore_ascii_case(&addon.folder_name)
-		|| item.name.eq_ignore_ascii_case(&addon.folder_name)
-		|| item.name.eq_ignore_ascii_case(&addon.title)
+	crate::wow::match_remote::names_loosely_equal(item.slug.as_str(), &addon.folder_name)
+		|| crate::wow::match_remote::names_loosely_equal(item.name.as_str(), &addon.folder_name)
+		|| crate::wow::match_remote::names_loosely_equal(item.name.as_str(), &addon.title)
 }
 
 fn needs_thumbnail(addon: &InstalledAddon) -> bool {
@@ -506,22 +524,20 @@ fn needs_thumbnail(addon: &InstalledAddon) -> bool {
 }
 
 fn apply_update_flags(addon: &mut InstalledAddon, remote: &AddonSummary) {
-	let remote_file = remote.latest_file_id;
-	let local_file = addon.file_id;
-	let newer_file = match (local_file, remote_file) {
-		(Some(local), Some(remote_id)) if remote_id > local => true,
-		(None, Some(_)) => true,
-		_ => match (&addon.updated_at, &remote.updated_at) {
-			(Some(local), remote_date) if !remote_date.is_empty() => remote_date > local,
-			(None, remote_date) if !remote_date.is_empty() => true,
-			_ => false,
-		},
+	// No installable CurseForge file for this client flavor (e.g. Retail-only
+	// project on Forever) → never show an update affordance.
+	let Some(remote_file) = remote.latest_file_id else {
+		return;
+	};
+	let newer_file = match addon.file_id {
+		Some(local) => remote_file > local,
+		None => true,
 	};
 
 	if newer_file {
 		addon.has_update = true;
 		addon.remote_version = Some(remote.updated_at.clone());
-		addon.remote_file_id = remote_file;
+		addon.remote_file_id = Some(remote_file);
 	}
 }
 
@@ -534,19 +550,25 @@ fn apply_remote_metadata(addon: &mut InstalledAddon, remote: &AddonSummary) -> b
 		changed = true;
 	}
 
-	if addon.curseforge_id.is_none() {
-		addon.curseforge_id = Some(remote.id);
-		changed = true;
+	// Allow correcting a wrong Retail-only binding when a Forever-capable mod is found.
+	if addon.curseforge_id != Some(remote.id) {
+		if addon.curseforge_id.is_none() || remote.latest_file_id.is_some() {
+			addon.curseforge_id = Some(remote.id);
+			changed = true;
+		}
 	}
 	// When bound by id (including TOC corrections), keep slug in sync with that mod.
+	// Also allow correcting a Retail-only slug when a Forever-capable remote is found.
 	if addon.curseforge_id == Some(remote.id)
 		&& addon.curseforge_slug.as_deref() != Some(remote.slug.as_str())
 	{
 		addon.curseforge_slug = Some(remote.slug.clone());
 		changed = true;
-	} else if addon.curseforge_slug.is_none() {
-		addon.curseforge_slug = Some(remote.slug.clone());
-		changed = true;
+	} else if addon.curseforge_slug.as_deref() != Some(remote.slug.as_str()) {
+		if addon.curseforge_slug.is_none() || remote.latest_file_id.is_some() {
+			addon.curseforge_slug = Some(remote.slug.clone());
+			changed = true;
+		}
 	}
 	if addon.website_url.as_ref().map(|u| u.is_empty()).unwrap_or(true)
 		&& !remote.website_url.is_empty()
@@ -655,18 +677,27 @@ fn upsert_remote_enrichment(stored: &mut crate::types::AddonManifest, addon: &In
 	stored.version = 1;
 }
 
-async fn find_remote_for_installed(addon: &InstalledAddon) -> Option<AddonSummary> {
+async fn find_remote_for_installed(
+	addon: &InstalledAddon,
+	preferred_type_id: Option<i64>,
+) -> Option<AddonSummary> {
 	if let Some(id) = addon.curseforge_id {
-		if let Some(summary) = curseforge::get_addon(id).await {
-			return Some(summary);
+		if let Some(summary) = curseforge::get_addon_for_flavor(id, preferred_type_id).await {
+			if preferred_type_id.is_none() || summary.latest_file_id.is_some() {
+				return Some(summary);
+			}
 		}
 	}
-	find_remote_via_search(addon).await
+	find_remote_via_search(addon, preferred_type_id).await
 }
 
-/// Name-based match for installed addons without a TOC project id.
-/// Always uses browse cache (no force_refresh); folder then title, at most two terms.
-async fn find_remote_via_search(addon: &InstalledAddon) -> Option<AddonSummary> {
+/// Name-based match for installed addons. Always uses browse cache (no force_refresh);
+/// folder then title, at most two terms. Prefer folder/title over a possibly-wrong
+/// Retail-only slug when a flavor filter is active.
+async fn find_remote_via_search(
+	addon: &InstalledAddon,
+	preferred_type_id: Option<i64>,
+) -> Option<AddonSummary> {
 	let mut terms = Vec::new();
 	terms.push(addon.folder_name.clone());
 	if !addon.title.is_empty()
@@ -684,7 +715,7 @@ async fn find_remote_via_search(addon: &InstalledAddon) -> Option<AddonSummary> 
 				page: Some(1),
 				page_size: Some(10),
 				categories: None,
-				game_version_type_ids: None,
+				game_version_type_ids: preferred_type_id.map(|id| vec![id]),
 				sort_by: Some("relevancy".into()),
 			},
 			false,
@@ -695,7 +726,17 @@ async fn find_remote_via_search(addon: &InstalledAddon) -> Option<AddonSummary> 
 			.into_iter()
 			.find(|item| remote_matches_installed(addon, item))
 		{
-			return Some(item);
+			if let Some(resolved) =
+				curseforge::get_addon_for_flavor(item.id, preferred_type_id).await
+			{
+				if preferred_type_id.is_none() || resolved.latest_file_id.is_some() {
+					return Some(resolved);
+				}
+				continue;
+			}
+			if preferred_type_id.is_none() {
+				return Some(item);
+			}
 		}
 	}
 	None
@@ -804,6 +845,31 @@ mod tests {
 			latest_file_id: Some(1),
 		};
 		assert!(!remote_matches_installed(&addon, &retail));
+	}
+
+	#[test]
+	fn apply_update_flags_ignores_remote_without_file() {
+		let mut addon = sample_installed("PostBox");
+		addon.file_id = Some(1);
+		addon.updated_at = Some("2026-01-01".into());
+		let remote = AddonSummary {
+			id: 1680332,
+			slug: "postbox".into(),
+			name: "PostBox".into(),
+			author: String::new(),
+			summary: String::new(),
+			thumbnail_url: String::new(),
+			download_count: 0,
+			updated_at: "2026-11-15".into(),
+			latest_game_version: String::new(),
+			categories: vec![],
+			flavors: vec!["Retail".into()],
+			website_url: String::new(),
+			latest_file_id: None,
+		};
+		apply_update_flags(&mut addon, &remote);
+		assert!(!addon.has_update);
+		assert!(addon.remote_file_id.is_none());
 	}
 
 	#[test]
