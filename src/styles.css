@@ -1024,8 +1024,10 @@ button {
 }
 
 .detail-modal {
-	width: min(920px, 100%);
-	max-height: min(88vh, 900px);
+	width: min(1200px, 94%);
+	max-height: min(92vh, 1100px);
+	padding: 24px;
+	gap: 16px;
 }
 
 .detail-modal-header {
@@ -1044,12 +1046,12 @@ button {
 
 .detail-modal-heading h3 {
 	margin: 0 0 4px;
-	font-size: 20px;
+	font-size: 22px;
 }
 
 .detail-modal-thumb {
-	width: 56px;
-	height: 56px;
+	width: 64px;
+	height: 64px;
 	border-radius: 8px;
 	object-fit: cover;
 	background: #17171c;
@@ -1092,7 +1094,7 @@ button {
 .detail-shot-main img {
 	display: block;
 	width: 100%;
-	max-height: 360px;
+	max-height: min(48vh, 520px);
 	object-fit: contain;
 	background: #101014;
 }

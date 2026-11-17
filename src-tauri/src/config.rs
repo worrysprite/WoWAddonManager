@@ -386,6 +386,7 @@ pub fn save_settings(request: SaveSettingsRequest) -> Result<SettingsView, Strin
 	detect::invalidate_cache();
 	if api_key_changed {
 		crate::curseforge::browse_cache::invalidate();
+		crate::curseforge::detail_cache::invalidate();
 	}
 	Ok(settings_view())
 }
