@@ -673,7 +673,8 @@ mod tests {
 			&item,
 			"Postbox",
 			None,
-			Some("Postbox")
+			Some("Postbox"),
+			None
 		));
 		// Retail-only Tibiscui PostBox must not match via slug prefix alone.
 		let retail_only = sample_remote(1680332, "postbox", "PostBox");
@@ -681,7 +682,8 @@ mod tests {
 			&retail_only,
 			"postbox",
 			None,
-			Some("PostBox")
+			Some("PostBox"),
+			None
 		));
 		assert!(!crate::wow::match_remote::names_loosely_equal(
 			"postboxmail",
