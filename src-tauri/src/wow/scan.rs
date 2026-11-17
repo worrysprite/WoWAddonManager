@@ -85,10 +85,13 @@ pub fn refresh_local_cache(install: &WowInstall) -> Result<Vec<InstalledAddon>, 
 			if addon.thumbnail_url.as_ref().map(|u| u.is_empty()).unwrap_or(true) {
 				addon.thumbnail_url = prev.thumbnail_url.clone();
 			}
+			// Do not re-apply a previous wrong CurseForge id over a TOC-corrected one.
 			if addon.curseforge_id.is_none() {
 				addon.curseforge_id = prev.curseforge_id;
 			}
-			if addon.curseforge_slug.is_none() {
+			if addon.curseforge_slug.is_none()
+				&& (addon.curseforge_id.is_none() || addon.curseforge_id == prev.curseforge_id)
+			{
 				addon.curseforge_slug = prev.curseforge_slug.clone();
 			}
 			if addon.website_url.as_ref().map(|u| u.is_empty()).unwrap_or(true) {
@@ -99,6 +102,11 @@ pub fn refresh_local_cache(install: &WowInstall) -> Result<Vec<InstalledAddon>, 
 				addon.is_primary = prev.is_primary;
 			}
 		}
+	}
+
+	let mut stored = manifest::load(&addons_path);
+	if sync_curseforge_ids_from_scan(&mut stored, &results) {
+		let _ = manifest::save(&addons_path, &stored);
 	}
 
 	save_scan_cache(install, &results)?;
@@ -259,6 +267,10 @@ async fn scan_disk_with_updates(
 	results = crate::wow::suite::collapse_suite_rows(results);
 	let _ = crate::wow::suite::sync_suite_flags_to_manifest(&addons_path, &results);
 
+	if sync_curseforge_ids_from_scan(&mut stored, &results) {
+		manifest_dirty = true;
+	}
+
 	if check_remote {
 		// One batch request for all known CurseForge ids instead of N searches.
 		let ids: Vec<i64> = results.iter().filter_map(|a| a.curseforge_id).collect();
@@ -362,6 +374,13 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 			.clone()
 			.or_else(|| tracked.and_then(|t| t.summary.clone()));
 
+		// Prefer TOC X-Curse-Project-ID over a stale slug/title bind in the manifest.
+		let (curseforge_id, curseforge_slug) = prefer_toc_curseforge_bind(
+			meta.curseforge_project_id,
+			tracked.and_then(|t| t.curseforge_id),
+			tracked.and_then(|t| t.curseforge_slug.clone()),
+		);
+
 		results.push(InstalledAddon {
 			folder_name: folder_name.clone(),
 			title: crate::wow::toc::clean_toc_title(&raw_title),
@@ -371,8 +390,8 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 			version: tracked
 				.and_then(|t| t.version.clone())
 				.or(meta.version),
-			curseforge_id: tracked.and_then(|t| t.curseforge_id),
-			curseforge_slug: tracked.and_then(|t| t.curseforge_slug.clone()),
+			curseforge_id,
+			curseforge_slug,
 			file_id: tracked.and_then(|t| t.file_id),
 			thumbnail_url: tracked
 				.and_then(|t| t.thumbnail_url.clone())
@@ -409,11 +428,64 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 	Ok(results)
 }
 
+/// Update-matching bind policy:
+/// - TOC `X-Curse-Project-ID` present → use that id (overrides stale manifest binds).
+/// - TOC id absent → no id/slug bind here; callers fall back to name matching.
+pub fn prefer_toc_curseforge_bind(
+	toc_id: Option<i64>,
+	tracked_id: Option<i64>,
+	tracked_slug: Option<String>,
+) -> (Option<i64>, Option<String>) {
+	match toc_id {
+		Some(toc) if tracked_id.is_some_and(|id| id != toc) => (Some(toc), None),
+		Some(toc) => (Some(toc), tracked_slug),
+		None => (None, None),
+	}
+}
+
+/// Persist TOC-corrected CurseForge ids into the on-disk manifest.
+fn sync_curseforge_ids_from_scan(
+	stored: &mut crate::types::AddonManifest,
+	addons: &[InstalledAddon],
+) -> bool {
+	let mut dirty = false;
+	for addon in addons {
+		let Some(id) = addon.curseforge_id else {
+			continue;
+		};
+		if let Some(entry) = stored
+			.addons
+			.iter_mut()
+			.find(|a| a.folder_name == addon.folder_name)
+		{
+			if entry.curseforge_id != Some(id) {
+				log::warn!(
+					"TOC CurseForge id overrides stale bind folder={} old={:?} new={id}",
+					addon.folder_name,
+					entry.curseforge_id
+				);
+				entry.curseforge_id = Some(id);
+				entry.curseforge_slug = addon.curseforge_slug.clone();
+				dirty = true;
+			} else if entry.curseforge_slug.is_none() && addon.curseforge_slug.is_some() {
+				entry.curseforge_slug = addon.curseforge_slug.clone();
+				dirty = true;
+			}
+		}
+	}
+	if dirty {
+		stored.version = 1;
+	}
+	dirty
+}
+
 fn remote_matches_installed(addon: &InstalledAddon, item: &AddonSummary) -> bool {
 	if let Some(id) = addon.curseforge_id {
 		if item.id == id {
 			return true;
 		}
+		// Known id that does not match this search hit — do not fall through to slug/title.
+		return false;
 	}
 	if let Some(slug) = &addon.curseforge_slug {
 		if item.slug.eq_ignore_ascii_case(slug) {
@@ -466,7 +538,13 @@ fn apply_remote_metadata(addon: &mut InstalledAddon, remote: &AddonSummary) -> b
 		addon.curseforge_id = Some(remote.id);
 		changed = true;
 	}
-	if addon.curseforge_slug.is_none() {
+	// When bound by id (including TOC corrections), keep slug in sync with that mod.
+	if addon.curseforge_id == Some(remote.id)
+		&& addon.curseforge_slug.as_deref() != Some(remote.slug.as_str())
+	{
+		addon.curseforge_slug = Some(remote.slug.clone());
+		changed = true;
+	} else if addon.curseforge_slug.is_none() {
 		addon.curseforge_slug = Some(remote.slug.clone());
 		changed = true;
 	}
@@ -514,11 +592,19 @@ fn upsert_remote_enrichment(stored: &mut crate::types::AddonManifest, addon: &In
 		if entry.thumbnail_url.as_ref().map(|u| u.is_empty()).unwrap_or(true) {
 			entry.thumbnail_url = addon.thumbnail_url.clone();
 		}
-		if entry.curseforge_id.is_none() {
+		if entry.curseforge_id != addon.curseforge_id && addon.curseforge_id.is_some() {
 			entry.curseforge_id = addon.curseforge_id;
-		}
-		if entry.curseforge_slug.is_none() {
 			entry.curseforge_slug = addon.curseforge_slug.clone();
+		} else {
+			if entry.curseforge_id.is_none() {
+				entry.curseforge_id = addon.curseforge_id;
+			}
+			if entry.curseforge_slug.as_deref() != addon.curseforge_slug.as_deref()
+				&& addon.curseforge_slug.is_some()
+				&& (entry.curseforge_slug.is_none() || entry.curseforge_id == addon.curseforge_id)
+			{
+				entry.curseforge_slug = addon.curseforge_slug.clone();
+			}
 		}
 		if entry.website_url.as_ref().map(|u| u.is_empty()).unwrap_or(true) {
 			entry.website_url = addon.website_url.clone();
@@ -578,27 +664,15 @@ async fn find_remote_for_installed(addon: &InstalledAddon) -> Option<AddonSummar
 	find_remote_via_search(addon).await
 }
 
-/// Search-based match for installed addons. Always uses browse cache (no force_refresh)
-/// and tries at most two terms to avoid classId-retry storms.
+/// Name-based match for installed addons without a TOC project id.
+/// Always uses browse cache (no force_refresh); folder then title, at most two terms.
 async fn find_remote_via_search(addon: &InstalledAddon) -> Option<AddonSummary> {
 	let mut terms = Vec::new();
-	if let Some(slug) = &addon.curseforge_slug {
-		if !slug.trim().is_empty() {
-			terms.push(slug.clone());
-		}
-	}
-	if !terms
-		.iter()
-		.any(|t| t.eq_ignore_ascii_case(&addon.folder_name))
-	{
-		terms.push(addon.folder_name.clone());
-	}
-	// Title only as a last resort when it differs from folder/slug.
+	terms.push(addon.folder_name.clone());
 	if !addon.title.is_empty()
 		&& !terms
 			.iter()
 			.any(|t| t.eq_ignore_ascii_case(&addon.title))
-		&& terms.len() < 2
 	{
 		terms.push(addon.title.clone());
 	}
@@ -662,6 +736,33 @@ mod tests {
 	}
 
 	#[test]
+	fn prefer_toc_id_overrides_stale_postbox_bind() {
+		let (id, slug) = prefer_toc_curseforge_bind(
+			Some(1639171),
+			Some(1680332),
+			Some("postbox".into()),
+		);
+		assert_eq!(id, Some(1639171));
+		assert_eq!(slug, None);
+	}
+
+	#[test]
+	fn prefer_toc_id_keeps_slug_when_ids_agree() {
+		let (id, slug) =
+			prefer_toc_curseforge_bind(Some(42), Some(42), Some("weakauras-2".into()));
+		assert_eq!(id, Some(42));
+		assert_eq!(slug.as_deref(), Some("weakauras-2"));
+	}
+
+	#[test]
+	fn prefer_toc_absent_clears_bind_for_name_fallback() {
+		let (id, slug) =
+			prefer_toc_curseforge_bind(None, Some(1680332), Some("postbox".into()));
+		assert_eq!(id, None);
+		assert_eq!(slug, None);
+	}
+
+	#[test]
 	fn remote_matches_by_folder_name_without_curseforge_meta() {
 		let addon = sample_installed("WeakAuras");
 		let item = AddonSummary {
@@ -680,6 +781,29 @@ mod tests {
 			latest_file_id: Some(99),
 		};
 		assert!(remote_matches_installed(&addon, &item));
+	}
+
+	#[test]
+	fn remote_matches_rejects_slug_hit_when_id_differs() {
+		let mut addon = sample_installed("Postbox");
+		addon.curseforge_id = Some(1639171);
+		addon.curseforge_slug = None;
+		let retail = AddonSummary {
+			id: 1680332,
+			slug: "postbox".into(),
+			name: "PostBox".into(),
+			author: String::new(),
+			summary: String::new(),
+			thumbnail_url: String::new(),
+			download_count: 0,
+			updated_at: String::new(),
+			latest_game_version: String::new(),
+			categories: vec![],
+			flavors: vec![],
+			website_url: String::new(),
+			latest_file_id: Some(1),
+		};
+		assert!(!remote_matches_installed(&addon, &retail));
 	}
 
 	#[test]
@@ -761,6 +885,71 @@ mod tests {
 		);
 
 		let _ = fs::remove_file(cache_path);
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn scan_disk_prefers_toc_project_id_over_stale_manifest() {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-scan-toc-id-{}-{}",
+			std::process::id(),
+			std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addons = dir.join("AddOns");
+		let addon_dir = addons.join("Postbox");
+		fs::create_dir_all(&addon_dir).unwrap();
+		fs::write(
+			addon_dir.join("Postbox.toc"),
+			"## Interface: 16001\n## Title: PostBox\n## X-Curse-Project-ID: 1639171\n",
+		)
+		.unwrap();
+		manifest::upsert(
+			&addons,
+			ManifestAddon {
+				folder_name: "Postbox".into(),
+				curseforge_id: Some(1680332),
+				curseforge_slug: Some("postbox".into()),
+				file_id: None,
+				name: Some("PostBox".into()),
+				author: None,
+				summary: None,
+				thumbnail_url: None,
+				categories: vec![],
+				flavors: vec![],
+				download_count: None,
+				latest_game_version: None,
+				website_url: None,
+				installed_at: None,
+				updated_at: None,
+				version: None,
+				install_source: Some("manual".into()),
+				archive_name: None,
+				related_folders: vec![],
+				is_primary: false,
+			},
+		)
+		.unwrap();
+
+		let install = WowInstall {
+			id: "forever-test".into(),
+			label: "Forever".into(),
+			flavor: "Forever".into(),
+			flavor_key: "forever".into(),
+			install_path: dir.display().to_string(),
+			addons_path: addons.display().to_string(),
+			game_version: Some("1.0.0.16001".into()),
+			game_version_type_id: Some(88568),
+			backup_path: String::new(),
+		};
+		let list = scan_disk_only(&install).unwrap();
+		assert_eq!(list.len(), 1);
+		assert_eq!(list[0].curseforge_id, Some(1639171));
+		assert_eq!(list[0].curseforge_slug, None);
+
 		let _ = fs::remove_dir_all(dir);
 	}
 
