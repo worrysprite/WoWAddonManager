@@ -29,6 +29,8 @@ export function AddonDetailModal({ modId, fallbackTitle, onClose }: Props) {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [activeShot, setActiveShot] = useState(0);
+	const [loadedShotSrc, setLoadedShotSrc] = useState("");
+	const [showShotSpinner, setShowShotSpinner] = useState(false);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -36,6 +38,8 @@ export function AddonDetailModal({ modId, fallbackTitle, onClose }: Props) {
 		setError(null);
 		setDetail(null);
 		setActiveShot(0);
+		setLoadedShotSrc("");
+		setShowShotSpinner(false);
 		api
 			.getAddonDetail(modId)
 			.then((data) => {
@@ -63,7 +67,44 @@ export function AddonDetailModal({ modId, fallbackTitle, onClose }: Props) {
 	const title = detail?.addon.name || fallbackTitle || t("detail.title");
 	const shots = detail?.screenshots ?? [];
 	const active = shots[activeShot] ?? null;
+	const activeShotSrc = active ? resolveMediaSrc(active.url) : "";
+	const shotLoading = Boolean(activeShotSrc) && loadedShotSrc !== activeShotSrc;
 	const descriptionHtml = sanitizeAddonHtml(detail?.descriptionHtml || "");
+
+	useEffect(() => {
+		if (!activeShotSrc) {
+			setLoadedShotSrc("");
+			setShowShotSpinner(false);
+			return;
+		}
+		let cancelled = false;
+		let spinnerTimer: ReturnType<typeof setTimeout> | undefined;
+		const markLoaded = () => {
+			if (cancelled) return;
+			setLoadedShotSrc(activeShotSrc);
+			setShowShotSpinner(false);
+			if (spinnerTimer !== undefined) clearTimeout(spinnerTimer);
+		};
+		const probe = new Image();
+		probe.onload = markLoaded;
+		probe.onerror = markLoaded;
+		probe.src = activeShotSrc;
+		// Cached images are often already complete; skip the spinner flash.
+		if (probe.complete) {
+			markLoaded();
+		} else {
+			// Delay the spinner so warm-cache loads do not flicker.
+			spinnerTimer = setTimeout(() => {
+				if (!cancelled) setShowShotSpinner(true);
+			}, 80);
+		}
+		return () => {
+			cancelled = true;
+			probe.onload = null;
+			probe.onerror = null;
+			if (spinnerTimer !== undefined) clearTimeout(spinnerTimer);
+		};
+	}, [activeShotSrc]);
 
 	return (
 		<div
@@ -145,9 +186,26 @@ export function AddonDetailModal({ modId, fallbackTitle, onClose }: Props) {
 								<h4>{t("detail.screenshots")}</h4>
 								{active ? (
 									<div className="detail-shot-main">
+										{showShotSpinner ? (
+											<div
+												className="detail-shot-loading"
+												role="status"
+												aria-live="polite"
+											>
+												<div
+													className="list-loading-spinner"
+													aria-hidden="true"
+												/>
+												<span className="sr-only">{t("detail.loading")}</span>
+											</div>
+										) : null}
 										<img
-											src={resolveMediaSrc(active.url)}
+											key={activeShotSrc}
+											src={activeShotSrc}
 											alt={active.title || title}
+											className={shotLoading ? "is-loading" : undefined}
+											onLoad={() => setLoadedShotSrc(activeShotSrc)}
+											onError={() => setLoadedShotSrc(activeShotSrc)}
 										/>
 									</div>
 								) : null}
