@@ -309,18 +309,14 @@ fn remote_matches_local(
 	folder_name: &str,
 	tracked: Option<&ManifestAddon>,
 	title: Option<&str>,
+	preferred_id: Option<i64>,
 ) -> bool {
+	if let Some(id) = preferred_id {
+		return item.id == id;
+	}
+	// Name matching (no TOC project id): folder / title / tracked display name only.
+	// Do not use stale curseforge_id / slug binds — those caused Forever PostBox → Retail PostBox.
 	if let Some(tracked) = tracked {
-		if let Some(id) = tracked.curseforge_id {
-			if item.id == id {
-				return true;
-			}
-		}
-		if let Some(slug) = tracked.curseforge_slug.as_deref() {
-			if item.slug.eq_ignore_ascii_case(slug) {
-				return true;
-			}
-		}
 		if let Some(name) = tracked.name.as_deref() {
 			if item.name.eq_ignore_ascii_case(name) {
 				return true;
@@ -334,33 +330,29 @@ fn remote_matches_local(
 			.unwrap_or(false)
 }
 
+/// Resolve a CurseForge mod for update.
+/// Policy: prefer TOC `X-Curse-Project-ID` when present; otherwise match by name.
 async fn find_curseforge_for_update(
 	folder_name: &str,
 	tracked: Option<&ManifestAddon>,
 	title: Option<&str>,
 	preferred_type_id: Option<i64>,
+	toc_project_id: Option<i64>,
 ) -> Option<AddonSummary> {
-	// Prefer a direct mod lookup when we already know the CurseForge id — and
-	// pick the file for this client flavor (Forever vs Retail, etc.).
-	if let Some(id) = tracked.and_then(|t| t.curseforge_id) {
-		if let Some(item) = curseforge::get_addon_for_flavor(id, preferred_type_id).await {
-			return Some(item);
-		}
+	if let Some(id) = toc_project_id {
+		return curseforge::get_addon_for_flavor(id, preferred_type_id).await;
 	}
 
 	let mut terms = Vec::new();
-	if let Some(slug) = tracked.and_then(|t| t.curseforge_slug.clone()) {
-		terms.push(slug);
-	}
 	terms.push(folder_name.to_string());
-	if let Some(name) = tracked.and_then(|t| t.name.clone()) {
-		if !terms.iter().any(|t| t.eq_ignore_ascii_case(&name)) {
-			terms.push(name);
-		}
-	}
 	if let Some(title) = title {
 		if !terms.iter().any(|t| t.eq_ignore_ascii_case(title)) {
 			terms.push(title.to_string());
+		}
+	}
+	if let Some(name) = tracked.and_then(|t| t.name.clone()) {
+		if !terms.iter().any(|t| t.eq_ignore_ascii_case(&name)) {
+			terms.push(name);
 		}
 	}
 
@@ -377,11 +369,9 @@ async fn find_curseforge_for_update(
 			false,
 		)
 		.await;
-		if let Some(item) = result
-			.items
-			.into_iter()
-			.find(|item| remote_matches_local(item, folder_name, tracked, title))
-		{
+		if let Some(item) = result.items.into_iter().find(|item| {
+			remote_matches_local(item, folder_name, tracked, title, None)
+		}) {
 			// Search hits may carry a Retail latestFileId; re-resolve for this client.
 			if let Some(resolved) =
 				curseforge::get_addon_for_flavor(item.id, preferred_type_id).await
@@ -426,6 +416,7 @@ pub async fn update_addon_with_progress(
 		tracked.as_ref(),
 		title.as_deref(),
 		install.game_version_type_id,
+		toc_meta.curseforge_project_id,
 	)
 	.await
 	.ok_or_else(|| {
@@ -593,19 +584,88 @@ mod tests {
 			&item,
 			"DeadlyBossMods",
 			None,
-			Some("Deadly Boss Mods")
+			Some("Deadly Boss Mods"),
+			None
 		));
 		assert!(remote_matches_local(
 			&item,
 			"SomeOtherFolder",
 			None,
-			Some("Deadly Boss Mods")
+			Some("Deadly Boss Mods"),
+			None
 		));
 		assert!(!remote_matches_local(
 			&item,
 			"Unrelated",
 			None,
-			Some("Something Else")
+			Some("Something Else"),
+			None
+		));
+	}
+
+	#[test]
+	fn remote_matches_prefers_explicit_project_id() {
+		// Forever PostBox TOC id must not match Retail-only PostBox search hit.
+		let retail_postbox = sample_remote(1680332, "postbox", "PostBox");
+		assert!(!remote_matches_local(
+			&retail_postbox,
+			"Postbox",
+			None,
+			Some("PostBox"),
+			Some(1639171)
+		));
+		let forever_postbox = sample_remote(1639171, "postboxmail", "Postbox");
+		assert!(remote_matches_local(
+			&forever_postbox,
+			"Postbox",
+			None,
+			Some("PostBox"),
+			Some(1639171)
+		));
+	}
+
+	#[test]
+	fn remote_matches_name_fallback_ignores_stale_slug_bind() {
+		use crate::types::ManifestAddon;
+		let tracked = ManifestAddon {
+			folder_name: "Postbox".into(),
+			curseforge_id: Some(1680332),
+			curseforge_slug: Some("postbox".into()),
+			file_id: None,
+			name: Some("PostBox".into()),
+			author: None,
+			summary: None,
+			thumbnail_url: None,
+			categories: vec![],
+			flavors: vec![],
+			download_count: None,
+			latest_game_version: None,
+			website_url: None,
+			installed_at: None,
+			updated_at: None,
+			version: None,
+			install_source: Some("manual".into()),
+			archive_name: None,
+			related_folders: vec![],
+			is_primary: false,
+		};
+		// Without TOC id, only name/folder matching applies — stale id/slug binds
+		// must not force a hit when the remote title/folder do not match.
+		let unrelated = sample_remote(1, "some-other-slug", "Totally Different Addon");
+		assert!(!remote_matches_local(
+			&unrelated,
+			"Postbox",
+			Some(&tracked),
+			Some("PostBox"),
+			None
+		));
+		let by_title = sample_remote(1639171, "postboxmail", "PostBox");
+		assert!(remote_matches_local(
+			&by_title,
+			"Postbox",
+			Some(&tracked),
+			Some("PostBox"),
+			None
 		));
 	}
 

@@ -72,7 +72,24 @@ pub struct TocMeta {
 	pub interfaces: Vec<u32>,
 	/// TOC file stem suffix after `{Folder}_`, e.g. `Forever` for `Questie_Forever.toc`.
 	pub flavor_suffix: Option<String>,
+	/// CurseForge project/mod id from `X-Curse-Project-ID` / `X-CurseForge-Id`.
+	pub curseforge_project_id: Option<i64>,
 	pub path: Option<PathBuf>,
+}
+
+/// Parse CurseForge project id lines from a TOC header.
+/// Accepts `## X-Curse-Project-ID:` (packager) and `## X-CurseForge-Id:` (app placeholder).
+pub fn parse_x_curse_project_id(line: &str) -> Option<i64> {
+	const PREFIXES: &[&str] = &["## x-curse-project-id:", "## x-curseforge-id:"];
+	let trimmed = line.trim();
+	let lower = trimmed.to_ascii_lowercase();
+	for prefix in PREFIXES {
+		if lower.starts_with(prefix) {
+			let rest = trimmed.get(prefix.len()..)?.trim();
+			return rest.parse().ok();
+		}
+	}
+	None
 }
 
 #[derive(Debug, Clone)]
@@ -413,6 +430,11 @@ pub fn parse_toc_file(path: &Path) -> TocMeta {
 				meta.interface = Some(rest.trim().to_string());
 			}
 			meta.interfaces.extend(parse_interface_numbers(rest));
+		} else if let Some(id) = parse_x_curse_project_id(line) {
+			// First win: preferred TOC already selected for this client.
+			if meta.curseforge_project_id.is_none() {
+				meta.curseforge_project_id = Some(id);
+			}
 		}
 	}
 	meta
@@ -528,6 +550,39 @@ pub fn folder_unsupported_reason(
 mod tests {
 	use super::*;
 	use std::time::{SystemTime, UNIX_EPOCH};
+
+	#[test]
+	fn parses_x_curse_project_id_case_insensitive() {
+		assert_eq!(
+			parse_x_curse_project_id("## X-Curse-Project-ID: 1639171"),
+			Some(1639171)
+		);
+		assert_eq!(
+			parse_x_curse_project_id("## x-curseforge-id: 42"),
+			Some(42)
+		);
+		assert_eq!(parse_x_curse_project_id("## Title: PostBox"), None);
+	}
+
+	#[test]
+	fn parse_toc_file_reads_curse_project_id() {
+		let stamp = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.unwrap()
+			.as_nanos();
+		let dir = std::env::temp_dir().join(format!("wam-toc-cfid-{stamp}"));
+		let _ = fs::remove_dir_all(&dir);
+		fs::create_dir_all(&dir).unwrap();
+		let toc = dir.join("Postbox.toc");
+		fs::write(
+			&toc,
+			"## Interface: 16001\n## Title: PostBox\n## X-Curse-Project-ID: 1639171\n",
+		)
+		.unwrap();
+		let meta = parse_toc_file(&toc);
+		assert_eq!(meta.curseforge_project_id, Some(1639171));
+		let _ = fs::remove_dir_all(dir);
+	}
 
 	#[test]
 	fn strips_questie_unsupported_title() {
