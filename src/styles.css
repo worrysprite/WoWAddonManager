@@ -386,6 +386,13 @@ button {
 	font-size: 13px;
 }
 
+.list-loading-progress {
+	max-width: min(420px, 90%);
+	text-align: center;
+	line-height: 1.45;
+	color: var(--text);
+}
+
 .list-loading-spinner {
 	width: 28px;
 	height: 28px;

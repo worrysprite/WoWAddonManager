@@ -9,8 +9,8 @@ use app_log::LogView;
 use config::{SaveSettingsRequest, SettingsView};
 use curseforge::catalog;
 use types::{
-	AddonDetail, AddonJobProgress, DeleteRequest, FilterCatalog, InstallRequest, InstalledAddon,
-	ManualInstallRequest, SearchParams, SearchResult, UpdateRequest, WowInstall,
+	AddonDetail, AddonJobProgress, AddonScanProgress, DeleteRequest, FilterCatalog, InstallRequest,
+	InstalledAddon, ManualInstallRequest, SearchParams, SearchResult, UpdateRequest, WowInstall,
 };
 use std::sync::Arc;
 use wow::backup::SyncReport;
@@ -106,10 +106,16 @@ async fn list_installed_addons(install_id: String) -> Result<Vec<InstalledAddon>
 }
 
 #[tauri::command]
-async fn rescan_installed_addons(install_id: String) -> Result<Vec<InstalledAddon>, String> {
+async fn rescan_installed_addons(
+	install_id: String,
+	on_progress: tauri::ipc::Channel<AddonScanProgress>,
+) -> Result<Vec<InstalledAddon>, String> {
 	log::warn!("rescan_installed_addons install_id={install_id}");
 	let install = resolve_install_async(install_id.clone()).await?;
-	let list = scan::list_installed(&install, true).await?;
+	let progress = Arc::new(move |p: AddonScanProgress| {
+		let _ = on_progress.send(p);
+	});
+	let list = scan::list_installed_with_progress(&install, true, Some(progress)).await?;
 	log::warn!(
 		"rescan_installed_addons done install={} count={}",
 		install.label,

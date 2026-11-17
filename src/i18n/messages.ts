@@ -63,6 +63,7 @@ export type MessageKey =
 	| "installed.openInterface"
 	| "installed.scanning"
 	| "installed.rescanning"
+	| "installed.scanFound"
 	| "installed.loadingList"
 	| "installed.emptyTitle"
 	| "installed.emptyHint"
@@ -235,6 +236,7 @@ export const en: Messages = {
 	"installed.openInterface": "Open Interface Folder",
 	"installed.scanning": "Scanning…",
 	"installed.rescanning": "Scanning addon folder…",
+	"installed.scanFound": "Found {name}, {count} addon(s) so far",
 	"installed.loadingList": "Loading addon list…",
 	"installed.emptyTitle": "No installed addons yet",
 	"installed.emptyHint":
@@ -413,6 +415,7 @@ export const zhCN: Messages = {
 	"installed.openInterface": "打开插件目录",
 	"installed.scanning": "扫描中…",
 	"installed.rescanning": "正在扫描插件目录…",
+	"installed.scanFound": "已找到{name}插件，共{count}个",
 	"installed.loadingList": "正在读取插件列表…",
 	"installed.emptyTitle": "还没有已安装插件",
 	"installed.emptyHint": "可从「浏览全部」安装，或点击右上角「手动安装」选择压缩包。",
