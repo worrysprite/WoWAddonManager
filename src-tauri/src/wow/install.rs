@@ -49,12 +49,9 @@ pub async fn install_addon_with_progress(
 			archive::extract_zip_bytes(&bytes, &addons_path)?
 		}
 		Err(err) => {
-			let folder = sanitize_folder(&addon.slug);
-			let target = addons_path.join(&folder);
-			fs::create_dir_all(&target).map_err(|e| e.to_string())?;
-			write_placeholder_toc(&target, &folder, &addon)?;
-			eprintln!("下载失败，已写入占位插件目录以便联调: {err}");
-			vec![folder]
+			// Do not write a Retail placeholder TOC — on Forever that only
+			// masks the real download/flavor error as "不兼容".
+			return Err(format!("下载失败：{err}"));
 		}
 	};
 
@@ -322,16 +319,23 @@ fn remote_matches_local(
 			}
 		}
 		if let Some(name) = tracked.name.as_deref() {
-			if item.name.eq_ignore_ascii_case(name) {
+			if crate::wow::match_remote::names_loosely_equal(item.name.as_str(), name) {
 				return true;
 			}
 		}
 	}
-	item.slug.eq_ignore_ascii_case(folder_name)
-		|| item.name.eq_ignore_ascii_case(folder_name)
+	crate::wow::match_remote::names_loosely_equal(item.slug.as_str(), folder_name)
+		|| crate::wow::match_remote::names_loosely_equal(item.name.as_str(), folder_name)
 		|| title
-			.map(|t| item.name.eq_ignore_ascii_case(t))
+			.map(|t| crate::wow::match_remote::names_loosely_equal(item.name.as_str(), t))
 			.unwrap_or(false)
+}
+
+fn has_installable_file_for_flavor(item: &AddonSummary, preferred_type_id: Option<i64>) -> bool {
+	if preferred_type_id.is_none() {
+		return true;
+	}
+	item.latest_file_id.is_some()
 }
 
 async fn find_curseforge_for_update(
@@ -342,15 +346,27 @@ async fn find_curseforge_for_update(
 ) -> Option<AddonSummary> {
 	// Prefer a direct mod lookup when we already know the CurseForge id — and
 	// pick the file for this client flavor (Forever vs Retail, etc.).
+	let mut tracked_missing_flavor_file = false;
 	if let Some(id) = tracked.and_then(|t| t.curseforge_id) {
 		if let Some(item) = curseforge::get_addon_for_flavor(id, preferred_type_id).await {
-			return Some(item);
+			if has_installable_file_for_flavor(&item, preferred_type_id) {
+				return Some(item);
+			}
+			// Tracked id may be a Retail-only project (e.g. PostBox 1680332)
+			// while the installed folder is a Forever-capable namesake — search on.
+			tracked_missing_flavor_file = preferred_type_id.is_some();
+			log::warn!(
+				"tracked CurseForge mod {id} has no file for preferred={preferred_type_id:?}; searching Forever-capable alternatives"
+			);
 		}
 	}
 
 	let mut terms = Vec::new();
-	if let Some(slug) = tracked.and_then(|t| t.curseforge_slug.clone()) {
-		terms.push(slug);
+	// Skip a Retail-only slug when we already know that project has no Forever file.
+	if !tracked_missing_flavor_file {
+		if let Some(slug) = tracked.and_then(|t| t.curseforge_slug.clone()) {
+			terms.push(slug);
+		}
 	}
 	terms.push(folder_name.to_string());
 	if let Some(name) = tracked.and_then(|t| t.name.clone()) {
@@ -386,9 +402,14 @@ async fn find_curseforge_for_update(
 			if let Some(resolved) =
 				curseforge::get_addon_for_flavor(item.id, preferred_type_id).await
 			{
-				return Some(resolved);
+				if has_installable_file_for_flavor(&resolved, preferred_type_id) {
+					return Some(resolved);
+				}
+				continue;
 			}
-			return Some(item);
+			if has_installable_file_for_flavor(&item, preferred_type_id) {
+				return Some(item);
+			}
 		}
 	}
 	None
@@ -429,10 +450,11 @@ pub async fn update_addon_with_progress(
 	)
 	.await
 	.ok_or_else(|| {
-		format!(
-			"未在 CurseForge 找到适用于当前客户端（{}）的「{folder_name}」更新包",
-			install.flavor_key
-		)
+		let client = install
+			.game_version_type_id
+			.map(crate::curseforge::catalog::flavor_display_name)
+			.unwrap_or_else(|| install.flavor_key.clone());
+		format!("未在 CurseForge 找到适用于 {client} 的「{folder_name}」更新包")
 	})?;
 
 	let installed_at = tracked.and_then(|t| t.installed_at.clone());
@@ -537,32 +559,6 @@ pub fn find_install_in(list: &[WowInstall], install_id: &str) -> Result<WowInsta
 		.ok_or_else(|| "未找到对应的魔兽版本安装".to_string())
 }
 
-fn sanitize_folder(slug: &str) -> String {
-	slug.chars()
-		.map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-		.collect()
-}
-
-fn write_placeholder_toc(dir: &Path, folder: &str, addon: &AddonSummary) -> Result<(), String> {
-	let toc = format!(
-		"## Interface: 120100\n## Title: {title}\n## Author: {author}\n## Notes: {notes}\n## Version: placeholder\n## X-CurseForge-Id: {id}\n## X-Installed-By: WoWAddonManager\n",
-		title = addon.name,
-		author = addon.author,
-		notes = addon.summary.replace('\n', " "),
-		id = addon.id
-	);
-	fs::write(dir.join(format!("{folder}.toc")), toc).map_err(|e| e.to_string())?;
-	fs::write(
-		dir.join("README-WOW-ADDON-MANAGER.txt"),
-		format!(
-			"This is a placeholder install because CurseForge download requires API access or passed Cloudflare.\nAddon: {}\nURL: {}\n",
-			addon.name, addon.website_url
-		),
-	)
-	.map_err(|e| e.to_string())?;
-	Ok(())
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -606,6 +602,33 @@ mod tests {
 			"Unrelated",
 			None,
 			Some("Something Else")
+		));
+	}
+
+	#[test]
+	fn remote_matches_forever_postbox_decorated_title() {
+		let item = sample_remote(
+			1639171,
+			"postboxmail",
+			"Postbox • A Modern Mailbox & Mail Manager",
+		);
+		assert!(remote_matches_local(
+			&item,
+			"Postbox",
+			None,
+			Some("Postbox")
+		));
+		// Retail-only Tibiscui PostBox must not match via slug prefix alone.
+		let retail_only = sample_remote(1680332, "postbox", "PostBox");
+		assert!(remote_matches_local(
+			&retail_only,
+			"postbox",
+			None,
+			Some("PostBox")
+		));
+		assert!(!crate::wow::match_remote::names_loosely_equal(
+			"postboxmail",
+			"postbox"
 		));
 	}
 
