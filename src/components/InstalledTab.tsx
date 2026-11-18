@@ -28,6 +28,8 @@ type Props = {
 	onNeedBackupPath: () => void;
 };
 
+const UPDATE_ALL_CONCURRENCY = 5;
+
 export function InstalledTab({
 	install,
 	refreshKey,
@@ -48,6 +50,8 @@ export function InstalledTab({
 	const [updateProgressById, setUpdateProgressById] = useState<
 		Record<string, AddonJobProgress>
 	>({});
+	/** Remaining Update All work (in-flight + queued). 0 = idle. */
+	const [updateAllRemaining, setUpdateAllRemaining] = useState(0);
 	const [error, setError] = useState<string | null>(null);
 	const [syncDialog, setSyncDialog] = useState<SyncDialogState | null>(null);
 	const [detail, setDetail] = useState<{ modId: number; title: string } | null>(
@@ -58,6 +62,7 @@ export function InstalledTab({
 	const syncFlushTimerRef = useRef<number | null>(null);
 	const requestSeq = useRef(0);
 	const busyIdsRef = useRef<Record<string, true>>({});
+	const updateAllActiveRef = useRef(false);
 	const installIdRef = useRef(install.id);
 	const prevInstallIdRef = useRef(install.id);
 	installIdRef.current = install.id;
@@ -166,6 +171,8 @@ export function InstalledTab({
 			busyIdsRef.current = {};
 			setBusyIds({});
 			setUpdateProgressById({});
+			updateAllActiveRef.current = false;
+			setUpdateAllRemaining(0);
 			setScanning(false);
 			setScanProgress(null);
 			setSyncDialog(null);
@@ -174,27 +181,67 @@ export function InstalledTab({
 		loadCached(install.id);
 	}, [install.id, refreshKey]);
 
-	async function handleUpdate(folderName: string) {
-		const forInstallId = install.id;
-		if (!markBusy(folderName)) return;
+	/** Run one addon/suite update; returns false if already busy or skipped. */
+	async function runUpdateJob(forInstallId: string, folderName: string): Promise<boolean> {
+		if (!markBusy(folderName)) return false;
 		setAddonProgress(folderName, { stage: "download", percent: 0 });
-		setError(null);
 		try {
 			await api.updateAddon(forInstallId, folderName, (progress) => {
 				if (installIdRef.current !== forInstallId) return;
 				setAddonProgress(folderName, progress);
 			});
-			if (installIdRef.current !== forInstallId) return;
+			if (installIdRef.current !== forInstallId) return true;
 			// Silent so other in-flight update progress UIs stay visible.
 			await loadCached(forInstallId, { silent: true });
 		} catch (err) {
-			if (installIdRef.current !== forInstallId) return;
+			if (installIdRef.current !== forInstallId) return true;
 			setError(String(err));
 		} finally {
 			if (installIdRef.current === forInstallId) {
 				clearBusy(folderName);
 				clearAddonProgress(folderName);
 			}
+		}
+		return true;
+	}
+
+	async function handleUpdate(folderName: string) {
+		setError(null);
+		await runUpdateJob(install.id, folderName);
+	}
+
+	async function handleUpdateAll() {
+		if (updateAllActiveRef.current || updateAllRemaining > 0) return;
+		const forInstallId = install.id;
+		const targets = addons
+			.filter((a) => a.hasUpdate && !busyIdsRef.current[a.folderName])
+			.map((a) => a.folderName);
+		if (targets.length === 0) return;
+
+		updateAllActiveRef.current = true;
+		setError(null);
+		const queue = [...targets];
+		let remaining = queue.length;
+		setUpdateAllRemaining(remaining);
+
+		async function worker() {
+			while (queue.length > 0) {
+				if (installIdRef.current !== forInstallId) return;
+				const folderName = queue.shift();
+				if (!folderName) return;
+				await runUpdateJob(forInstallId, folderName);
+				remaining -= 1;
+				if (installIdRef.current === forInstallId) {
+					setUpdateAllRemaining(Math.max(0, remaining));
+				}
+			}
+		}
+
+		const workerCount = Math.min(UPDATE_ALL_CONCURRENCY, queue.length);
+		await Promise.all(Array.from({ length: workerCount }, () => worker()));
+		if (installIdRef.current === forInstallId) {
+			updateAllActiveRef.current = false;
+			setUpdateAllRemaining(0);
 		}
 	}
 
@@ -445,6 +492,9 @@ export function InstalledTab({
 	}
 
 	const blocked = loading || scanning || anyBusy;
+	const updatableCount = addons.filter((a) => a.hasUpdate).length;
+	const updateAllRunning = updateAllRemaining > 0;
+	const showUpdateAll = updatableCount > 0 || updateAllRunning;
 
 	return (
 		<section className="installed-layout">
@@ -457,6 +507,20 @@ export function InstalledTab({
 					</div>
 				</div>
 				<div className="toolbar-actions">
+					{showUpdateAll ? (
+						<button
+							className="btn primary"
+							onClick={handleUpdateAll}
+							disabled={loading || scanning || updateAllRunning}
+							title={t("installed.updateAll")}
+						>
+							{updateAllRunning
+								? t("installed.updateAllRemaining", {
+										n: String(updateAllRemaining),
+									})
+								: t("installed.updateAll")}
+						</button>
+					) : null}
 					<button
 						className="btn primary"
 						onClick={handleManualInstall}
