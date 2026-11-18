@@ -6,6 +6,7 @@ import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
 import type {
 	AddonJobProgress,
+	AddonScanProgress,
 	InstalledAddon,
 	SyncReport,
 	WowInstall,
@@ -39,6 +40,9 @@ export function InstalledTab({
 	const [addons, setAddons] = useState<InstalledAddon[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [scanning, setScanning] = useState(false);
+	const [scanProgress, setScanProgress] = useState<AddonScanProgress | null>(
+		null,
+	);
 	const [busy, setBusy] = useState<string | null>(null);
 	const [updateProgress, setUpdateProgress] = useState<AddonJobProgress | null>(
 		null,
@@ -91,9 +95,13 @@ export function InstalledTab({
 		const seq = beginRequest(forInstallId);
 		if (seq === null) return;
 		setScanning(true);
+		setScanProgress(null);
 		setError(null);
 		try {
-			const list = await api.rescanInstalledAddons(forInstallId);
+			const list = await api.rescanInstalledAddons(forInstallId, (progress) => {
+				if (!isCurrent(forInstallId, seq)) return;
+				setScanProgress(progress);
+			});
 			if (!isCurrent(forInstallId, seq)) return;
 			setAddons(list);
 			showToast(t("installed.rescanDone", { count: list.length }));
@@ -103,6 +111,7 @@ export function InstalledTab({
 		} finally {
 			if (isCurrent(forInstallId, seq)) {
 				setScanning(false);
+				setScanProgress(null);
 			}
 		}
 	}
@@ -119,6 +128,7 @@ export function InstalledTab({
 			setBusy(null);
 			setUpdateProgress(null);
 			setScanning(false);
+			setScanProgress(null);
 			setSyncDialog(null);
 		}
 		setLoading(false);
@@ -516,6 +526,14 @@ export function InstalledTab({
 						<span>
 							{scanning ? t("installed.rescanning") : t("installed.loadingList")}
 						</span>
+						{scanning && scanProgress ? (
+							<span className="list-loading-progress">
+								{t("installed.scanFound", {
+									name: scanProgress.name,
+									count: scanProgress.count,
+								})}
+							</span>
+						) : null}
 					</div>
 				) : (
 					<>

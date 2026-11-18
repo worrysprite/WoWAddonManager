@@ -2,6 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
 	AddonDetail,
 	AddonJobProgress,
+	AddonScanProgress,
 	AddonSummary,
 	ApiHelp,
 	FilterCatalog,
@@ -46,8 +47,18 @@ export function listInstalledAddons(installId: string) {
 	return invoke<InstalledAddon[]>("list_installed_addons", { installId });
 }
 
-export function rescanInstalledAddons(installId: string) {
-	return invoke<InstalledAddon[]>("rescan_installed_addons", { installId });
+export function rescanInstalledAddons(
+	installId: string,
+	onProgress?: (progress: AddonScanProgress) => void,
+) {
+	const channel = new Channel<AddonScanProgress>();
+	channel.onmessage = (progress) => {
+		onProgress?.(progress);
+	};
+	return invoke<InstalledAddon[]>("rescan_installed_addons", {
+		installId,
+		onProgress: channel,
+	});
 }
 
 export function installAddon(installId: string, addon: AddonSummary) {

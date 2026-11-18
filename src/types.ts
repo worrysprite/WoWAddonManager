@@ -109,6 +109,11 @@ export interface AddonJobProgress {
 	total?: number | null;
 }
 
+export interface AddonScanProgress {
+	name: string;
+	count: number;
+}
+
 export interface ApiHelp {
 	docs: string;
 	apply: string;

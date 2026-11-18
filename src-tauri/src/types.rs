@@ -186,6 +186,16 @@ impl AddonJobProgress {
 	}
 }
 
+/// Live progress while scanning an AddOns folder (one event per discovered addon).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddonScanProgress {
+	/// Display name of the latest addon found.
+	pub name: String,
+	/// Total addons found so far (pre-suite-collapse folder count).
+	pub count: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteRequest {

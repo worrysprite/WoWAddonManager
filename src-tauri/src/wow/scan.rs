@@ -1,20 +1,35 @@
 use crate::curseforge;
 use crate::types::{
-	AddonScanCache, AddonSummary, InstalledAddon, ManifestAddon, SearchParams, WowInstall,
+	AddonScanCache, AddonScanProgress, AddonSummary, InstalledAddon, ManifestAddon, SearchParams,
+	WowInstall,
 };
 use crate::wow::manifest;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+type ScanProgressCb = Arc<dyn Fn(AddonScanProgress) + Send + Sync>;
 
 pub const SCAN_CACHE_FILE: &str = "wow-addon-manager-scan.json";
 
-pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<Vec<InstalledAddon>, String> {
+pub async fn list_installed(
+	install: &WowInstall,
+	force_rescan: bool,
+) -> Result<Vec<InstalledAddon>, String> {
+	list_installed_with_progress(install, force_rescan, None).await
+}
+
+pub async fn list_installed_with_progress(
+	install: &WowInstall,
+	force_rescan: bool,
+	on_progress: Option<ScanProgressCb>,
+) -> Result<Vec<InstalledAddon>, String> {
 	let addons_path = PathBuf::from(&install.addons_path);
 	fs::create_dir_all(&addons_path).map_err(|e| e.to_string())?;
 
-			if !force_rescan {
+	if !force_rescan {
 		if let Some(cache) = load_scan_cache(install) {
 			if cache.scanned_at.is_some() {
 				log::info!(
@@ -50,7 +65,8 @@ pub async fn list_installed(install: &WowInstall, force_rescan: bool) -> Result<
 		install.label,
 		force_rescan
 	);
-	let mut results = scan_disk_with_updates(install, force_rescan).await?;
+	let mut results =
+		scan_disk_with_updates(install, force_rescan, on_progress.as_ref()).await?;
 	crate::icon_cache::localize_installed_thumbnails(&mut results).await;
 	save_scan_cache(install, &results)?;
 	log::info!(
@@ -73,7 +89,7 @@ pub fn refresh_local_cache(install: &WowInstall) -> Result<Vec<InstalledAddon>, 
 		.map(|a| (a.folder_name.clone(), a))
 		.collect();
 
-	let mut results = scan_disk_only(install)?;
+	let mut results = scan_disk_only(install, None)?;
 	for addon in &mut results {
 		if let Some(prev) = prev_map.get(&addon.folder_name) {
 			// Keep prior update flags / icons when the installed file hasn't changed.
@@ -253,8 +269,9 @@ fn strip_manual_category(addon: &mut InstalledAddon) {
 async fn scan_disk_with_updates(
 	install: &WowInstall,
 	check_remote: bool,
+	on_progress: Option<&ScanProgressCb>,
 ) -> Result<Vec<InstalledAddon>, String> {
-	let mut results = scan_disk_only(install)?;
+	let mut results = scan_disk_only(install, on_progress)?;
 	let addons_path = PathBuf::from(&install.addons_path);
 	let mut stored = manifest::load(&addons_path);
 	let mut manifest_dirty = false;
@@ -342,7 +359,10 @@ async fn scan_disk_with_updates(
 	Ok(results)
 }
 
-fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
+fn scan_disk_only(
+	install: &WowInstall,
+	on_progress: Option<&ScanProgressCb>,
+) -> Result<Vec<InstalledAddon>, String> {
 	let addons_path = PathBuf::from(&install.addons_path);
 	fs::create_dir_all(&addons_path).map_err(|e| e.to_string())?;
 	let stored = manifest::load(&addons_path);
@@ -403,9 +423,10 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 			tracked_is_suite,
 		);
 
+		let title = crate::wow::toc::clean_toc_title(&raw_title);
 		results.push(InstalledAddon {
 			folder_name: folder_name.clone(),
-			title: crate::wow::toc::clean_toc_title(&raw_title),
+			title: title.clone(),
 			author: raw_author.map(|v| crate::wow::toc::clean_toc_text(&v)),
 			notes: raw_notes.and_then(|v| crate::wow::toc::clean_toc_notes(&v)),
 			interface_version: meta.interface,
@@ -442,6 +463,12 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 			is_primary: tracked.map(|t| t.is_primary).unwrap_or(false),
 			archive_name: tracked.and_then(|t| t.archive_name.clone()),
 		});
+		if let Some(cb) = on_progress {
+			cb(AddonScanProgress {
+				name: title,
+				count: results.len() as u32,
+			});
+		}
 	}
 
 	let mut results = crate::wow::suite::collapse_suite_rows(results);
@@ -1028,7 +1055,7 @@ mod tests {
 			game_version_type_id: Some(88568),
 			backup_path: String::new(),
 		};
-		let list = scan_disk_only(&install).unwrap();
+		let list = scan_disk_only(&install, None).unwrap();
 		assert_eq!(list.len(), 1);
 		assert_eq!(list[0].curseforge_id, Some(1639171));
 		assert_eq!(list[0].curseforge_slug, None);
@@ -1169,10 +1196,31 @@ mod tests {
 		)
 		.unwrap();
 
-		let listed = scan_disk_only(&install).unwrap();
+		let listed = scan_disk_only(&install, None).unwrap();
 		assert!(listed.iter().all(|a| a.folder_name != "Questie"));
 		assert_eq!(listed.len(), 1);
 		assert_eq!(listed[0].folder_name, "CachedAddon");
+
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn scan_disk_emits_progress_per_addon() {
+		let (dir, install) = temp_install();
+		let events = Arc::new(std::sync::Mutex::new(Vec::<AddonScanProgress>::new()));
+		let events_cb = Arc::clone(&events);
+		let cb: ScanProgressCb = Arc::new(move |progress: AddonScanProgress| {
+			events_cb.lock().unwrap().push(progress);
+		});
+		let listed = scan_disk_only(&install, Some(&cb)).unwrap();
+		let events = events.lock().unwrap();
+		assert!(!events.is_empty());
+		for (idx, event) in events.iter().enumerate() {
+			assert_eq!(event.count, (idx + 1) as u32);
+			assert!(!event.name.is_empty());
+		}
+		// Progress counts pre-suite-collapse folders; listed is collapsed.
+		assert!(events.last().unwrap().count as usize >= listed.len());
 
 		let _ = fs::remove_dir_all(dir);
 	}
