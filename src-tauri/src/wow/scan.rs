@@ -393,10 +393,14 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 			.or_else(|| tracked.and_then(|t| t.summary.clone()));
 
 		// Prefer TOC X-Curse-Project-ID over a stale slug/title bind in the manifest.
+		let tracked_is_suite = tracked
+			.map(|t| t.related_folders.len() > 1)
+			.unwrap_or(false);
 		let (curseforge_id, curseforge_slug) = prefer_toc_curseforge_bind(
 			meta.curseforge_project_id,
 			tracked.and_then(|t| t.curseforge_id),
 			tracked.and_then(|t| t.curseforge_slug.clone()),
+			tracked_is_suite,
 		);
 
 		results.push(InstalledAddon {
@@ -448,15 +452,19 @@ fn scan_disk_only(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
 
 /// Update-matching bind policy:
 /// - TOC `X-Curse-Project-ID` present → use that id (overrides stale manifest binds).
-/// - TOC id absent → no id/slug bind here; callers fall back to name matching.
+/// - TOC id absent + suite member (`related_folders` > 1) → keep tracked id/slug so
+///   suite children stay grouped with the parent (many child TOCs omit project id).
+/// - TOC id absent + solo → clear id/slug; callers fall back to name matching.
 pub fn prefer_toc_curseforge_bind(
 	toc_id: Option<i64>,
 	tracked_id: Option<i64>,
 	tracked_slug: Option<String>,
+	tracked_is_suite_member: bool,
 ) -> (Option<i64>, Option<String>) {
 	match toc_id {
 		Some(toc) if tracked_id.is_some_and(|id| id != toc) => (Some(toc), None),
 		Some(toc) => (Some(toc), tracked_slug),
+		None if tracked_is_suite_member => (tracked_id, tracked_slug),
 		None => (None, None),
 	}
 }
@@ -782,6 +790,7 @@ mod tests {
 			Some(1639171),
 			Some(1680332),
 			Some("postbox".into()),
+			false,
 		);
 		assert_eq!(id, Some(1639171));
 		assert_eq!(slug, None);
@@ -790,7 +799,7 @@ mod tests {
 	#[test]
 	fn prefer_toc_id_keeps_slug_when_ids_agree() {
 		let (id, slug) =
-			prefer_toc_curseforge_bind(Some(42), Some(42), Some("weakauras-2".into()));
+			prefer_toc_curseforge_bind(Some(42), Some(42), Some("weakauras-2".into()), false);
 		assert_eq!(id, Some(42));
 		assert_eq!(slug.as_deref(), Some("weakauras-2"));
 	}
@@ -798,9 +807,17 @@ mod tests {
 	#[test]
 	fn prefer_toc_absent_clears_bind_for_name_fallback() {
 		let (id, slug) =
-			prefer_toc_curseforge_bind(None, Some(1680332), Some("postbox".into()));
+			prefer_toc_curseforge_bind(None, Some(1680332), Some("postbox".into()), false);
 		assert_eq!(id, None);
 		assert_eq!(slug, None);
+	}
+
+	#[test]
+	fn prefer_toc_absent_keeps_suite_member_bind() {
+		let (id, slug) =
+			prefer_toc_curseforge_bind(None, Some(3358), Some("questie".into()), true);
+		assert_eq!(id, Some(3358));
+		assert_eq!(slug.as_deref(), Some("questie"));
 	}
 
 	#[test]
@@ -1041,6 +1058,102 @@ mod tests {
 		assert!(!legacy_path.exists());
 
 		let _ = fs::remove_file(appdata_scan_cache_path(&install).unwrap());
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn scan_disk_collapses_suite_when_child_toc_omits_project_id() {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-scan-suite-{}-{}",
+			std::process::id(),
+			std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addons = dir.join("AddOns");
+		for (folder, toc) in [
+			(
+				"Questie",
+				"## Interface: 16001\n## Title: Questie\n## Notes: A standalone Classic QuestHelper\n## Author: Questie Team\n## X-Curse-Project-ID: 3358\n",
+			),
+			(
+				"QuestieCompat",
+				"## Interface: 16001\n## Title: Questie\n## Notes: Compatibility layer\n## Author: Questie Team\n",
+			),
+			(
+				"QuestieDB",
+				"## Interface: 16001\n## Title: QuestieDB\n## Notes: Database\n## Author: Questie Team\n## X-Curse-Project-ID: 9999\n",
+			),
+		] {
+			let path = addons.join(folder);
+			fs::create_dir_all(&path).unwrap();
+			fs::write(path.join(format!("{folder}.toc")), toc).unwrap();
+		}
+
+		let related = vec!["Questie".into(), "QuestieCompat".into()];
+		for (folder, id, primary) in [
+			("Questie", Some(3358_i64), true),
+			("QuestieCompat", Some(3358), false),
+			("QuestieDB", Some(9999), true),
+		] {
+			manifest::upsert(
+				&addons,
+				ManifestAddon {
+					folder_name: folder.into(),
+					curseforge_id: id,
+					curseforge_slug: Some(if folder == "QuestieDB" {
+						"questiedb".into()
+					} else {
+						"questie".into()
+					}),
+					file_id: None,
+					name: Some(folder.into()),
+					author: Some("Questie Team".into()),
+					summary: None,
+					thumbnail_url: None,
+					categories: vec![],
+					flavors: vec![],
+					download_count: None,
+					latest_game_version: None,
+					website_url: None,
+					installed_at: None,
+					updated_at: None,
+					version: None,
+					install_source: Some("curseforge".into()),
+					archive_name: None,
+					related_folders: if folder == "QuestieDB" {
+						vec!["QuestieDB".into()]
+					} else {
+						related.clone()
+					},
+					is_primary: primary,
+				},
+			)
+			.unwrap();
+		}
+
+		let install = WowInstall {
+			id: "suite-rescan".into(),
+			label: "Forever".into(),
+			flavor: "Forever".into(),
+			flavor_key: "forever".into(),
+			install_path: dir.display().to_string(),
+			addons_path: addons.display().to_string(),
+			game_version: Some("1.0.0.16001".into()),
+			game_version_type_id: Some(88568),
+			backup_path: String::new(),
+		};
+		let list = scan_disk_only(&install).unwrap();
+		assert_eq!(list.len(), 2, "Questie suite + QuestieDB, no duplicate parent");
+		assert!(list.iter().any(|a| a.folder_name == "Questie"));
+		assert!(list.iter().any(|a| a.folder_name == "QuestieDB"));
+		assert!(list.iter().all(|a| a.folder_name != "QuestieCompat"));
+		let questie = list.iter().find(|a| a.folder_name == "Questie").unwrap();
+		assert_eq!(questie.related_folders.len(), 2);
+		assert_eq!(questie.curseforge_id, Some(3358));
+
 		let _ = fs::remove_dir_all(dir);
 	}
 
