@@ -66,7 +66,7 @@ pub async fn list_installed_with_progress(
 		force_rescan
 	);
 	// Manual「扫描插件」is disk-only: return the list immediately. CurseForge
-	// update checks + remote icon caching run afterwards via `enrich_installed`.
+	// update checks are hourly (see frontend schedule); icons localize separately.
 	if force_rescan {
 		let results = scan_local_installed(install, on_progress.as_ref())?;
 		save_scan_cache(install, &results)?;
@@ -90,17 +90,37 @@ pub async fn list_installed_with_progress(
 	Ok(results)
 }
 
-/// After a disk scan: CurseForge update flags + localize remote icons, then refresh cache.
-pub async fn enrich_installed(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
-	let mut results = match load_scan_cache(install) {
-		Some(cache) if cache.scanned_at.is_some() => cache.addons,
-		_ => scan_local_installed(install, None)?,
-	};
-	results = apply_remote_updates(install, results).await?;
+fn cached_or_local_scan(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
+	match load_scan_cache(install) {
+		Some(cache) if cache.scanned_at.is_some() => Ok(cache.addons),
+		_ => scan_local_installed(install, None),
+	}
+}
+
+/// CurseForge update flags only (no icon download). Used by the hourly checker.
+pub async fn check_installed_updates(
+	install: &WowInstall,
+) -> Result<Vec<InstalledAddon>, String> {
+	let results = cached_or_local_scan(install)?;
+	let results = apply_remote_updates(install, results).await?;
+	save_scan_cache(install, &results)?;
+	log::info!(
+		"check_installed_updates done install={} count={}",
+		install.label,
+		results.len()
+	);
+	Ok(results)
+}
+
+/// Cache remote thumbnails locally (no CurseForge update check).
+pub async fn localize_installed_icons(
+	install: &WowInstall,
+) -> Result<Vec<InstalledAddon>, String> {
+	let mut results = cached_or_local_scan(install)?;
 	crate::icon_cache::localize_installed_thumbnails(&mut results).await;
 	save_scan_cache(install, &results)?;
 	log::info!(
-		"enrich_installed done install={} count={}",
+		"localize_installed_icons done install={} count={}",
 		install.label,
 		results.len()
 	);

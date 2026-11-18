@@ -61,9 +61,14 @@ export function rescanInstalledAddons(
 	});
 }
 
-/** After disk scan: CurseForge updates + localize remote icons (run in background). */
-export function enrichInstalledAddons(installId: string) {
-	return invoke<InstalledAddon[]>("enrich_installed_addons", { installId });
+/** Hourly CurseForge update check for one client. */
+export function checkInstalledUpdates(installId: string) {
+	return invoke<InstalledAddon[]>("check_installed_updates", { installId });
+}
+
+/** After disk scan: localize remote icons only (no update check). */
+export function localizeInstalledIcons(installId: string) {
+	return invoke<InstalledAddon[]>("localize_installed_icons", { installId });
 }
 
 export function installAddon(installId: string, addon: AddonSummary) {

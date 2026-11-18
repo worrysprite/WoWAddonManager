@@ -4,6 +4,11 @@ import * as api from "../api";
 import { useToast } from "../hooks/useToast";
 import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
+import {
+	localizeIconsInBackground,
+	noteInstalledScanCompleted,
+	subscribeInstalledUpdates,
+} from "../installedUpdates";
 import type {
 	AddonJobProgress,
 	AddonScanProgress,
@@ -133,16 +138,6 @@ export function InstalledTab({
 		}
 	}
 
-	async function enrichInBackground(forInstallId: string, seq: number) {
-		try {
-			const enriched = await api.enrichInstalledAddons(forInstallId);
-			if (!isCurrent(forInstallId, seq)) return;
-			setAddons(enriched);
-		} catch {
-			// Disk list is already visible; enrich is best-effort.
-		}
-	}
-
 	async function handleRescan() {
 		const forInstallId = install.id;
 		const seq = beginRequest(forInstallId);
@@ -160,8 +155,9 @@ export function InstalledTab({
 			showToast(t("installed.rescanDone", { count: list.length }));
 			setScanning(false);
 			setScanProgress(null);
-			// CurseForge update check + icon cache: not part of「扫描」.
-			void enrichInBackground(forInstallId, seq);
+			// Icons only after scan; CurseForge updates are on the hourly schedule.
+			noteInstalledScanCompleted();
+			void localizeIconsInBackground(forInstallId);
 		} catch (err) {
 			if (!isCurrent(forInstallId, seq)) return;
 			setError(String(err));
@@ -169,6 +165,13 @@ export function InstalledTab({
 			setScanProgress(null);
 		}
 	}
+
+	useEffect(() => {
+		return subscribeInstalledUpdates((installId, list) => {
+			if (installId !== installIdRef.current) return;
+			setAddons(list);
+		});
+	}, []);
 
 	useEffect(() => {
 		const switched = prevInstallIdRef.current !== install.id;
@@ -491,7 +494,8 @@ export function InstalledTab({
 			const list = await api.rescanInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
 			setAddons(list);
-			void enrichInBackground(forInstallId, seq);
+			noteInstalledScanCompleted();
+			void localizeIconsInBackground(forInstallId);
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			// Restore already succeeded; keep success dialog and surface rescan separately.
