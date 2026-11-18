@@ -43,10 +43,11 @@ export function InstalledTab({
 	const [scanProgress, setScanProgress] = useState<AddonScanProgress | null>(
 		null,
 	);
-	const [busy, setBusy] = useState<string | null>(null);
-	const [updateProgress, setUpdateProgress] = useState<AddonJobProgress | null>(
-		null,
-	);
+	/** Per-addon / per-op busy keys (folderName, or __manual__/__backup__/__restore__). */
+	const [busyIds, setBusyIds] = useState<Record<string, true>>({});
+	const [updateProgressById, setUpdateProgressById] = useState<
+		Record<string, AddonJobProgress>
+	>({});
 	const [error, setError] = useState<string | null>(null);
 	const [syncDialog, setSyncDialog] = useState<SyncDialogState | null>(null);
 	const [detail, setDetail] = useState<{ modId: number; title: string } | null>(
@@ -56,6 +57,7 @@ export function InstalledTab({
 	const syncLiveLogRef = useRef("");
 	const syncFlushTimerRef = useRef<number | null>(null);
 	const requestSeq = useRef(0);
+	const busyIdsRef = useRef<Record<string, true>>({});
 	const installIdRef = useRef(install.id);
 	const prevInstallIdRef = useRef(install.id);
 	installIdRef.current = install.id;
@@ -71,11 +73,47 @@ export function InstalledTab({
 		return installIdRef.current === forInstallId && requestSeq.current === seq;
 	}
 
-	async function loadCached(forInstallId = install.id) {
+	function markBusy(id: string) {
+		if (busyIdsRef.current[id]) return false;
+		busyIdsRef.current = { ...busyIdsRef.current, [id]: true };
+		setBusyIds(busyIdsRef.current);
+		return true;
+	}
+
+	function clearBusy(id: string) {
+		if (!busyIdsRef.current[id]) return;
+		const next = { ...busyIdsRef.current };
+		delete next[id];
+		busyIdsRef.current = next;
+		setBusyIds(next);
+	}
+
+	function setAddonProgress(id: string, progress: AddonJobProgress) {
+		setUpdateProgressById((prev) => ({ ...prev, [id]: progress }));
+	}
+
+	function clearAddonProgress(id: string) {
+		setUpdateProgressById((prev) => {
+			if (!(id in prev)) return prev;
+			const next = { ...prev };
+			delete next[id];
+			return next;
+		});
+	}
+
+	const anyBusy = Object.keys(busyIds).length > 0;
+
+	async function loadCached(
+		forInstallId = install.id,
+		opts?: { silent?: boolean },
+	) {
 		const seq = beginRequest(forInstallId);
 		if (seq === null) return;
-		setLoading(true);
-		setError(null);
+		const silent = Boolean(opts?.silent);
+		if (!silent) {
+			setLoading(true);
+			setError(null);
+		}
 		try {
 			const list = await api.listInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
@@ -84,7 +122,7 @@ export function InstalledTab({
 			if (!isCurrent(forInstallId, seq)) return;
 			setError(String(err));
 		} finally {
-			if (isCurrent(forInstallId, seq)) {
+			if (!silent && isCurrent(forInstallId, seq)) {
 				setLoading(false);
 			}
 		}
@@ -125,8 +163,9 @@ export function InstalledTab({
 		if (switched) {
 			setAddons([]);
 			setError(null);
-			setBusy(null);
-			setUpdateProgress(null);
+			busyIdsRef.current = {};
+			setBusyIds({});
+			setUpdateProgressById({});
 			setScanning(false);
 			setScanProgress(null);
 			setSyncDialog(null);
@@ -137,23 +176,24 @@ export function InstalledTab({
 
 	async function handleUpdate(folderName: string) {
 		const forInstallId = install.id;
-		setBusy(folderName);
-		setUpdateProgress({ stage: "download", percent: 0 });
+		if (!markBusy(folderName)) return;
+		setAddonProgress(folderName, { stage: "download", percent: 0 });
 		setError(null);
 		try {
 			await api.updateAddon(forInstallId, folderName, (progress) => {
 				if (installIdRef.current !== forInstallId) return;
-				setUpdateProgress(progress);
+				setAddonProgress(folderName, progress);
 			});
 			if (installIdRef.current !== forInstallId) return;
-			await loadCached(forInstallId);
+			// Silent so other in-flight update progress UIs stay visible.
+			await loadCached(forInstallId, { silent: true });
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			setError(String(err));
 		} finally {
 			if (installIdRef.current === forInstallId) {
-				setBusy(null);
-				setUpdateProgress(null);
+				clearBusy(folderName);
+				clearAddonProgress(folderName);
 			}
 		}
 	}
@@ -181,7 +221,7 @@ export function InstalledTab({
 		);
 		if (!confirmed) return;
 		if (installIdRef.current !== forInstallId) return;
-		setBusy(folderName);
+		if (!markBusy(folderName)) return;
 		try {
 			await api.deleteAddon(forInstallId, folderName);
 			if (installIdRef.current !== forInstallId) return;
@@ -192,7 +232,7 @@ export function InstalledTab({
 			await loadCached(forInstallId);
 		} finally {
 			if (installIdRef.current === forInstallId) {
-				setBusy(null);
+				clearBusy(folderName);
 			}
 		}
 	}
@@ -213,7 +253,7 @@ export function InstalledTab({
 			});
 			if (!selected || Array.isArray(selected)) return;
 			if (installIdRef.current !== forInstallId) return;
-			setBusy("__manual__");
+			markBusy("__manual__");
 			const installed = await api.installFromArchive(forInstallId, selected);
 			if (installIdRef.current !== forInstallId) return;
 			await loadCached(forInstallId);
@@ -225,7 +265,7 @@ export function InstalledTab({
 			setError(String(err));
 		} finally {
 			if (installIdRef.current === forInstallId) {
-				setBusy(null);
+				clearBusy("__manual__");
 			}
 		}
 	}
@@ -310,7 +350,7 @@ export function InstalledTab({
 			onNeedBackupPath();
 			return;
 		}
-		setBusy("__backup__");
+		markBusy("__backup__");
 		beginSyncDialog("backup");
 		try {
 			const report = await api.backupInstall(forInstallId, appendSyncLine);
@@ -330,7 +370,7 @@ export function InstalledTab({
 			setError(message);
 		} finally {
 			if (installIdRef.current === forInstallId) {
-				setBusy(null);
+				clearBusy("__backup__");
 			}
 		}
 	}
@@ -354,7 +394,7 @@ export function InstalledTab({
 		);
 		if (!confirmed) return;
 		if (installIdRef.current !== forInstallId) return;
-		setBusy("__restore__");
+		markBusy("__restore__");
 		beginSyncDialog("restore");
 		let report: SyncReport | null = null;
 		try {
@@ -381,7 +421,7 @@ export function InstalledTab({
 			return;
 		} finally {
 			if (installIdRef.current === forInstallId && report === null) {
-				setBusy(null);
+				clearBusy("__restore__");
 			}
 		}
 		if (installIdRef.current !== forInstallId) return;
@@ -399,12 +439,12 @@ export function InstalledTab({
 			setError(String(err));
 		} finally {
 			if (installIdRef.current === forInstallId) {
-				setBusy(null);
+				clearBusy("__restore__");
 			}
 		}
 	}
 
-	const blocked = loading || scanning || busy !== null;
+	const blocked = loading || scanning || anyBusy;
 
 	return (
 		<section className="installed-layout">
@@ -446,7 +486,7 @@ export function InstalledTab({
 						disabled={blocked}
 						title={t("installed.backup")}
 					>
-						{busy === "__backup__" ? t("installed.backingUp") : t("installed.backup")}
+						{busyIds.__backup__ ? t("installed.backingUp") : t("installed.backup")}
 					</button>
 					<button
 						className="btn"
@@ -454,7 +494,7 @@ export function InstalledTab({
 						disabled={blocked}
 						title={t("installed.restore")}
 					>
-						{busy === "__restore__" ? t("installed.restoring") : t("installed.restore")}
+						{busyIds.__restore__ ? t("installed.restoring") : t("installed.restore")}
 					</button>
 				</div>
 			</div>
@@ -542,9 +582,9 @@ export function InstalledTab({
 								key={`${install.id}:${addon.folderName}`}
 								mode="installed"
 								addon={addon}
-								busy={busy === addon.folderName}
+								busy={Boolean(busyIds[addon.folderName])}
 								updateProgress={
-									busy === addon.folderName ? updateProgress : null
+									updateProgressById[addon.folderName] ?? null
 								}
 								onUpdate={() => handleUpdate(addon.folderName)}
 								onDelete={() => handleDelete(addon.folderName)}
