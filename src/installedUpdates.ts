@@ -62,7 +62,8 @@ async function checkAll(gen: number) {
 /**
  * Start / restart the CurseForge update schedule, then once per hour.
  * - Launch (`runSoon: true`): first check after ~3s.
- * - After scan (`runSoon: false`): wait a full hour before the next check.
+ * - After scan (`runSoon: false`): next automatic check in one hour
+ *   (scan itself already triggers one immediate check via `enrichAfterScan`).
  */
 export function startInstalledUpdateSchedule(
 	nextGetInstallIds: () => string[],
@@ -87,23 +88,29 @@ export function startInstalledUpdateSchedule(
 	}, delay);
 }
 
-/** After disk scan: restart the hourly clock (next CF check in one hour). */
-export function noteInstalledScanCompleted() {
-	if (!getInstallIds) return;
-	startInstalledUpdateSchedule(getInstallIds, { runSoon: false });
-}
-
 export function stopInstalledUpdateSchedule() {
 	generation += 1;
 	clearTimers();
 	getInstallIds = null;
 }
 
-/** Background icon cache after disk scan (no CurseForge update check). */
-export async function localizeIconsInBackground(installId: string) {
+/**
+ * After disk scan (background): CurseForge update check + icon localize for this
+ * install, then restart the hourly clock (next automatic round in one hour).
+ */
+export async function enrichAfterScan(installId: string) {
+	if (getInstallIds) {
+		startInstalledUpdateSchedule(getInstallIds, { runSoon: false });
+	}
 	try {
-		const list = await api.localizeInstalledIcons(installId);
-		emit(installId, list);
+		const updated = await api.checkInstalledUpdates(installId);
+		emit(installId, updated);
+	} catch {
+		// Best-effort.
+	}
+	try {
+		const withIcons = await api.localizeInstalledIcons(installId);
+		emit(installId, withIcons);
 	} catch {
 		// Best-effort.
 	}

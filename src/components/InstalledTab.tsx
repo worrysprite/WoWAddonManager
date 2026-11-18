@@ -5,8 +5,7 @@ import { useToast } from "../hooks/useToast";
 import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
 import {
-	localizeIconsInBackground,
-	noteInstalledScanCompleted,
+	enrichAfterScan,
 	subscribeInstalledUpdates,
 } from "../installedUpdates";
 import type {
@@ -155,9 +154,8 @@ export function InstalledTab({
 			showToast(t("installed.rescanDone", { count: list.length }));
 			setScanning(false);
 			setScanProgress(null);
-			// Icons only after scan; CurseForge updates are on the hourly schedule.
-			noteInstalledScanCompleted();
-			void localizeIconsInBackground(forInstallId);
+			// Background: one CF update check + icons; hourly clock resets from now.
+			void enrichAfterScan(forInstallId);
 		} catch (err) {
 			if (!isCurrent(forInstallId, seq)) return;
 			setError(String(err));
@@ -494,8 +492,7 @@ export function InstalledTab({
 			const list = await api.rescanInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
 			setAddons(list);
-			noteInstalledScanCompleted();
-			void localizeIconsInBackground(forInstallId);
+			void enrichAfterScan(forInstallId);
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			// Restore already succeeded; keep success dialog and surface rescan separately.

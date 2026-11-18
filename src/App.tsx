@@ -90,7 +90,7 @@ export default function App() {
 	);
 
 	// CurseForge addon update checks: ~3s after installs are known, then hourly.
-	// Manual「扫描插件」resets this clock via noteInstalledScanCompleted.
+	// Manual「扫描插件」triggers one immediate check via enrichAfterScan and resets the clock.
 	useEffect(() => {
 		if (!installIdsKey) {
 			stopInstalledUpdateSchedule();
