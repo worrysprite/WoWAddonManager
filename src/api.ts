@@ -61,6 +61,11 @@ export function rescanInstalledAddons(
 	});
 }
 
+/** After disk scan: CurseForge updates + localize remote icons (run in background). */
+export function enrichInstalledAddons(installId: string) {
+	return invoke<InstalledAddon[]>("enrich_installed_addons", { installId });
+}
+
 export function installAddon(installId: string, addon: AddonSummary) {
 	return invoke<InstalledAddon>("install_addon", {
 		request: { installId, addon },

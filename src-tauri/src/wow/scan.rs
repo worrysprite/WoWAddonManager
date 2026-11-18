@@ -65,12 +65,42 @@ pub async fn list_installed_with_progress(
 		install.label,
 		force_rescan
 	);
+	// Manual「扫描插件」is disk-only: return the list immediately. CurseForge
+	// update checks + remote icon caching run afterwards via `enrich_installed`.
+	if force_rescan {
+		let results = scan_local_installed(install, on_progress.as_ref())?;
+		save_scan_cache(install, &results)?;
+		log::info!(
+			"list_installed disk-scan done install={} count={}",
+			install.label,
+			results.len()
+		);
+		return Ok(results);
+	}
+
 	let mut results =
-		scan_disk_with_updates(install, force_rescan, on_progress.as_ref()).await?;
+		scan_disk_with_updates(install, false, on_progress.as_ref()).await?;
 	crate::icon_cache::localize_installed_thumbnails(&mut results).await;
 	save_scan_cache(install, &results)?;
 	log::info!(
 		"list_installed scanned install={} count={}",
+		install.label,
+		results.len()
+	);
+	Ok(results)
+}
+
+/// After a disk scan: CurseForge update flags + localize remote icons, then refresh cache.
+pub async fn enrich_installed(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
+	let mut results = match load_scan_cache(install) {
+		Some(cache) if cache.scanned_at.is_some() => cache.addons,
+		_ => scan_local_installed(install, None)?,
+	};
+	results = apply_remote_updates(install, results).await?;
+	crate::icon_cache::localize_installed_thumbnails(&mut results).await;
+	save_scan_cache(install, &results)?;
+	log::info!(
+		"enrich_installed done install={} count={}",
 		install.label,
 		results.len()
 	);
@@ -266,87 +296,142 @@ fn strip_manual_category(addon: &mut InstalledAddon) {
 		.retain(|c| !c.eq_ignore_ascii_case("Manual"));
 }
 
-async fn scan_disk_with_updates(
+/// Disk walk + suite collapse only (no CurseForge / icon network).
+fn scan_local_installed(
 	install: &WowInstall,
-	check_remote: bool,
 	on_progress: Option<&ScanProgressCb>,
 ) -> Result<Vec<InstalledAddon>, String> {
 	let mut results = scan_disk_only(install, on_progress)?;
 	let addons_path = PathBuf::from(&install.addons_path);
-	let mut stored = manifest::load(&addons_path);
-	let mut manifest_dirty = false;
 
 	for addon in &mut results {
 		strip_manual_category(addon);
 	}
 
-	// Collapse suites first so update checks run once per CurseForge package.
 	results = crate::wow::suite::collapse_suite_rows(results);
 	let _ = crate::wow::suite::sync_suite_flags_to_manifest(&addons_path, &results);
+
+	// Keep prior update badges / icons until background enrich finishes.
+	if let Some(previous) = load_scan_cache(install) {
+		let prev_map: HashMap<_, _> = previous
+			.addons
+			.into_iter()
+			.map(|a| (a.folder_name.clone(), a))
+			.collect();
+		for addon in &mut results {
+			let Some(prev) = prev_map.get(&addon.folder_name) else {
+				continue;
+			};
+			if addon.file_id == prev.file_id {
+				addon.has_update = prev.has_update;
+				addon.remote_version = prev.remote_version.clone();
+				addon.remote_file_id = prev.remote_file_id;
+			}
+			if needs_thumbnail(addon) {
+				addon.thumbnail_url = prev.thumbnail_url.clone();
+			}
+		}
+	}
+
+	results.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+	Ok(results)
+}
+
+async fn apply_remote_updates(
+	install: &WowInstall,
+	mut results: Vec<InstalledAddon>,
+) -> Result<Vec<InstalledAddon>, String> {
+	let addons_path = PathBuf::from(&install.addons_path);
+	let mut stored = manifest::load(&addons_path);
+	let mut manifest_dirty = false;
 
 	if sync_curseforge_ids_from_scan(&mut stored, &results) {
 		manifest_dirty = true;
 	}
 
-	if check_remote {
-		// One batch request for all known CurseForge ids instead of N searches.
-		let ids: Vec<i64> = results.iter().filter_map(|a| a.curseforge_id).collect();
-		let by_id =
-			curseforge::get_addons_by_ids(&ids, install.game_version_type_id).await;
+	// One batch request for all known CurseForge ids instead of N searches.
+	let ids: Vec<i64> = results.iter().filter_map(|a| a.curseforge_id).collect();
+	let by_id = curseforge::get_addons_by_ids(&ids, install.game_version_type_id).await;
 
-		let batch_ok = !ids.is_empty() && !by_id.is_empty();
-		for addon in &mut results {
-			let remote = match addon.curseforge_id {
-				Some(id) => {
-					if let Some(item) = by_id.get(&id) {
-						Some(item.clone())
-					} else if !batch_ok {
-						// Batch failed or empty key — fall back to a single GET, never search.
-						curseforge::get_addon_for_flavor(id, install.game_version_type_id).await
-					} else {
-						None
-					}
+	let batch_ok = !ids.is_empty() && !by_id.is_empty();
+	for addon in &mut results {
+		// Clear stale flags; recompute from remote.
+		addon.has_update = false;
+		addon.remote_version = None;
+		addon.remote_file_id = None;
+
+		let remote = match addon.curseforge_id {
+			Some(id) => {
+				if let Some(item) = by_id.get(&id) {
+					Some(item.clone())
+				} else if !batch_ok {
+					// Batch failed or empty key — fall back to a single GET, never search.
+					curseforge::get_addon_for_flavor(id, install.game_version_type_id).await
+				} else {
+					None
 				}
-				None => find_remote_via_search(addon, install.game_version_type_id).await,
-			};
-			// Retail-only CurseForge ids bound by mistake (e.g. PostBox 1680332 on
-			// Forever) have no latest_file_id for this flavor — search again.
-			let remote = match remote {
-				Some(item)
-					if install.game_version_type_id.is_some() && item.latest_file_id.is_none() =>
-				{
-					log::warn!(
-						"installed {} bound to mod {} with no file for preferred={:?}; re-searching",
-						addon.folder_name,
-						item.id,
-						install.game_version_type_id
-					);
-					find_remote_via_search(addon, install.game_version_type_id).await
-				}
-				other => other,
-			};
-			if let Some(remote) = remote {
-				apply_update_flags(addon, &remote);
-				if apply_remote_metadata(addon, &remote) {
-					upsert_remote_enrichment(&mut stored, addon);
-					manifest_dirty = true;
-				}
+			}
+			None => find_remote_via_search(addon, install.game_version_type_id).await,
+		};
+		// Retail-only CurseForge ids bound by mistake (e.g. PostBox 1680332 on
+		// Forever) have no latest_file_id for this flavor — search again.
+		let remote = match remote {
+			Some(item)
+				if install.game_version_type_id.is_some() && item.latest_file_id.is_none() =>
+			{
+				log::warn!(
+					"installed {} bound to mod {} with no file for preferred={:?}; re-searching",
+					addon.folder_name,
+					item.id,
+					install.game_version_type_id
+				);
+				find_remote_via_search(addon, install.game_version_type_id).await
+			}
+			other => other,
+		};
+		if let Some(remote) = remote {
+			apply_update_flags(addon, &remote);
+			if apply_remote_metadata(addon, &remote) {
+				upsert_remote_enrichment(&mut stored, addon);
+				manifest_dirty = true;
 			}
 		}
-	} else {
-		// First cache-less open: still fill missing icons/ids once, but never bypass
-		// browse cache and prefer id lookup / short search terms.
-		for addon in &mut results {
-			if !needs_thumbnail(addon) && addon.curseforge_id.is_some() {
-				continue;
-			}
-			if let Some(remote) =
-				find_remote_for_installed(addon, install.game_version_type_id).await
-			{
-				if apply_remote_metadata(addon, &remote) {
-					upsert_remote_enrichment(&mut stored, addon);
-					manifest_dirty = true;
-				}
+	}
+
+	if manifest_dirty {
+		let _ = manifest::save(&addons_path, &stored);
+	}
+
+	results.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+	Ok(results)
+}
+
+async fn scan_disk_with_updates(
+	install: &WowInstall,
+	check_remote: bool,
+	on_progress: Option<&ScanProgressCb>,
+) -> Result<Vec<InstalledAddon>, String> {
+	let mut results = scan_local_installed(install, on_progress)?;
+	if check_remote {
+		return apply_remote_updates(install, results).await;
+	}
+
+	// First cache-less open: still fill missing icons/ids once, but never bypass
+	// browse cache and prefer id lookup / short search terms.
+	let addons_path = PathBuf::from(&install.addons_path);
+	let mut stored = manifest::load(&addons_path);
+	let mut manifest_dirty = sync_curseforge_ids_from_scan(&mut stored, &results);
+
+	for addon in &mut results {
+		if !needs_thumbnail(addon) && addon.curseforge_id.is_some() {
+			continue;
+		}
+		if let Some(remote) =
+			find_remote_for_installed(addon, install.game_version_type_id).await
+		{
+			if apply_remote_metadata(addon, &remote) {
+				upsert_remote_enrichment(&mut stored, addon);
+				manifest_dirty = true;
 			}
 		}
 	}

@@ -192,7 +192,7 @@ impl AddonJobProgress {
 pub struct AddonScanProgress {
 	/// Display name of the latest addon found.
 	pub name: String,
-	/// Total addons found so far (pre-suite-collapse folder count).
+	/// Running counter: increments by 1 for each discovered addon folder.
 	pub count: u32,
 }
 

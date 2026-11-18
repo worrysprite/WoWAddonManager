@@ -124,6 +124,20 @@ async fn rescan_installed_addons(
 	Ok(list)
 }
 
+/// Background follow-up after disk scan: CurseForge update check + icon cache.
+#[tauri::command]
+async fn enrich_installed_addons(install_id: String) -> Result<Vec<InstalledAddon>, String> {
+	log::info!("enrich_installed_addons install_id={install_id}");
+	let install = resolve_install_async(install_id.clone()).await?;
+	let list = scan::enrich_installed(&install).await?;
+	log::info!(
+		"enrich_installed_addons done install={} count={}",
+		install.label,
+		list.len()
+	);
+	Ok(list)
+}
+
 async fn resolve_install_async(install_id: String) -> Result<WowInstall, String> {
 	run_blocking(move || {
 		let cfg = config::load();
@@ -351,6 +365,7 @@ pub fn run() {
 			rescan_wow_installs,
 			list_installed_addons,
 			rescan_installed_addons,
+			enrich_installed_addons,
 			install_addon,
 			install_from_archive,
 			update_addon,
