@@ -1172,7 +1172,7 @@ mod tests {
 			game_version_type_id: Some(88568),
 			backup_path: String::new(),
 		};
-		let list = scan_disk_only(&install).unwrap();
+		let list = scan_disk_only(&install, None).unwrap();
 		assert_eq!(list.len(), 2, "Questie suite + QuestieDB, no duplicate parent");
 		assert!(list.iter().any(|a| a.folder_name == "Questie"));
 		assert!(list.iter().any(|a| a.folder_name == "QuestieDB"));
