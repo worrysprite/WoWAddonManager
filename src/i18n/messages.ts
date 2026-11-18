@@ -58,6 +58,8 @@ export type MessageKey =
 	| "card.updatingInstall"
 	| "card.suiteFolders"
 	| "installed.title"
+	| "installed.updateAll"
+	| "installed.updateAllRemaining"
 	| "installed.manual"
 	| "installed.rescan"
 	| "installed.openInterface"
@@ -230,6 +232,8 @@ export const en: Messages = {
 	"card.updatingInstall": "Installing…",
 	"card.suiteFolders": "{count} folders in package",
 	"installed.title": "{label} installed addons",
+	"installed.updateAll": "Update All",
+	"installed.updateAllRemaining": "{n} remaining",
 	"installed.manual": "Manual install",
 	"installed.rescan": "Scan Addons",
 	"installed.openInterface": "Open Interface Folder",
@@ -408,6 +412,8 @@ export const zhCN: Messages = {
 	"card.updatingInstall": "安装中…",
 	"card.suiteFolders": "含 {count} 个插件目录",
 	"installed.title": "{label} 已安装插件",
+	"installed.updateAll": "全部更新",
+	"installed.updateAllRemaining": "剩余{n}个",
 	"installed.manual": "手动安装",
 	"installed.rescan": "扫描插件",
 	"installed.openInterface": "打开插件目录",
