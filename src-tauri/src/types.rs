@@ -186,13 +186,13 @@ impl AddonJobProgress {
 	}
 }
 
-/// Live progress while scanning an AddOns folder (one event per discovered addon).
+/// Live progress while scanning an AddOns folder (one event per logical addon).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AddonScanProgress {
-	/// Display name of the latest addon found.
+	/// Display name of the latest logical addon found (suite parent title).
 	pub name: String,
-	/// Running counter: increments by 1 for each discovered addon folder.
+	/// Running counter of suite-collapsed addons found so far (matches final list rows).
 	pub count: u32,
 }
 

@@ -478,6 +478,8 @@ fn scan_disk_only(
 		.collect();
 
 	let mut results = Vec::new();
+	// Last emitted suite-collapsed count so suite children do not bump `n`.
+	let mut progress_count = 0u32;
 	for entry in fs::read_dir(&addons_path).map_err(|e| e.to_string())? {
 		let entry = entry.map_err(|e| e.to_string())?;
 		let path = entry.path();
@@ -568,11 +570,22 @@ fn scan_disk_only(
 			is_primary: tracked.map(|t| t.is_primary).unwrap_or(false),
 			archive_name: tracked.and_then(|t| t.archive_name.clone()),
 		});
+		// Count suite-collapsed logical addons (list parents), not TOC folders.
 		if let Some(cb) = on_progress {
-			cb(AddonScanProgress {
-				name: title,
-				count: results.len() as u32,
-			});
+			let collapsed = crate::wow::suite::collapse_suite_rows(results.clone());
+			let count = collapsed.len() as u32;
+			if count > progress_count {
+				let name = collapsed
+					.iter()
+					.find(|a| {
+						a.folder_name == folder_name
+							|| a.related_folders.iter().any(|f| f == &folder_name)
+					})
+					.map(|a| a.title.clone())
+					.unwrap_or(title);
+				cb(AddonScanProgress { name, count });
+				progress_count = count;
+			}
 		}
 	}
 
@@ -1324,8 +1337,120 @@ mod tests {
 			assert_eq!(event.count, (idx + 1) as u32);
 			assert!(!event.name.is_empty());
 		}
-		// Progress counts pre-suite-collapse folders; listed is collapsed.
-		assert!(events.last().unwrap().count as usize >= listed.len());
+		// Progress counts suite-collapsed logical addons (same as final list).
+		assert_eq!(events.last().unwrap().count as usize, listed.len());
+
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn scan_disk_progress_counts_suite_as_one_addon() {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-scan-progress-suite-{}-{}",
+			std::process::id(),
+			std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addons = dir.join("AddOns");
+		for (folder, toc) in [
+			(
+				"Questie",
+				"## Interface: 16001\n## Title: Questie\n## X-Curse-Project-ID: 3358\n",
+			),
+			(
+				"QuestieCompat",
+				"## Interface: 16001\n## Title: Questie Compat\n",
+			),
+			(
+				"QuestieDB",
+				"## Interface: 16001\n## Title: QuestieDB\n## X-Curse-Project-ID: 9999\n",
+			),
+		] {
+			let path = addons.join(folder);
+			fs::create_dir_all(&path).unwrap();
+			fs::write(path.join(format!("{folder}.toc")), toc).unwrap();
+		}
+		let related = vec!["Questie".into(), "QuestieCompat".into()];
+		for (folder, id, primary) in [
+			("Questie", Some(3358_i64), true),
+			("QuestieCompat", Some(3358), false),
+			("QuestieDB", Some(9999), true),
+		] {
+			manifest::upsert(
+				&addons,
+				ManifestAddon {
+					folder_name: folder.into(),
+					curseforge_id: id,
+					curseforge_slug: Some(if folder == "QuestieDB" {
+						"questiedb".into()
+					} else {
+						"questie".into()
+					}),
+					file_id: None,
+					name: Some(folder.into()),
+					author: None,
+					summary: None,
+					thumbnail_url: None,
+					categories: vec![],
+					flavors: vec![],
+					download_count: None,
+					latest_game_version: None,
+					website_url: None,
+					installed_at: None,
+					updated_at: None,
+					version: None,
+					install_source: Some("curseforge".into()),
+					archive_name: None,
+					related_folders: if folder == "QuestieDB" {
+						vec!["QuestieDB".into()]
+					} else {
+						related.clone()
+					},
+					is_primary: primary,
+				},
+			)
+			.unwrap();
+		}
+
+		let install = WowInstall {
+			id: "progress-suite".into(),
+			label: "Forever".into(),
+			flavor: "Forever".into(),
+			flavor_key: "forever".into(),
+			install_path: dir.display().to_string(),
+			addons_path: addons.display().to_string(),
+			game_version: Some("1.0.0.16001".into()),
+			game_version_type_id: Some(88568),
+			backup_path: String::new(),
+		};
+
+		let events = Arc::new(std::sync::Mutex::new(Vec::<AddonScanProgress>::new()));
+		let events_cb = Arc::clone(&events);
+		let cb: ScanProgressCb = Arc::new(move |progress: AddonScanProgress| {
+			events_cb.lock().unwrap().push(progress);
+		});
+		let listed = scan_disk_only(&install, Some(&cb)).unwrap();
+		assert_eq!(listed.len(), 2, "Questie suite + QuestieDB");
+
+		let events = events.lock().unwrap();
+		assert!(!events.is_empty());
+		// Counts are strictly increasing and never exceed collapsed list size.
+		let mut prev = 0u32;
+		for event in events.iter() {
+			assert!(event.count > prev);
+			prev = event.count;
+			assert!(event.count as usize <= listed.len());
+			assert!(!event.name.is_empty());
+		}
+		assert_eq!(events.last().unwrap().count as usize, listed.len());
+		// Three folders on disk must not produce three progress bumps.
+		assert!(
+			events.len() <= listed.len(),
+			"suite children must not each bump the counter"
+		);
 
 		let _ = fs::remove_dir_all(dir);
 	}
