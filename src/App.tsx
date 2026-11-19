@@ -89,17 +89,17 @@ export default function App() {
 		[installs],
 	);
 
-	// CurseForge addon update checks: ~3s after installs are known, then hourly.
+	// CurseForge addon update checks: ~3s after installs + API key, then hourly.
 	// Manual「扫描插件」triggers one immediate check via enrichAfterScan and resets the clock.
 	useEffect(() => {
-		if (!installIdsKey) {
+		if (!installIdsKey || !settings?.hasApiKey) {
 			stopInstalledUpdateSchedule();
 			return;
 		}
 		const ids = installIdsKey.split("\0").filter(Boolean);
 		startInstalledUpdateSchedule(() => ids, { runSoon: true });
 		return () => stopInstalledUpdateSchedule();
-	}, [installIdsKey]);
+	}, [installIdsKey, settings?.hasApiKey]);
 
 	function openSettings(focusInstallId: string | null = null) {
 		if (tab !== "settings") {

@@ -8,6 +8,11 @@ const HOURLY_CHECK_MS = 60 * 60 * 1_000;
 type Listener = (installId: string, list: InstalledAddon[]) => void;
 
 const listeners = new Set<Listener>();
+/** Latest CF-check result per install (for tabs that mount after the check). */
+const lastResults = new Map<string, InstalledAddon[]>();
+/** Bumped on every successful CF update emit — stale listInstalled loads must not clobber. */
+let updateEpoch = 0;
+
 let getInstallIds: (() => string[]) | null = null;
 let startTimer: ReturnType<typeof setTimeout> | null = null;
 let hourlyTimer: ReturnType<typeof setInterval> | null = null;
@@ -21,7 +26,20 @@ export function subscribeInstalledUpdates(listener: Listener): () => void {
 	};
 }
 
+/** Monotonic epoch for ignoring in-flight listInstalled that finished after a CF check. */
+export function getInstalledUpdateEpoch(): number {
+	return updateEpoch;
+}
+
+export function getLastInstalledUpdateResult(
+	installId: string,
+): InstalledAddon[] | null {
+	return lastResults.get(installId) ?? null;
+}
+
 function emit(installId: string, list: InstalledAddon[]) {
+	lastResults.set(installId, list);
+	updateEpoch += 1;
 	for (const listener of listeners) {
 		listener(installId, list);
 	}

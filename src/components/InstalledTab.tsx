@@ -6,6 +6,8 @@ import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
 import {
 	enrichAfterScan,
+	getInstalledUpdateEpoch,
+	getLastInstalledUpdateResult,
 	subscribeInstalledUpdates,
 } from "../installedUpdates";
 import type {
@@ -119,6 +121,7 @@ export function InstalledTab({
 		const seq = beginRequest(forInstallId);
 		if (seq === null) return;
 		const silent = Boolean(opts?.silent);
+		const epochAtStart = getInstalledUpdateEpoch();
 		if (!silent) {
 			setLoading(true);
 			setError(null);
@@ -126,6 +129,15 @@ export function InstalledTab({
 		try {
 			const list = await api.listInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
+			// Launch/hourly CF check may have finished while we awaited; do not
+			// clobber fresher hasUpdate badges with a stale listInstalled result.
+			if (getInstalledUpdateEpoch() !== epochAtStart) {
+				const newer = getLastInstalledUpdateResult(forInstallId);
+				if (newer) {
+					setAddons(newer);
+					return;
+				}
+			}
 			setAddons(list);
 		} catch (err) {
 			if (!isCurrent(forInstallId, seq)) return;
@@ -190,6 +202,12 @@ export function InstalledTab({
 			setSyncDialog(null);
 		}
 		setLoading(false);
+		// If launch/hourly check already finished for this client, show it now
+		// (InstalledTab may mount after the ~3s check with no live listener).
+		const already = getLastInstalledUpdateResult(install.id);
+		if (already) {
+			setAddons(already);
+		}
 		loadCached(install.id);
 	}, [install.id, refreshKey]);
 
