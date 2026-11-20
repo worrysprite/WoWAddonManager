@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api";
+import {
+	isApiDistributionDisabledError,
+	resolveCurseforgeAddonUrl,
+} from "../curseforgeErrors";
 import { useI18n } from "../i18n";
 import type { AddonSummary, FilterCatalog, SearchResult, WowInstall } from "../types";
 import { AddonCard } from "./AddonCard";
 import { AddonDetailModal } from "./AddonDetailModal";
+import { ApiDistributionDisabledDialog } from "./ApiDistributionDisabledDialog";
 import { FilterSidebar } from "./FilterSidebar";
 
 type Props = {
@@ -27,6 +32,10 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 	const [detail, setDetail] = useState<{ modId: number; title: string } | null>(
 		null,
 	);
+	const [apiDisabledDialog, setApiDisabledDialog] = useState<{
+		addonName: string;
+		curseforgeUrl: string;
+	} | null>(null);
 	const requestSeq = useRef(0);
 
 	useEffect(() => {
@@ -74,10 +83,25 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 
 	async function handleInstall(addon: AddonSummary, installId: string) {
 		setBusyId(addon.id);
+		setError(null);
 		try {
 			await api.installAddon(installId, addon);
 			onInstalled();
 		} catch (err) {
+			if (isApiDistributionDisabledError(err)) {
+				const curseforgeUrl = resolveCurseforgeAddonUrl({
+					websiteUrl: addon.websiteUrl,
+					slug: addon.slug,
+					id: addon.id,
+				});
+				if (curseforgeUrl) {
+					setApiDisabledDialog({
+						addonName: addon.name,
+						curseforgeUrl,
+					});
+					return;
+				}
+			}
 			setError(String(err));
 		} finally {
 			setBusyId(null);
@@ -216,6 +240,13 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 					modId={detail.modId}
 					fallbackTitle={detail.title}
 					onClose={() => setDetail(null)}
+				/>
+			) : null}
+			{apiDisabledDialog ? (
+				<ApiDistributionDisabledDialog
+					addonName={apiDisabledDialog.addonName}
+					curseforgeUrl={apiDisabledDialog.curseforgeUrl}
+					onClose={() => setApiDisabledDialog(null)}
 				/>
 			) : null}
 		</div>
