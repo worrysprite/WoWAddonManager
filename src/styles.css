@@ -981,6 +981,36 @@ button {
 	gap: 14px;
 }
 
+.api-disabled-modal {
+	width: min(440px, 100%);
+	max-height: none;
+}
+
+.api-disabled-modal h3 {
+	margin: 0;
+	font-size: 16px;
+}
+
+.api-disabled-body {
+	margin: 0;
+	line-height: 1.5;
+	font-size: 14px;
+}
+
+.api-disabled-hint {
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.45;
+}
+
+.api-disabled-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	flex-wrap: wrap;
+	margin-top: 4px;
+}
+
 .sync-modal-header {
 	display: flex;
 	align-items: baseline;

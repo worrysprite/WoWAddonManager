@@ -7,6 +7,9 @@ const WOW_GAME_ID: i32 = 1;
 /// WoW "Addons" class/section id from CurseForge categories.
 const WOW_ADDONS_CLASS_ID: i32 = 6552;
 const USER_AGENT: &str = "WoWAddonManager/0.4 (WorrySprite)";
+/// Stable token in download errors when the author disabled API distribution.
+/// Frontend matches this to show an actionable CurseForge dialog (not toast-only).
+pub const API_DISTRIBUTION_DISABLED_CODE: &str = "CF_API_DISTRIBUTION_DISABLED";
 
 #[derive(Debug, Error)]
 pub enum ApiError {
@@ -293,8 +296,9 @@ pub async fn download_addon_zip(
 			// Author opted out of API distribution (`allowModDistribution: false`).
 			return Err(ApiError::Http(
 				403,
-				"作者禁用了 API 分发，无法通过官方接口下载此插件。请到 CurseForge 网页手动下载。"
-					.into(),
+				format!(
+					"{API_DISTRIBUTION_DISABLED_CODE}: 作者禁用了 API 分发，无法通过官方接口下载此插件。请到 CurseForge 网页手动下载。"
+				),
 			));
 		}
 		Err(err) => return Err(err),

@@ -48,6 +48,11 @@ export type MessageKey =
 	| "detail.screenshots"
 	| "detail.description"
 	| "detail.noDescription"
+	| "apiDisabled.title"
+	| "apiDisabled.body"
+	| "apiDisabled.hint"
+	| "apiDisabled.openCurseForge"
+	| "apiDisabled.close"
 	| "card.installedAddon"
 	| "card.installedAt"
 	| "card.update"
@@ -223,6 +228,12 @@ export const en: Messages = {
 	"detail.screenshots": "Screenshots",
 	"detail.description": "Description",
 	"detail.noDescription": "No detailed description available.",
+	"apiDisabled.title": "Cannot download via API",
+	"apiDisabled.body":
+		"The author of “{name}” has disabled API distribution, so this app cannot download the file automatically.",
+	"apiDisabled.hint": "Open the CurseForge page to download manually, then use Manual install if needed.",
+	"apiDisabled.openCurseForge": "Open CurseForge",
+	"apiDisabled.close": "Close",
 	"card.installedAddon": "Installed addon",
 	"card.installedAt": "Installed {date}",
 	"card.update": "Update",
@@ -404,6 +415,12 @@ export const zhCN: Messages = {
 	"detail.screenshots": "截图",
 	"detail.description": "详细介绍",
 	"detail.noDescription": "暂无详细介绍。",
+	"apiDisabled.title": "无法通过 API 下载",
+	"apiDisabled.body":
+		"「{name}」的作者禁用了 API 分发，本应用无法自动下载该插件文件。",
+	"apiDisabled.hint": "请打开 CurseForge 页面手动下载，如需本地安装可使用「手动安装」。",
+	"apiDisabled.openCurseForge": "打开 CurseForge",
+	"apiDisabled.close": "关闭",
 	"card.installedAddon": "已安装插件",
 	"card.installedAt": "安装于 {date}",
 	"card.update": "更新",

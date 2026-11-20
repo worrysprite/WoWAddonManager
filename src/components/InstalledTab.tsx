@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
+import {
+	isApiDistributionDisabledError,
+	resolveCurseforgeAddonUrl,
+} from "../curseforgeErrors";
 import { useToast } from "../hooks/useToast";
 import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
@@ -19,6 +23,7 @@ import type {
 } from "../types";
 import { AddonCard } from "./AddonCard";
 import { AddonDetailModal } from "./AddonDetailModal";
+import { ApiDistributionDisabledDialog } from "./ApiDistributionDisabledDialog";
 
 type SyncDialogState = {
 	kind: "backup" | "restore";
@@ -63,6 +68,10 @@ export function InstalledTab({
 	const [detail, setDetail] = useState<{ modId: number; title: string } | null>(
 		null,
 	);
+	const [apiDisabledDialog, setApiDisabledDialog] = useState<{
+		addonName: string;
+		curseforgeUrl: string;
+	} | null>(null);
 	const syncOutputRef = useRef<HTMLPreElement | null>(null);
 	const syncLiveLogRef = useRef("");
 	const syncFlushTimerRef = useRef<number | null>(null);
@@ -71,7 +80,9 @@ export function InstalledTab({
 	const updateAllActiveRef = useRef(false);
 	const installIdRef = useRef(install.id);
 	const prevInstallIdRef = useRef(install.id);
+	const addonsRef = useRef<InstalledAddon[]>([]);
 	installIdRef.current = install.id;
+	addonsRef.current = addons;
 
 	function beginRequest(forInstallId: string): number | null {
 		if (installIdRef.current !== forInstallId) {
@@ -200,6 +211,7 @@ export function InstalledTab({
 			setScanning(false);
 			setScanProgress(null);
 			setSyncDialog(null);
+			setApiDisabledDialog(null);
 		}
 		setLoading(false);
 		// If launch/hourly check already finished for this client, show it now
@@ -210,6 +222,21 @@ export function InstalledTab({
 		}
 		loadCached(install.id);
 	}, [install.id, refreshKey]);
+
+	function openApiDisabledDialogForFolder(folderName: string) {
+		const addon = addonsRef.current.find((a) => a.folderName === folderName);
+		const curseforgeUrl = resolveCurseforgeAddonUrl({
+			websiteUrl: addon?.websiteUrl,
+			slug: addon?.curseforgeSlug,
+			id: addon?.curseforgeId,
+		});
+		if (!curseforgeUrl) return false;
+		setApiDisabledDialog({
+			addonName: addon?.title || folderName,
+			curseforgeUrl,
+		});
+		return true;
+	}
 
 	/** Run one addon/suite update; returns false if already busy or skipped. */
 	async function runUpdateJob(forInstallId: string, folderName: string): Promise<boolean> {
@@ -225,7 +252,14 @@ export function InstalledTab({
 			await loadCached(forInstallId, { silent: true });
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return true;
-			setError(String(err));
+			if (
+				isApiDistributionDisabledError(err) &&
+				openApiDisabledDialogForFolder(folderName)
+			) {
+				setError(null);
+			} else {
+				setError(String(err));
+			}
 		} finally {
 			if (installIdRef.current === forInstallId) {
 				clearBusy(folderName);
@@ -700,6 +734,13 @@ export function InstalledTab({
 					modId={detail.modId}
 					fallbackTitle={detail.title}
 					onClose={() => setDetail(null)}
+				/>
+			) : null}
+			{apiDisabledDialog ? (
+				<ApiDistributionDisabledDialog
+					addonName={apiDisabledDialog.addonName}
+					curseforgeUrl={apiDisabledDialog.curseforgeUrl}
+					onClose={() => setApiDisabledDialog(null)}
 				/>
 			) : null}
 			{toastNode}
