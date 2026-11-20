@@ -1,6 +1,6 @@
 # Windows 预编译包
 
-当前版本：**1.6.1**
+当前版本：**1.6.2**
 
 - 安装包（推荐，支持应用内自动更新）：见 [GitHub Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 中的 `*-setup.exe`
 - 便携版：同页的 `WoW-Addon-Manager.exe`（需手动下载替换）
@@ -15,6 +15,9 @@
 - 仓库 Secrets 需配置 `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。
 
 下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
+
+## 1.6.2 更新
+- 浏览页分类/版本/翻页等重新查询时，使用搜索框当前内容（含清空后），不再沿用上次提交的关键词
 
 ## 1.6.1 更新
 - 作者禁用 API 分发导致下载 403 时，弹出对话框说明原因，并提供「打开 CurseForge」按钮
