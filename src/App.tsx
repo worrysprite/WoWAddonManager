@@ -9,6 +9,10 @@ import { useI18n, type LocalePreference } from "./i18n";
 import { translateInstallLabel } from "./i18n/catalogLabels";
 import type { ApiHelp, SettingsView, WowInstall } from "./types";
 import {
+	startInstalledUpdateSchedule,
+	stopInstalledUpdateSchedule,
+} from "./installedUpdates";
+import {
 	installDownloadedUpdate,
 	openLatestReleasePage,
 } from "./updater";
@@ -79,6 +83,23 @@ export default function App() {
 		refreshAll();
 		api.getApiHelp().then(setApiHelp).catch(console.error);
 	}, []);
+
+	const installIdsKey = useMemo(
+		() => installs.map((i) => i.id).join("\0"),
+		[installs],
+	);
+
+	// CurseForge addon update checks: ~3s after installs + API key, then hourly.
+	// Manual「扫描插件」triggers one immediate check via enrichAfterScan and resets the clock.
+	useEffect(() => {
+		if (!installIdsKey || !settings?.hasApiKey) {
+			stopInstalledUpdateSchedule();
+			return;
+		}
+		const ids = installIdsKey.split("\0").filter(Boolean);
+		startInstalledUpdateSchedule(() => ids, { runSoon: true });
+		return () => stopInstalledUpdateSchedule();
+	}, [installIdsKey, settings?.hasApiKey]);
 
 	function openSettings(focusInstallId: string | null = null) {
 		if (tab !== "settings") {

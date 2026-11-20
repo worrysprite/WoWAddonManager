@@ -65,12 +65,62 @@ pub async fn list_installed_with_progress(
 		install.label,
 		force_rescan
 	);
+	// Manual「扫描插件」is disk-only: return the list immediately. CurseForge
+	// update checks are hourly (see frontend schedule); icons localize separately.
+	if force_rescan {
+		let results = scan_local_installed(install, on_progress.as_ref())?;
+		save_scan_cache(install, &results)?;
+		log::info!(
+			"list_installed disk-scan done install={} count={}",
+			install.label,
+			results.len()
+		);
+		return Ok(results);
+	}
+
 	let mut results =
-		scan_disk_with_updates(install, force_rescan, on_progress.as_ref()).await?;
+		scan_disk_with_updates(install, false, on_progress.as_ref()).await?;
 	crate::icon_cache::localize_installed_thumbnails(&mut results).await;
 	save_scan_cache(install, &results)?;
 	log::info!(
 		"list_installed scanned install={} count={}",
+		install.label,
+		results.len()
+	);
+	Ok(results)
+}
+
+fn cached_or_local_scan(install: &WowInstall) -> Result<Vec<InstalledAddon>, String> {
+	match load_scan_cache(install) {
+		Some(cache) if cache.scanned_at.is_some() => Ok(cache.addons),
+		_ => scan_local_installed(install, None),
+	}
+}
+
+/// CurseForge update flags only (no icon download). Used by the hourly checker.
+pub async fn check_installed_updates(
+	install: &WowInstall,
+) -> Result<Vec<InstalledAddon>, String> {
+	let results = cached_or_local_scan(install)?;
+	let results = apply_remote_updates(install, results).await?;
+	save_scan_cache(install, &results)?;
+	log::info!(
+		"check_installed_updates done install={} count={}",
+		install.label,
+		results.len()
+	);
+	Ok(results)
+}
+
+/// Cache remote thumbnails locally (no CurseForge update check).
+pub async fn localize_installed_icons(
+	install: &WowInstall,
+) -> Result<Vec<InstalledAddon>, String> {
+	let mut results = cached_or_local_scan(install)?;
+	crate::icon_cache::localize_installed_thumbnails(&mut results).await;
+	save_scan_cache(install, &results)?;
+	log::info!(
+		"localize_installed_icons done install={} count={}",
 		install.label,
 		results.len()
 	);
@@ -266,87 +316,142 @@ fn strip_manual_category(addon: &mut InstalledAddon) {
 		.retain(|c| !c.eq_ignore_ascii_case("Manual"));
 }
 
-async fn scan_disk_with_updates(
+/// Disk walk + suite collapse only (no CurseForge / icon network).
+fn scan_local_installed(
 	install: &WowInstall,
-	check_remote: bool,
 	on_progress: Option<&ScanProgressCb>,
 ) -> Result<Vec<InstalledAddon>, String> {
 	let mut results = scan_disk_only(install, on_progress)?;
 	let addons_path = PathBuf::from(&install.addons_path);
-	let mut stored = manifest::load(&addons_path);
-	let mut manifest_dirty = false;
 
 	for addon in &mut results {
 		strip_manual_category(addon);
 	}
 
-	// Collapse suites first so update checks run once per CurseForge package.
 	results = crate::wow::suite::collapse_suite_rows(results);
 	let _ = crate::wow::suite::sync_suite_flags_to_manifest(&addons_path, &results);
+
+	// Keep prior update badges / icons until background enrich finishes.
+	if let Some(previous) = load_scan_cache(install) {
+		let prev_map: HashMap<_, _> = previous
+			.addons
+			.into_iter()
+			.map(|a| (a.folder_name.clone(), a))
+			.collect();
+		for addon in &mut results {
+			let Some(prev) = prev_map.get(&addon.folder_name) else {
+				continue;
+			};
+			if addon.file_id == prev.file_id {
+				addon.has_update = prev.has_update;
+				addon.remote_version = prev.remote_version.clone();
+				addon.remote_file_id = prev.remote_file_id;
+			}
+			if needs_thumbnail(addon) {
+				addon.thumbnail_url = prev.thumbnail_url.clone();
+			}
+		}
+	}
+
+	results.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+	Ok(results)
+}
+
+async fn apply_remote_updates(
+	install: &WowInstall,
+	mut results: Vec<InstalledAddon>,
+) -> Result<Vec<InstalledAddon>, String> {
+	let addons_path = PathBuf::from(&install.addons_path);
+	let mut stored = manifest::load(&addons_path);
+	let mut manifest_dirty = false;
 
 	if sync_curseforge_ids_from_scan(&mut stored, &results) {
 		manifest_dirty = true;
 	}
 
-	if check_remote {
-		// One batch request for all known CurseForge ids instead of N searches.
-		let ids: Vec<i64> = results.iter().filter_map(|a| a.curseforge_id).collect();
-		let by_id =
-			curseforge::get_addons_by_ids(&ids, install.game_version_type_id).await;
+	// One batch request for all known CurseForge ids instead of N searches.
+	let ids: Vec<i64> = results.iter().filter_map(|a| a.curseforge_id).collect();
+	let by_id = curseforge::get_addons_by_ids(&ids, install.game_version_type_id).await;
 
-		let batch_ok = !ids.is_empty() && !by_id.is_empty();
-		for addon in &mut results {
-			let remote = match addon.curseforge_id {
-				Some(id) => {
-					if let Some(item) = by_id.get(&id) {
-						Some(item.clone())
-					} else if !batch_ok {
-						// Batch failed or empty key — fall back to a single GET, never search.
-						curseforge::get_addon_for_flavor(id, install.game_version_type_id).await
-					} else {
-						None
-					}
+	let batch_ok = !ids.is_empty() && !by_id.is_empty();
+	for addon in &mut results {
+		// Clear stale flags; recompute from remote.
+		addon.has_update = false;
+		addon.remote_version = None;
+		addon.remote_file_id = None;
+
+		let remote = match addon.curseforge_id {
+			Some(id) => {
+				if let Some(item) = by_id.get(&id) {
+					Some(item.clone())
+				} else if !batch_ok {
+					// Batch failed or empty key — fall back to a single GET, never search.
+					curseforge::get_addon_for_flavor(id, install.game_version_type_id).await
+				} else {
+					None
 				}
-				None => find_remote_via_search(addon, install.game_version_type_id).await,
-			};
-			// Retail-only CurseForge ids bound by mistake (e.g. PostBox 1680332 on
-			// Forever) have no latest_file_id for this flavor — search again.
-			let remote = match remote {
-				Some(item)
-					if install.game_version_type_id.is_some() && item.latest_file_id.is_none() =>
-				{
-					log::warn!(
-						"installed {} bound to mod {} with no file for preferred={:?}; re-searching",
-						addon.folder_name,
-						item.id,
-						install.game_version_type_id
-					);
-					find_remote_via_search(addon, install.game_version_type_id).await
-				}
-				other => other,
-			};
-			if let Some(remote) = remote {
-				apply_update_flags(addon, &remote);
-				if apply_remote_metadata(addon, &remote) {
-					upsert_remote_enrichment(&mut stored, addon);
-					manifest_dirty = true;
-				}
+			}
+			None => find_remote_via_search(addon, install.game_version_type_id).await,
+		};
+		// Retail-only CurseForge ids bound by mistake (e.g. PostBox 1680332 on
+		// Forever) have no latest_file_id for this flavor — search again.
+		let remote = match remote {
+			Some(item)
+				if install.game_version_type_id.is_some() && item.latest_file_id.is_none() =>
+			{
+				log::warn!(
+					"installed {} bound to mod {} with no file for preferred={:?}; re-searching",
+					addon.folder_name,
+					item.id,
+					install.game_version_type_id
+				);
+				find_remote_via_search(addon, install.game_version_type_id).await
+			}
+			other => other,
+		};
+		if let Some(remote) = remote {
+			apply_update_flags(addon, &remote);
+			if apply_remote_metadata(addon, &remote) {
+				upsert_remote_enrichment(&mut stored, addon);
+				manifest_dirty = true;
 			}
 		}
-	} else {
-		// First cache-less open: still fill missing icons/ids once, but never bypass
-		// browse cache and prefer id lookup / short search terms.
-		for addon in &mut results {
-			if !needs_thumbnail(addon) && addon.curseforge_id.is_some() {
-				continue;
-			}
-			if let Some(remote) =
-				find_remote_for_installed(addon, install.game_version_type_id).await
-			{
-				if apply_remote_metadata(addon, &remote) {
-					upsert_remote_enrichment(&mut stored, addon);
-					manifest_dirty = true;
-				}
+	}
+
+	if manifest_dirty {
+		let _ = manifest::save(&addons_path, &stored);
+	}
+
+	results.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+	Ok(results)
+}
+
+async fn scan_disk_with_updates(
+	install: &WowInstall,
+	check_remote: bool,
+	on_progress: Option<&ScanProgressCb>,
+) -> Result<Vec<InstalledAddon>, String> {
+	let mut results = scan_local_installed(install, on_progress)?;
+	if check_remote {
+		return apply_remote_updates(install, results).await;
+	}
+
+	// First cache-less open: still fill missing icons/ids once, but never bypass
+	// browse cache and prefer id lookup / short search terms.
+	let addons_path = PathBuf::from(&install.addons_path);
+	let mut stored = manifest::load(&addons_path);
+	let mut manifest_dirty = sync_curseforge_ids_from_scan(&mut stored, &results);
+
+	for addon in &mut results {
+		if !needs_thumbnail(addon) && addon.curseforge_id.is_some() {
+			continue;
+		}
+		if let Some(remote) =
+			find_remote_for_installed(addon, install.game_version_type_id).await
+		{
+			if apply_remote_metadata(addon, &remote) {
+				upsert_remote_enrichment(&mut stored, addon);
+				manifest_dirty = true;
 			}
 		}
 	}
@@ -373,6 +478,8 @@ fn scan_disk_only(
 		.collect();
 
 	let mut results = Vec::new();
+	// Last emitted suite-collapsed count so suite children do not bump `n`.
+	let mut progress_count = 0u32;
 	for entry in fs::read_dir(&addons_path).map_err(|e| e.to_string())? {
 		let entry = entry.map_err(|e| e.to_string())?;
 		let path = entry.path();
@@ -463,11 +570,22 @@ fn scan_disk_only(
 			is_primary: tracked.map(|t| t.is_primary).unwrap_or(false),
 			archive_name: tracked.and_then(|t| t.archive_name.clone()),
 		});
+		// Count suite-collapsed logical addons (list parents), not TOC folders.
 		if let Some(cb) = on_progress {
-			cb(AddonScanProgress {
-				name: title,
-				count: results.len() as u32,
-			});
+			let collapsed = crate::wow::suite::collapse_suite_rows(results.clone());
+			let count = collapsed.len() as u32;
+			if count > progress_count {
+				let name = collapsed
+					.iter()
+					.find(|a| {
+						a.folder_name == folder_name
+							|| a.related_folders.iter().any(|f| f == &folder_name)
+					})
+					.map(|a| a.title.clone())
+					.unwrap_or(title);
+				cb(AddonScanProgress { name, count });
+				progress_count = count;
+			}
 		}
 	}
 
@@ -1219,8 +1337,120 @@ mod tests {
 			assert_eq!(event.count, (idx + 1) as u32);
 			assert!(!event.name.is_empty());
 		}
-		// Progress counts pre-suite-collapse folders; listed is collapsed.
-		assert!(events.last().unwrap().count as usize >= listed.len());
+		// Progress counts suite-collapsed logical addons (same as final list).
+		assert_eq!(events.last().unwrap().count as usize, listed.len());
+
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn scan_disk_progress_counts_suite_as_one_addon() {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-scan-progress-suite-{}-{}",
+			std::process::id(),
+			std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addons = dir.join("AddOns");
+		for (folder, toc) in [
+			(
+				"Questie",
+				"## Interface: 16001\n## Title: Questie\n## X-Curse-Project-ID: 3358\n",
+			),
+			(
+				"QuestieCompat",
+				"## Interface: 16001\n## Title: Questie Compat\n",
+			),
+			(
+				"QuestieDB",
+				"## Interface: 16001\n## Title: QuestieDB\n## X-Curse-Project-ID: 9999\n",
+			),
+		] {
+			let path = addons.join(folder);
+			fs::create_dir_all(&path).unwrap();
+			fs::write(path.join(format!("{folder}.toc")), toc).unwrap();
+		}
+		let related = vec!["Questie".into(), "QuestieCompat".into()];
+		for (folder, id, primary) in [
+			("Questie", Some(3358_i64), true),
+			("QuestieCompat", Some(3358), false),
+			("QuestieDB", Some(9999), true),
+		] {
+			manifest::upsert(
+				&addons,
+				ManifestAddon {
+					folder_name: folder.into(),
+					curseforge_id: id,
+					curseforge_slug: Some(if folder == "QuestieDB" {
+						"questiedb".into()
+					} else {
+						"questie".into()
+					}),
+					file_id: None,
+					name: Some(folder.into()),
+					author: None,
+					summary: None,
+					thumbnail_url: None,
+					categories: vec![],
+					flavors: vec![],
+					download_count: None,
+					latest_game_version: None,
+					website_url: None,
+					installed_at: None,
+					updated_at: None,
+					version: None,
+					install_source: Some("curseforge".into()),
+					archive_name: None,
+					related_folders: if folder == "QuestieDB" {
+						vec!["QuestieDB".into()]
+					} else {
+						related.clone()
+					},
+					is_primary: primary,
+				},
+			)
+			.unwrap();
+		}
+
+		let install = WowInstall {
+			id: "progress-suite".into(),
+			label: "Forever".into(),
+			flavor: "Forever".into(),
+			flavor_key: "forever".into(),
+			install_path: dir.display().to_string(),
+			addons_path: addons.display().to_string(),
+			game_version: Some("1.0.0.16001".into()),
+			game_version_type_id: Some(88568),
+			backup_path: String::new(),
+		};
+
+		let events = Arc::new(std::sync::Mutex::new(Vec::<AddonScanProgress>::new()));
+		let events_cb = Arc::clone(&events);
+		let cb: ScanProgressCb = Arc::new(move |progress: AddonScanProgress| {
+			events_cb.lock().unwrap().push(progress);
+		});
+		let listed = scan_disk_only(&install, Some(&cb)).unwrap();
+		assert_eq!(listed.len(), 2, "Questie suite + QuestieDB");
+
+		let events = events.lock().unwrap();
+		assert!(!events.is_empty());
+		// Counts are strictly increasing and never exceed collapsed list size.
+		let mut prev = 0u32;
+		for event in events.iter() {
+			assert!(event.count > prev);
+			prev = event.count;
+			assert!(event.count as usize <= listed.len());
+			assert!(!event.name.is_empty());
+		}
+		assert_eq!(events.last().unwrap().count as usize, listed.len());
+		// Three folders on disk must not produce three progress bumps.
+		assert!(
+			events.len() <= listed.len(),
+			"suite children must not each bump the counter"
+		);
 
 		let _ = fs::remove_dir_all(dir);
 	}

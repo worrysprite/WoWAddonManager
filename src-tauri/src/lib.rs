@@ -124,6 +124,34 @@ async fn rescan_installed_addons(
 	Ok(list)
 }
 
+/// Hourly CurseForge update check for one client install.
+#[tauri::command]
+async fn check_installed_updates(install_id: String) -> Result<Vec<InstalledAddon>, String> {
+	log::info!("check_installed_updates install_id={install_id}");
+	let install = resolve_install_async(install_id.clone()).await?;
+	let list = scan::check_installed_updates(&install).await?;
+	log::info!(
+		"check_installed_updates done install={} count={}",
+		install.label,
+		list.len()
+	);
+	Ok(list)
+}
+
+/// After disk scan: localize remote icons only (no update check).
+#[tauri::command]
+async fn localize_installed_icons(install_id: String) -> Result<Vec<InstalledAddon>, String> {
+	log::info!("localize_installed_icons install_id={install_id}");
+	let install = resolve_install_async(install_id.clone()).await?;
+	let list = scan::localize_installed_icons(&install).await?;
+	log::info!(
+		"localize_installed_icons done install={} count={}",
+		install.label,
+		list.len()
+	);
+	Ok(list)
+}
+
 async fn resolve_install_async(install_id: String) -> Result<WowInstall, String> {
 	run_blocking(move || {
 		let cfg = config::load();
@@ -351,6 +379,8 @@ pub fn run() {
 			rescan_wow_installs,
 			list_installed_addons,
 			rescan_installed_addons,
+			check_installed_updates,
+			localize_installed_icons,
 			install_addon,
 			install_from_archive,
 			update_addon,

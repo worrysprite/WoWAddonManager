@@ -4,6 +4,12 @@ import * as api from "../api";
 import { useToast } from "../hooks/useToast";
 import { useI18n } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
+import {
+	enrichAfterScan,
+	getInstalledUpdateEpoch,
+	getLastInstalledUpdateResult,
+	subscribeInstalledUpdates,
+} from "../installedUpdates";
 import type {
 	AddonJobProgress,
 	AddonScanProgress,
@@ -115,6 +121,7 @@ export function InstalledTab({
 		const seq = beginRequest(forInstallId);
 		if (seq === null) return;
 		const silent = Boolean(opts?.silent);
+		const epochAtStart = getInstalledUpdateEpoch();
 		if (!silent) {
 			setLoading(true);
 			setError(null);
@@ -122,6 +129,15 @@ export function InstalledTab({
 		try {
 			const list = await api.listInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
+			// Launch/hourly CF check may have finished while we awaited; do not
+			// clobber fresher hasUpdate badges with a stale listInstalled result.
+			if (getInstalledUpdateEpoch() !== epochAtStart) {
+				const newer = getLastInstalledUpdateResult(forInstallId);
+				if (newer) {
+					setAddons(newer);
+					return;
+				}
+			}
 			setAddons(list);
 		} catch (err) {
 			if (!isCurrent(forInstallId, seq)) return;
@@ -148,16 +164,24 @@ export function InstalledTab({
 			if (!isCurrent(forInstallId, seq)) return;
 			setAddons(list);
 			showToast(t("installed.rescanDone", { count: list.length }));
+			setScanning(false);
+			setScanProgress(null);
+			// Background: one CF update check + icons; hourly clock resets from now.
+			void enrichAfterScan(forInstallId);
 		} catch (err) {
 			if (!isCurrent(forInstallId, seq)) return;
 			setError(String(err));
-		} finally {
-			if (isCurrent(forInstallId, seq)) {
-				setScanning(false);
-				setScanProgress(null);
-			}
+			setScanning(false);
+			setScanProgress(null);
 		}
 	}
+
+	useEffect(() => {
+		return subscribeInstalledUpdates((installId, list) => {
+			if (installId !== installIdRef.current) return;
+			setAddons(list);
+		});
+	}, []);
 
 	useEffect(() => {
 		const switched = prevInstallIdRef.current !== install.id;
@@ -178,6 +202,12 @@ export function InstalledTab({
 			setSyncDialog(null);
 		}
 		setLoading(false);
+		// If launch/hourly check already finished for this client, show it now
+		// (InstalledTab may mount after the ~3s check with no live listener).
+		const already = getLastInstalledUpdateResult(install.id);
+		if (already) {
+			setAddons(already);
+		}
 		loadCached(install.id);
 	}, [install.id, refreshKey]);
 
@@ -480,6 +510,7 @@ export function InstalledTab({
 			const list = await api.rescanInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
 			setAddons(list);
+			void enrichAfterScan(forInstallId);
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			// Restore already succeeded; keep success dialog and surface rescan separately.
