@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { resolveAddonModId } from "../addonDetail";
-import { useI18n } from "../i18n";
+import { useI18n, type MessageKey } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
 import type {
 	AddonJobProgress,
@@ -27,13 +27,21 @@ function resolveThumbSrc(url: string): string {
 	}
 }
 
+export type BrowseInstallState = {
+	installed: InstalledAddon | null;
+	needsUpdate: boolean;
+	busy: boolean;
+	progress: AddonJobProgress | null;
+};
+
 type BrowseProps = {
 	mode: "browse";
 	addon: AddonSummary;
 	installs: WowInstall[];
 	/** Sidebar-selected CurseForge gameVersionTypeIds; empty = no extra filter. */
 	selectedFlavorTypeIds?: number[];
-	busy?: boolean;
+	/** Per-install-id job / installed state for this Browse card. */
+	installStateById?: Record<string, BrowseInstallState>;
 	onInstall: (installId: string) => void;
 	onOpenDetail?: (modId: number, title: string) => void;
 };
@@ -125,6 +133,67 @@ function TitleLink({
 	);
 }
 
+function jobProgressLabel(
+	t: (key: MessageKey, vars?: Record<string, string | number>) => string,
+	progress: AddonJobProgress | null | undefined,
+): string | null {
+	if (!progress) return null;
+	if (progress.stage === "extract") return t("card.updatingExtract");
+	if (progress.stage === "install") return t("card.updatingInstall");
+	const pct = progress.percent;
+	if (typeof pct === "number") {
+		return t("card.updatingDownloadPct", { percent: String(pct) });
+	}
+	return t("card.updatingDownload");
+}
+
+function jobProgressPct(progress: AddonJobProgress | null | undefined): number {
+	if (!progress) return 0;
+	if (progress.stage === "download" && typeof progress.percent === "number") {
+		return Math.max(0, Math.min(100, progress.percent));
+	}
+	if (progress.stage === "extract" || progress.stage === "install") {
+		return 100;
+	}
+	return 0;
+}
+
+function ProgressStatus({
+	label,
+	percent,
+}: {
+	label: string;
+	percent: number;
+}) {
+	return (
+		<div
+			className="update-progress"
+			role="status"
+			aria-live="polite"
+			aria-label={label}
+		>
+			<div className="update-progress-bar" style={{ width: `${percent}%` }} />
+			<span className="update-progress-label">{label}</span>
+		</div>
+	);
+}
+
+function browseTargetVersion(addon: AddonSummary): string {
+	const fromListing = addon.latestVersion?.trim();
+	if (fromListing) return fromListing;
+	const fromDate = addon.updatedAt?.trim();
+	return fromDate || "";
+}
+
+function browseInstalledVersion(
+	addon: AddonSummary,
+	installed: InstalledAddon | null,
+): string {
+	const local = installed?.version?.trim();
+	if (local) return local;
+	return browseTargetVersion(addon);
+}
+
 export function AddonCard(props: Props) {
 	const { t, locale } = useI18n();
 
@@ -133,7 +202,7 @@ export function AddonCard(props: Props) {
 			addon,
 			installs,
 			selectedFlavorTypeIds = [],
-			busy,
+			installStateById = {},
 			onInstall,
 			onOpenDetail,
 		} = props;
@@ -148,6 +217,7 @@ export function AddonCard(props: Props) {
 			modId && onOpenDetail
 				? () => onOpenDetail(modId, addon.name)
 				: undefined;
+		const targetVersion = browseTargetVersion(addon);
 		return (
 			<article className="addon-card addon-card-browse">
 				<Thumb
@@ -184,22 +254,80 @@ export function AddonCard(props: Props) {
 					) : targets.length === 0 ? (
 						<span className="muted">{t("card.noCompatibleInstall")}</span>
 					) : (
-						targets.map((install) => (
-							<button
-								key={install.id}
-								className="btn primary"
-								disabled={busy}
-								onClick={() => onInstall(install.id)}
-							>
-								{t("card.installTo", {
-									label: translateInstallLabel(
-										install.flavorKey,
-										install.label,
-										locale,
-									),
-								})}
-							</button>
-						))
+						targets.map((install) => {
+							const state = installStateById[install.id];
+							const busy = Boolean(state?.busy);
+							const progress = state?.progress ?? null;
+							const progressLabel = jobProgressLabel(t, progress);
+							if (busy && progressLabel) {
+								return (
+									<ProgressStatus
+										key={install.id}
+										label={progressLabel}
+										percent={jobProgressPct(progress)}
+									/>
+								);
+							}
+							const installed = state?.installed ?? null;
+							if (installed && !state?.needsUpdate) {
+								const version = browseInstalledVersion(addon, installed);
+								return (
+									<button
+										key={install.id}
+										type="button"
+										className="btn"
+										disabled
+										title={translateInstallLabel(
+											install.flavorKey,
+											install.label,
+											locale,
+										)}
+									>
+										{version
+											? t("card.versionInstalled", { version })
+											: t("card.versionInstalled", { version: "—" })}
+									</button>
+								);
+							}
+							if (installed && state?.needsUpdate) {
+								const version = targetVersion || browseInstalledVersion(addon, installed);
+								return (
+									<button
+										key={install.id}
+										type="button"
+										className="btn primary"
+										disabled={busy}
+										onClick={() => onInstall(install.id)}
+										title={translateInstallLabel(
+											install.flavorKey,
+											install.label,
+											locale,
+										)}
+									>
+										{version
+											? t("card.updateToVersion", { version })
+											: t("card.update")}
+									</button>
+								);
+							}
+							return (
+								<button
+									key={install.id}
+									type="button"
+									className="btn primary"
+									disabled={busy}
+									onClick={() => onInstall(install.id)}
+								>
+									{t("card.installTo", {
+										label: translateInstallLabel(
+											install.flavorKey,
+											install.label,
+											locale,
+										),
+									})}
+								</button>
+							);
+						})
 					)}
 				</div>
 			</article>
@@ -216,22 +344,8 @@ export function AddonCard(props: Props) {
 	const openLabel = t("card.openDetail");
 	const openDetail =
 		modId && onOpenDetail ? () => onOpenDetail(modId, addon.title) : undefined;
-	const progressLabel = (() => {
-		if (!updateProgress) return null;
-		if (updateProgress.stage === "extract") return t("card.updatingExtract");
-		if (updateProgress.stage === "install") return t("card.updatingInstall");
-		const pct = updateProgress.percent;
-		if (typeof pct === "number") {
-			return t("card.updatingDownloadPct", { percent: String(pct) });
-		}
-		return t("card.updatingDownload");
-	})();
-	const progressPct =
-		updateProgress?.stage === "download" && typeof updateProgress.percent === "number"
-			? Math.max(0, Math.min(100, updateProgress.percent))
-			: updateProgress?.stage === "extract" || updateProgress?.stage === "install"
-				? 100
-				: 0;
+	const progressLabel = jobProgressLabel(t, updateProgress);
+	const progressPct = jobProgressPct(updateProgress);
 
 	return (
 		<article className="addon-card addon-card-installed">
@@ -272,18 +386,7 @@ export function AddonCard(props: Props) {
 			</div>
 			<div className="card-actions card-actions-side">
 				{updating && progressLabel ? (
-					<div
-						className="update-progress"
-						role="status"
-						aria-live="polite"
-						aria-label={progressLabel}
-					>
-						<div
-							className="update-progress-bar"
-							style={{ width: `${progressPct}%` }}
-						/>
-						<span className="update-progress-label">{progressLabel}</span>
-					</div>
+					<ProgressStatus label={progressLabel} percent={progressPct} />
 				) : (
 					<>
 						{addon.hasUpdate ? (

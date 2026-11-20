@@ -12,6 +12,8 @@ export interface AddonSummary {
 	flavors: string[];
 	websiteUrl: string;
 	latestFileId?: number | null;
+	/** Display version for the Browse listing's latest file. */
+	latestVersion?: string | null;
 }
 
 export interface AddonScreenshot {

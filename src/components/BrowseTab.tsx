@@ -5,8 +5,16 @@ import {
 	resolveCurseforgeAddonUrl,
 } from "../curseforgeErrors";
 import { useI18n } from "../i18n";
-import type { AddonSummary, FilterCatalog, SearchResult, WowInstall } from "../types";
-import { AddonCard } from "./AddonCard";
+import { subscribeInstalledUpdates } from "../installedUpdates";
+import type {
+	AddonJobProgress,
+	AddonSummary,
+	FilterCatalog,
+	InstalledAddon,
+	SearchResult,
+	WowInstall,
+} from "../types";
+import { AddonCard, type BrowseInstallState } from "./AddonCard";
 import { AddonDetailModal } from "./AddonDetailModal";
 import { ApiDistributionDisabledDialog } from "./ApiDistributionDisabledDialog";
 import { FilterSidebar } from "./FilterSidebar";
@@ -15,6 +23,37 @@ type Props = {
 	installs: WowInstall[];
 	onInstalled: () => void;
 };
+
+function jobKey(addonId: number, installId: string): string {
+	return `${addonId}:${installId}`;
+}
+
+function findInstalledMatch(
+	addon: AddonSummary,
+	list: InstalledAddon[],
+): InstalledAddon | null {
+	const byId = list.find((item) => item.curseforgeId === addon.id);
+	if (byId) return byId;
+	const slug = addon.slug.trim().toLowerCase();
+	if (!slug) return null;
+	return (
+		list.find((item) => item.curseforgeSlug?.trim().toLowerCase() === slug) ??
+		null
+	);
+}
+
+function browseNeedsUpdate(
+	addon: AddonSummary,
+	installed: InstalledAddon,
+): boolean {
+	const remoteFile = addon.latestFileId;
+	if (remoteFile == null) {
+		return Boolean(installed.hasUpdate);
+	}
+	const localFile = installed.fileId;
+	if (localFile == null) return true;
+	return remoteFile > localFile;
+}
 
 export function BrowseTab({ installs, onInstalled }: Props) {
 	const { t } = useI18n();
@@ -26,7 +65,13 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 	const [categories, setCategories] = useState<string[]>([]);
 	const [flavors, setFlavors] = useState<number[]>([]);
 	const [loading, setLoading] = useState(false);
-	const [busyId, setBusyId] = useState<number | null>(null);
+	const [busyKeys, setBusyKeys] = useState<Record<string, true>>({});
+	const [progressByKey, setProgressByKey] = useState<
+		Record<string, AddonJobProgress>
+	>({});
+	const [installedByInstallId, setInstalledByInstallId] = useState<
+		Record<string, InstalledAddon[]>
+	>({});
 	const [error, setError] = useState<string | null>(null);
 	const [reloadToken, setReloadToken] = useState(0);
 	const [detail, setDetail] = useState<{ modId: number; title: string } | null>(
@@ -37,6 +82,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 		curseforgeUrl: string;
 	} | null>(null);
 	const requestSeq = useRef(0);
+	const installedLoadSeq = useRef(0);
 
 	useEffect(() => {
 		api.getFilterCatalog().then(setCatalog).catch(console.error);
@@ -46,6 +92,37 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 	function applyLiveSearch() {
 		setSearch(draftSearch.trim());
 	}
+
+	useEffect(() => {
+		const seq = ++installedLoadSeq.current;
+		let cancelled = false;
+		(async () => {
+			const entries = await Promise.all(
+				installs.map(async (install) => {
+					try {
+						const list = await api.listInstalledAddons(install.id);
+						return [install.id, list] as const;
+					} catch {
+						return [install.id, [] as InstalledAddon[]] as const;
+					}
+				}),
+			);
+			if (cancelled || seq !== installedLoadSeq.current) return;
+			setInstalledByInstallId(Object.fromEntries(entries));
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [installs]);
+
+	useEffect(() => {
+		return subscribeInstalledUpdates((installId, list) => {
+			setInstalledByInstallId((prev) => ({
+				...prev,
+				[installId]: list,
+			}));
+		});
+	}, []);
 
 	async function load() {
 		const seq = ++requestSeq.current;
@@ -88,11 +165,39 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 		return Math.max(1, Math.ceil(result.total / result.pageSize));
 	}, [result]);
 
+	function upsertInstalled(installId: string, installed: InstalledAddon) {
+		setInstalledByInstallId((prev) => {
+			const list = prev[installId] ?? [];
+			const related = new Set(installed.relatedFolders ?? [installed.folderName]);
+			const withoutSuite = list.filter(
+				(item) =>
+					item.folderName !== installed.folderName &&
+					!related.has(item.folderName) &&
+					!(
+						installed.curseforgeId != null &&
+						item.curseforgeId === installed.curseforgeId
+					),
+			);
+			return {
+				...prev,
+				[installId]: [...withoutSuite, installed],
+			};
+		});
+	}
+
 	async function handleInstall(addon: AddonSummary, installId: string) {
-		setBusyId(addon.id);
+		const key = jobKey(addon.id, installId);
+		setBusyKeys((prev) => ({ ...prev, [key]: true }));
+		setProgressByKey((prev) => ({
+			...prev,
+			[key]: { stage: "download", percent: 0 },
+		}));
 		setError(null);
 		try {
-			await api.installAddon(installId, addon);
+			const installed = await api.installAddon(installId, addon, (progress) => {
+				setProgressByKey((prev) => ({ ...prev, [key]: progress }));
+			});
+			upsertInstalled(installId, installed);
 			onInstalled();
 		} catch (err) {
 			if (isApiDistributionDisabledError(err)) {
@@ -111,8 +216,33 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 			}
 			setError(String(err));
 		} finally {
-			setBusyId(null);
+			setBusyKeys((prev) => {
+				const next = { ...prev };
+				delete next[key];
+				return next;
+			});
+			setProgressByKey((prev) => {
+				const next = { ...prev };
+				delete next[key];
+				return next;
+			});
 		}
+	}
+
+	function installStateFor(
+		addon: AddonSummary,
+		installId: string,
+	): BrowseInstallState {
+		const key = jobKey(addon.id, installId);
+		const list = installedByInstallId[installId] ?? [];
+		const installed = findInstalledMatch(addon, list);
+		const needsUpdate = installed ? browseNeedsUpdate(addon, installed) : false;
+		return {
+			installed,
+			needsUpdate,
+			busy: Boolean(busyKeys[key]),
+			progress: progressByKey[key] ?? null,
+		};
 	}
 
 	return (
@@ -202,18 +332,27 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 						</div>
 					) : (
 						<>
-							{result?.items.map((addon) => (
-								<AddonCard
-									key={addon.id}
-									mode="browse"
-									addon={addon}
-									installs={installs}
-									selectedFlavorTypeIds={flavors}
-									busy={busyId === addon.id}
-									onInstall={(installId) => handleInstall(addon, installId)}
-									onOpenDetail={(modId, title) => setDetail({ modId, title })}
-								/>
-							))}
+							{result?.items.map((addon) => {
+								const installStateById: Record<string, BrowseInstallState> = {};
+								for (const install of installs) {
+									installStateById[install.id] = installStateFor(
+										addon,
+										install.id,
+									);
+								}
+								return (
+									<AddonCard
+										key={addon.id}
+										mode="browse"
+										addon={addon}
+										installs={installs}
+										selectedFlavorTypeIds={flavors}
+										installStateById={installStateById}
+										onInstall={(installId) => handleInstall(addon, installId)}
+										onOpenDetail={(modId, title) => setDetail({ modId, title })}
+									/>
+								);
+							})}
 							{result && result.items.length === 0 ? (
 								<div className="empty">
 									<strong>{t("browse.noMatchTitle")}</strong>
