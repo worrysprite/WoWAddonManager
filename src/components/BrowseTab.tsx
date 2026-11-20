@@ -42,14 +42,21 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 		api.getFilterCatalog().then(setCatalog).catch(console.error);
 	}, []);
 
+	/** Commit the live search box so every re-query uses current input. */
+	function applyLiveSearch() {
+		setSearch(draftSearch.trim());
+	}
+
 	async function load() {
 		const seq = ++requestSeq.current;
 		setLoading(true);
 		setError(null);
+		// Always read the box — not the last committed keyword.
+		const query = draftSearch.trim();
 		try {
 			const data = await api.searchAddons(
 				{
-					search,
+					search: query,
 					page,
 					pageSize: 20,
 					categories,
@@ -115,18 +122,21 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 				categories={categories}
 				flavors={flavors}
 				onToggleCategory={(value) => {
+					applyLiveSearch();
 					setPage(1);
 					setCategories((prev) =>
 						prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
 					);
 				}}
 				onToggleFlavor={(id) => {
+					applyLiveSearch();
 					setPage(1);
 					setFlavors((prev) =>
 						prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id],
 					);
 				}}
 				onClear={() => {
+					applyLiveSearch();
 					setCategories([]);
 					setFlavors([]);
 					setPage(1);
@@ -218,7 +228,10 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 					<button
 						className="btn"
 						disabled={page <= 1 || loading}
-						onClick={() => setPage((p) => Math.max(1, p - 1))}
+						onClick={() => {
+							applyLiveSearch();
+							setPage((p) => Math.max(1, p - 1));
+						}}
 					>
 						{t("browse.prevPage")}
 					</button>
@@ -229,7 +242,10 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 					<button
 						className="btn"
 						disabled={page >= totalPages || loading}
-						onClick={() => setPage((p) => p + 1)}
+						onClick={() => {
+							applyLiveSearch();
+							setPage((p) => p + 1);
+						}}
 					>
 						{t("browse.nextPage")}
 					</button>
