@@ -689,7 +689,14 @@ fn apply_update_flags(addon: &mut InstalledAddon, remote: &AddonSummary) {
 
 	if newer_file {
 		addon.has_update = true;
-		addon.remote_version = Some(remote.updated_at.clone());
+		addon.remote_version = remote
+			.latest_version
+			.clone()
+			.filter(|v| !v.trim().is_empty())
+			.or_else(|| {
+				let trimmed = remote.updated_at.trim();
+				(!trimmed.is_empty()).then(|| trimmed.to_string())
+			});
 		addon.remote_file_id = Some(remote_file);
 	}
 }
@@ -982,6 +989,7 @@ mod tests {
 			flavors: vec![],
 			website_url: String::new(),
 			latest_file_id: Some(99),
+			latest_version: None,
 		};
 		assert!(remote_matches_installed(&addon, &item));
 	}
@@ -1005,6 +1013,7 @@ mod tests {
 			flavors: vec![],
 			website_url: String::new(),
 			latest_file_id: Some(1),
+			latest_version: None,
 		};
 		assert!(!remote_matches_installed(&addon, &retail));
 	}
@@ -1028,6 +1037,7 @@ mod tests {
 			flavors: vec!["Retail".into()],
 			website_url: String::new(),
 			latest_file_id: None,
+			latest_version: None,
 		};
 		apply_update_flags(&mut addon, &remote);
 		assert!(!addon.has_update);
@@ -1051,6 +1061,7 @@ mod tests {
 			flavors: vec!["Retail".into()],
 			website_url: "https://www.curseforge.com/wow/addons/weakauras-2".into(),
 			latest_file_id: Some(99),
+			latest_version: Some("3.7.0".into()),
 		};
 		assert!(apply_remote_metadata(&mut addon, &remote));
 		assert_eq!(

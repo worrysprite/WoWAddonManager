@@ -262,6 +262,29 @@ fn map_json_addon(value: &Value) -> Option<AddonSummary> {
 		.pointer("/latestFilesIndexes/0/fileId")
 		.or_else(|| value.pointer("/latestFiles/0/id"))
 		.and_then(|v| v.as_i64());
+	let latest_version = value
+		.pointer("/latestFiles/0/displayName")
+		.and_then(|v| v.as_str())
+		.map(str::trim)
+		.filter(|s| !s.is_empty())
+		.map(|s| s.to_string())
+		.or_else(|| {
+			value
+				.pointer("/latestFilesIndexes/0/filename")
+				.or_else(|| value.pointer("/latestFilesIndexes/0/fileName"))
+				.and_then(|v| v.as_str())
+				.map(str::trim)
+				.filter(|s| !s.is_empty())
+				.map(|s| {
+					let lower = s.to_ascii_lowercase();
+					for ext in [".tar.gz", ".tgz", ".zip", ".rar", ".7z"] {
+						if lower.ends_with(ext) {
+							return s[..s.len() - ext.len()].to_string();
+						}
+					}
+					s.to_string()
+				})
+		});
 
 	Some(AddonSummary {
 		id,
@@ -277,6 +300,7 @@ fn map_json_addon(value: &Value) -> Option<AddonSummary> {
 		categories,
 		flavors: Vec::new(),
 		latest_file_id,
+		latest_version,
 	})
 }
 
@@ -316,6 +340,7 @@ fn parse_html_cards(body: &str, page: u32, page_size: u32) -> Option<SearchResul
 			flavors: Vec::new(),
 			website_url: format!("https://www.curseforge.com/wow/addons/{slug}"),
 			latest_file_id: None,
+			latest_version: None,
 		});
 		if items.len() >= page_size as usize {
 			break;

@@ -41,6 +41,8 @@ export type MessageKey =
 	| "card.needWowPath"
 	| "card.noCompatibleInstall"
 	| "card.installTo"
+	| "card.versionInstalled"
+	| "card.updateToVersion"
 	| "card.openDetail"
 	| "detail.title"
 	| "detail.close"
@@ -221,6 +223,8 @@ export const en: Messages = {
 	"card.needWowPath": "Add a WoW install path first",
 	"card.noCompatibleInstall": "No compatible local client for this addon",
 	"card.installTo": "Install to {label}",
+	"card.versionInstalled": "{version} installed",
+	"card.updateToVersion": "Update to {version}",
 	"card.openDetail": "View addon details",
 	"detail.title": "Addon details",
 	"detail.close": "Close",
@@ -408,6 +412,8 @@ export const zhCN: Messages = {
 	"card.needWowPath": "请先添加魔兽安装目录",
 	"card.noCompatibleInstall": "当前已检测到的客户端均不支持该插件",
 	"card.installTo": "安装到 {label}",
+	"card.versionInstalled": "{version}已安装",
+	"card.updateToVersion": "更新到{version}",
 	"card.openDetail": "查看插件详情",
 	"detail.title": "插件详情",
 	"detail.close": "关闭",

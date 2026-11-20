@@ -16,6 +16,9 @@ pub struct AddonSummary {
 	pub flavors: Vec<String>,
 	pub website_url: String,
 	pub latest_file_id: Option<i64>,
+	/// Display version for the picked latest file (CF displayName / filename).
+	#[serde(default)]
+	pub latest_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -134,6 +134,7 @@ mod tests {
 				flavors: Vec::new(),
 				website_url: String::new(),
 				latest_file_id: None,
+				latest_version: None,
 			},
 			description_html: format!("<p>{id}</p>"),
 			screenshots: vec![AddonScreenshot {

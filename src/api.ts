@@ -71,9 +71,18 @@ export function localizeInstalledIcons(installId: string) {
 	return invoke<InstalledAddon[]>("localize_installed_icons", { installId });
 }
 
-export function installAddon(installId: string, addon: AddonSummary) {
+export function installAddon(
+	installId: string,
+	addon: AddonSummary,
+	onProgress?: (progress: AddonJobProgress) => void,
+) {
+	const channel = new Channel<AddonJobProgress>();
+	channel.onmessage = (progress) => {
+		onProgress?.(progress);
+	};
 	return invoke<InstalledAddon>("install_addon", {
 		request: { installId, addon },
+		onProgress: channel,
 	});
 }
 

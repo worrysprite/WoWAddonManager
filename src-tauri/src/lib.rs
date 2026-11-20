@@ -162,8 +162,19 @@ async fn resolve_install_async(install_id: String) -> Result<WowInstall, String>
 }
 
 #[tauri::command]
-async fn install_addon(request: InstallRequest) -> Result<InstalledAddon, String> {
-	install::install_addon(&request.install_id, request.addon).await
+async fn install_addon(
+	request: InstallRequest,
+	on_progress: tauri::ipc::Channel<AddonJobProgress>,
+) -> Result<InstalledAddon, String> {
+	let progress = Arc::new(move |p: AddonJobProgress| {
+		let _ = on_progress.send(p);
+	});
+	install::install_addon_with_progress(
+		&request.install_id,
+		request.addon,
+		Some(progress),
+	)
+	.await
 }
 
 #[tauri::command]

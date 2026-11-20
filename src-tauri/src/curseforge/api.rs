@@ -612,6 +612,63 @@ fn pick_file_from_indexes(
 	(None, String::new())
 }
 
+fn strip_archive_ext(name: &str) -> String {
+	let lower = name.to_ascii_lowercase();
+	for ext in [".tar.gz", ".tgz", ".zip", ".rar", ".7z"] {
+		if lower.ends_with(ext) {
+			return name[..name.len() - ext.len()].to_string();
+		}
+	}
+	name.to_string()
+}
+
+/// Prefer CF file displayName, then archive filename (sans extension).
+fn resolve_latest_version(value: &Value, file_id: Option<i64>) -> Option<String> {
+	let Some(fid) = file_id else {
+		return None;
+	};
+	if let Some(files) = value.get("latestFiles").and_then(|v| v.as_array()) {
+		for file in files {
+			if file.get("id").and_then(|v| v.as_i64()) != Some(fid) {
+				continue;
+			}
+			if let Some(name) = file
+				.get("displayName")
+				.and_then(|v| v.as_str())
+				.map(str::trim)
+				.filter(|s| !s.is_empty())
+			{
+				return Some(name.to_string());
+			}
+			if let Some(name) = file
+				.get("fileName")
+				.and_then(|v| v.as_str())
+				.map(str::trim)
+				.filter(|s| !s.is_empty())
+			{
+				return Some(strip_archive_ext(name));
+			}
+		}
+	}
+	if let Some(indexes) = value.get("latestFilesIndexes").and_then(|v| v.as_array()) {
+		for index in indexes {
+			if index.get("fileId").and_then(|v| v.as_i64()) != Some(fid) {
+				continue;
+			}
+			if let Some(name) = index
+				.get("filename")
+				.or_else(|| index.get("fileName"))
+				.and_then(|v| v.as_str())
+				.map(str::trim)
+				.filter(|s| !s.is_empty())
+			{
+				return Some(strip_archive_ext(name));
+			}
+		}
+	}
+	None
+}
+
 fn map_mod(value: &Value, preferred_type_id: Option<i64>) -> Option<AddonSummary> {
 	let id = value.get("id")?.as_i64()?;
 	let slug = value
@@ -695,6 +752,7 @@ fn map_mod(value: &Value, preferred_type_id: Option<i64>) -> Option<AddonSummary
 	} else {
 		String::new()
 	};
+	let latest_version = resolve_latest_version(value, latest_file_id);
 
 	Some(AddonSummary {
 		id,
@@ -710,6 +768,7 @@ fn map_mod(value: &Value, preferred_type_id: Option<i64>) -> Option<AddonSummary
 		categories,
 		flavors,
 		latest_file_id,
+		latest_version,
 	})
 }
 
@@ -745,6 +804,43 @@ mod tests {
 		assert!(!is_curseforge_cdn_host("api.curseforge.com"));
 		assert!(!is_curseforge_cdn_host("www.curseforge.com"));
 		assert!(!is_curseforge_cdn_host("evilforgecdn.net"));
+	}
+
+	#[test]
+	fn resolve_latest_version_prefers_display_name() {
+		let value = serde_json::json!({
+			"latestFiles": [{
+				"id": 222,
+				"displayName": "PostBox 1.4.0",
+				"fileName": "postbox-1.4.0.zip"
+			}],
+			"latestFilesIndexes": [{
+				"fileId": 222,
+				"filename": "postbox-1.4.0.zip",
+				"gameVersion": "1.60.0",
+				"gameVersionTypeId": 88568
+			}]
+		});
+		assert_eq!(
+			resolve_latest_version(&value, Some(222)).as_deref(),
+			Some("PostBox 1.4.0")
+		);
+	}
+
+	#[test]
+	fn resolve_latest_version_falls_back_to_filename() {
+		let value = serde_json::json!({
+			"latestFilesIndexes": [{
+				"fileId": 111,
+				"filename": "addon-2.0.0.zip",
+				"gameVersion": "12.0.0",
+				"gameVersionTypeId": 517
+			}]
+		});
+		assert_eq!(
+			resolve_latest_version(&value, Some(111)).as_deref(),
+			Some("addon-2.0.0")
+		);
 	}
 
 	#[test]
