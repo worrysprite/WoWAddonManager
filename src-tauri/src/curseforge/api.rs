@@ -35,6 +35,23 @@ fn client() -> Result<reqwest::Client, ApiError> {
 		.build()?)
 }
 
+/// Download client: longer timeout; still sends User-Agent.
+fn download_client() -> Result<reqwest::Client, ApiError> {
+	Ok(reqwest::Client::builder()
+		.user_agent(USER_AGENT)
+		.redirect(reqwest::redirect::Policy::limited(10))
+		.timeout(std::time::Duration::from_secs(120))
+		.build()?)
+}
+
+/// CurseForge CDN hosts that require `x-api-key` on file downloads.
+fn is_curseforge_cdn_host(host: &str) -> bool {
+	matches!(
+		host,
+		"edge.forgecdn.net" | "mediafilez.forgecdn.net" | "media.forgecdn.net"
+	) || host.ends_with(".forgecdn.net")
+}
+
 async fn get_json(api_key: &str, path: &str, query: &[(&str, String)]) -> Result<Value, ApiError> {
 	let url = format!("{API_BASE}{path}");
 	log::info!(
@@ -264,22 +281,61 @@ pub async fn download_addon_zip(
 		"CurseForge 下载 mod_id={mod_id} file_id={file_id} preferred_type={preferred_type_id:?}"
 	);
 
-	let json = get_json(
+	let json = match get_json(
 		api_key,
 		&format!("/v1/mods/{mod_id}/files/{file_id}/download-url"),
 		&[],
 	)
-	.await?;
+	.await
+	{
+		Ok(json) => json,
+		Err(ApiError::Http(403, _)) => {
+			// Author opted out of API distribution (`allowModDistribution: false`).
+			return Err(ApiError::Http(
+				403,
+				"作者禁用了 API 分发，无法通过官方接口下载此插件。请到 CurseForge 网页手动下载。"
+					.into(),
+			));
+		}
+		Err(err) => return Err(err),
+	};
 	let url = json
 		.get("data")
 		.and_then(|v| v.as_str())
 		.ok_or_else(|| ApiError::Parse("缺少 download url".into()))?;
 
-	let mut response = client()?.get(url).send().await?;
+	// Since 2026-07-16, forgecdn CDN requires x-api-key (header preferred).
+	// Official API calls already send it; the previous bug was omitting it on
+	// the CDN GET after /download-url succeeded — browse worked, download 403'd.
+	// See: https://blog.curseforge.com/introducing-api-key-authentication-for-curseforge-file-downloads/
+	let host = reqwest::Url::parse(url)
+		.ok()
+		.and_then(|u| u.host_str().map(|h| h.to_string()))
+		.unwrap_or_else(|| "(invalid-url)".into());
+	// Always attach the user-entered key: download-url only returns CF CDN links,
+	// and new forgecdn hostnames may appear beyond the known set.
+	if !is_curseforge_cdn_host(&host) {
+		log::warn!("CurseForge download URL host unexpected: {host}");
+	}
+	log::info!("CurseForge CDN GET host={host} x-api-key=yes");
+	let mut response = download_client()?
+		.get(url)
+		.header("x-api-key", api_key)
+		.send()
+		.await?;
 	let status = response.status();
 	if !status.is_success() {
-		log::error!("CurseForge 下载失败 HTTP {}", status.as_u16());
-		return Err(ApiError::Http(status.as_u16(), "下载失败".into()));
+		let code = status.as_u16();
+		let body = response.text().await.unwrap_or_default();
+		let snippet: String = body.chars().take(200).collect();
+		log::error!("CurseForge CDN 下载失败 HTTP {code} host={host} body={snippet}");
+		let message = match code {
+			401 | 403 => {
+				"CDN 拒绝下载（需要有效的 API Key）。请确认设置中的 Key 有效后重试。".into()
+			}
+			_ => format!("下载失败 HTTP {code}"),
+		};
+		return Err(ApiError::Http(code, message));
 	}
 
 	let total = response.content_length();
@@ -674,6 +730,17 @@ mod tests {
 		assert!(out.contains('…'));
 		assert!(out.contains("len="));
 		assert!(!out.contains("abcdefghijklmnop"));
+	}
+
+	#[test]
+	fn curseforge_cdn_hosts_need_api_key() {
+		assert!(is_curseforge_cdn_host("edge.forgecdn.net"));
+		assert!(is_curseforge_cdn_host("mediafilez.forgecdn.net"));
+		assert!(is_curseforge_cdn_host("media.forgecdn.net"));
+		assert!(is_curseforge_cdn_host("cdn-eu.forgecdn.net"));
+		assert!(!is_curseforge_cdn_host("api.curseforge.com"));
+		assert!(!is_curseforge_cdn_host("www.curseforge.com"));
+		assert!(!is_curseforge_cdn_host("evilforgecdn.net"));
 	}
 
 	#[test]
