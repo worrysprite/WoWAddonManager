@@ -115,18 +115,22 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 				categories={categories}
 				flavors={flavors}
 				onToggleCategory={(value) => {
+					// Use live search box value (may be cleared without submitting).
+					setSearch(draftSearch.trim());
 					setPage(1);
 					setCategories((prev) =>
 						prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
 					);
 				}}
 				onToggleFlavor={(id) => {
+					setSearch(draftSearch.trim());
 					setPage(1);
 					setFlavors((prev) =>
 						prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id],
 					);
 				}}
 				onClear={() => {
+					setSearch(draftSearch.trim());
 					setCategories([]);
 					setFlavors([]);
 					setPage(1);
