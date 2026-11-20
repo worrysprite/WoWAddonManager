@@ -1,10 +1,41 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
 import * as api from "../api";
-import { sanitizeAddonHtml } from "../addonDetail";
+import { resolveExternalHref, sanitizeAddonHtml } from "../addonDetail";
 import { useI18n } from "../i18n";
 import type { AddonDetail } from "../types";
 import { formatDate, formatDownloads } from "../utils";
+
+async function openDescriptionLink(href: string): Promise<void> {
+	const url = resolveExternalHref(href);
+	if (!url) return;
+	try {
+		await openUrl(url);
+	} catch (err) {
+		console.error("failed to open external url", url, err);
+	}
+}
+
+function descriptionLinkFromEvent(event: ReactMouseEvent): string | null {
+	const target = event.target;
+	if (!(target instanceof Element)) return null;
+	const anchor = target.closest("a");
+	if (!anchor) return null;
+	return anchor.getAttribute("href");
+}
+
+/** Left / middle click on description anchors → system browser (not in-app WebView). */
+function onDescriptionActivate(event: ReactMouseEvent<HTMLDivElement>): void {
+	const href = descriptionLinkFromEvent(event);
+	if (!href) return;
+	const isPrimary = event.type === "click" && event.button === 0;
+	const isMiddle = event.type === "auxclick" && event.button === 1;
+	if (!isPrimary && !isMiddle) return;
+	event.preventDefault();
+	event.stopPropagation();
+	void openDescriptionLink(href);
+}
 
 type Props = {
 	modId: number;
@@ -238,6 +269,8 @@ export function AddonDetailModal({ modId, fallbackTitle, onClose }: Props) {
 									className="detail-description-html"
 									// CurseForge returns HTML; sanitized above.
 									dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+									onClick={onDescriptionActivate}
+									onAuxClick={onDescriptionActivate}
 								/>
 							) : (
 								<p className="muted">{t("detail.noDescription")}</p>
