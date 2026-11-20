@@ -123,14 +123,11 @@ pub async fn install_addon_with_progress(
 			website_url: Some(addon.website_url.clone()),
 			installed_at: Some(now.clone()),
 			updated_at: Some(addon.updated_at.clone()),
+			// Human file label only — never fall back to updatedAt (ISO timestamps).
 			version: addon
 				.latest_version
 				.clone()
-				.filter(|v| !v.trim().is_empty())
-				.or_else(|| {
-					let trimmed = addon.updated_at.trim();
-					(!trimmed.is_empty()).then(|| trimmed.to_string())
-				}),
+				.filter(|v| !v.trim().is_empty()),
 			install_source: Some("curseforge".into()),
 			archive_name: None,
 			related_folders: accepted.clone(),
