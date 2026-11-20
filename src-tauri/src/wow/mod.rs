@@ -7,3 +7,4 @@ pub mod match_remote;
 pub mod scan;
 pub mod suite;
 pub mod toc;
+pub mod version;

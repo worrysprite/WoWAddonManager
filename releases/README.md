@@ -1,6 +1,6 @@
 # Windows 预编译包
 
-当前版本：**1.7.1**
+当前版本：**1.7.2**
 
 - 安装包（推荐，支持应用内自动更新）：见 [GitHub Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 中的 `*-setup.exe`
 - 便携版：同页的 `WoW-Addon-Manager.exe`（需手动下载替换）
@@ -15,6 +15,9 @@
 - 仓库 Secrets 需配置 `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。
 
 下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
+
+## 1.7.2 更新
+- 修复：作者禁用 API 分发、只能手动安装的插件，本地已是最新版本时「已安装」页仍显示「更新」按钮
 
 ## 1.7.1 更新
 - 修复：浏览页已安装按钮误显示 ISO 时间戳（如 `2026-11-19T…Z已安装`），改为与「安装到」相同的客户端版本名（如「经典旧世已安装」）

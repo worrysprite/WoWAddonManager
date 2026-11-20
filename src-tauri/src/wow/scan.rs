@@ -142,8 +142,10 @@ pub fn refresh_local_cache(install: &WowInstall) -> Result<Vec<InstalledAddon>, 
 	let mut results = scan_disk_only(install, None)?;
 	for addon in &mut results {
 		if let Some(prev) = prev_map.get(&addon.folder_name) {
-			// Keep prior update flags / icons when the installed file hasn't changed.
-			if addon.file_id == prev.file_id {
+			// Keep prior update flags / icons when the installed file + version
+			// are unchanged. Version change (manual zip) drops the stale badge
+			// until the next CurseForge check recomputes it.
+			if addon.file_id == prev.file_id && addon.version == prev.version {
 				addon.has_update = prev.has_update;
 				addon.remote_version = prev.remote_version.clone();
 				addon.remote_file_id = prev.remote_file_id;
@@ -342,7 +344,7 @@ fn scan_local_installed(
 			let Some(prev) = prev_map.get(&addon.folder_name) else {
 				continue;
 			};
-			if addon.file_id == prev.file_id {
+			if addon.file_id == prev.file_id && addon.version == prev.version {
 				addon.has_update = prev.has_update;
 				addon.remote_version = prev.remote_version.clone();
 				addon.remote_file_id = prev.remote_file_id;
@@ -676,16 +678,38 @@ fn needs_thumbnail(addon: &InstalledAddon) -> bool {
 		.unwrap_or(true)
 }
 
+fn remote_newer_than_local(addon: &InstalledAddon, remote: &AddonSummary, remote_file: i64) -> bool {
+	match addon.file_id {
+		Some(local) => remote_file > local,
+		None => {
+			// Manual install / missing file_id: compare TOC/manifest version (and
+			// archive name as fallback) with CF displayName / filename. If local
+			// covers remote, do not offer Update (API-disabled addons rely on this).
+			let remote_ver = remote.latest_version.as_deref();
+			match crate::wow::version::local_covers_remote(addon.version.as_deref(), remote_ver) {
+				Some(true) => false,
+				Some(false) => true,
+				None => match crate::wow::version::local_covers_remote(
+					addon.archive_name.as_deref(),
+					remote_ver,
+				) {
+					Some(true) => false,
+					Some(false) => true,
+					// Cannot compare — keep offering update (same as before).
+					None => true,
+				},
+			}
+		}
+	}
+}
+
 fn apply_update_flags(addon: &mut InstalledAddon, remote: &AddonSummary) {
 	// No installable CurseForge file for this client flavor (e.g. Retail-only
 	// project on Forever) → never show an update affordance.
 	let Some(remote_file) = remote.latest_file_id else {
 		return;
 	};
-	let newer_file = match addon.file_id {
-		Some(local) => remote_file > local,
-		None => true,
-	};
+	let newer_file = remote_newer_than_local(addon, remote, remote_file);
 
 	if newer_file {
 		addon.has_update = true;
@@ -1039,6 +1063,71 @@ mod tests {
 		apply_update_flags(&mut addon, &remote);
 		assert!(!addon.has_update);
 		assert!(addon.remote_file_id.is_none());
+	}
+
+	fn sample_remote(file_id: i64, latest_version: Option<&str>) -> AddonSummary {
+		AddonSummary {
+			id: 42,
+			slug: "postbox".into(),
+			name: "PostBox".into(),
+			author: String::new(),
+			summary: String::new(),
+			thumbnail_url: String::new(),
+			download_count: 0,
+			updated_at: "2026-11-15".into(),
+			latest_game_version: String::new(),
+			categories: vec![],
+			flavors: vec![],
+			website_url: String::new(),
+			latest_file_id: Some(file_id),
+			latest_version: latest_version.map(|s| s.to_string()),
+		}
+	}
+
+	#[test]
+	fn apply_update_flags_manual_latest_version_hides_update() {
+		// API-disabled / manual zip: no file_id, but TOC matches CF displayName.
+		let mut addon = sample_installed("PostBox");
+		addon.file_id = None;
+		addon.version = Some("1.4.0".into());
+		let remote = sample_remote(99, Some("PostBox 1.4.0"));
+		apply_update_flags(&mut addon, &remote);
+		assert!(!addon.has_update);
+		assert!(addon.remote_file_id.is_none());
+	}
+
+	#[test]
+	fn apply_update_flags_manual_older_version_shows_update() {
+		let mut addon = sample_installed("PostBox");
+		addon.file_id = None;
+		addon.version = Some("1.3.0".into());
+		let remote = sample_remote(99, Some("PostBox 1.4.0"));
+		apply_update_flags(&mut addon, &remote);
+		assert!(addon.has_update);
+		assert_eq!(addon.remote_file_id, Some(99));
+		assert_eq!(addon.remote_version.as_deref(), Some("PostBox 1.4.0"));
+	}
+
+	#[test]
+	fn apply_update_flags_manual_archive_name_covers_remote() {
+		let mut addon = sample_installed("PostBox");
+		addon.file_id = None;
+		addon.version = None;
+		addon.archive_name = Some("PostBox-1.4.0.zip".into());
+		let remote = sample_remote(99, Some("PostBox 1.4.0"));
+		apply_update_flags(&mut addon, &remote);
+		assert!(!addon.has_update);
+	}
+
+	#[test]
+	fn apply_update_flags_still_uses_file_id_when_present() {
+		let mut addon = sample_installed("PostBox");
+		addon.file_id = Some(50);
+		addon.version = Some("1.4.0".into());
+		let remote = sample_remote(99, Some("PostBox 1.4.0"));
+		apply_update_flags(&mut addon, &remote);
+		assert!(addon.has_update);
+		assert_eq!(addon.remote_file_id, Some(99));
 	}
 
 	#[test]
