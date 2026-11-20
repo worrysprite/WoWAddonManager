@@ -22,3 +22,18 @@ export function sanitizeAddonHtml(html: string): string {
 		.replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
 		.replace(/javascript:/gi, "");
 }
+
+const CURSEFORGE_ORIGIN = "https://www.curseforge.com";
+
+/** Resolve http(s) URLs from description markup (relative → CurseForge). */
+export function resolveExternalHref(href: string): string | null {
+	const trimmed = href.trim();
+	if (!trimmed || trimmed.startsWith("#")) return null;
+	try {
+		const url = new URL(trimmed, CURSEFORGE_ORIGIN);
+		if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+		return url.toString();
+	} catch {
+		return null;
+	}
+}
