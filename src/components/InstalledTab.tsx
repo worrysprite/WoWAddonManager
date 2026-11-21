@@ -371,6 +371,8 @@ export function InstalledTab({
 			if (installIdRef.current !== forInstallId) return;
 			const names = installed.map((item) => item.title).join("、");
 			showToast(t("installed.manualDone", { names: names || selected }));
+			// Recompute hasUpdate (manual installs have no file_id; version compare).
+			void enrichAfterScan(forInstallId);
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			setError(String(err));
