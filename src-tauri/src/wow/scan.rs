@@ -689,14 +689,11 @@ fn apply_update_flags(addon: &mut InstalledAddon, remote: &AddonSummary) {
 
 	if newer_file {
 		addon.has_update = true;
+		// Prefer CF displayName / filename; never use updatedAt as a "version".
 		addon.remote_version = remote
 			.latest_version
 			.clone()
-			.filter(|v| !v.trim().is_empty())
-			.or_else(|| {
-				let trimmed = remote.updated_at.trim();
-				(!trimmed.is_empty()).then(|| trimmed.to_string())
-			});
+			.filter(|v| !v.trim().is_empty());
 		addon.remote_file_id = Some(remote_file);
 	}
 }

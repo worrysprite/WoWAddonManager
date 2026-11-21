@@ -2,6 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { resolveAddonModId } from "../addonDetail";
 import { useI18n, type MessageKey } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
+import type { LocaleCode } from "../i18n/messages";
 import type {
 	AddonJobProgress,
 	AddonSummary,
@@ -178,20 +179,9 @@ function ProgressStatus({
 	);
 }
 
-function browseTargetVersion(addon: AddonSummary): string {
-	const fromListing = addon.latestVersion?.trim();
-	if (fromListing) return fromListing;
-	const fromDate = addon.updatedAt?.trim();
-	return fromDate || "";
-}
-
-function browseInstalledVersion(
-	addon: AddonSummary,
-	installed: InstalledAddon | null,
-): string {
-	const local = installed?.version?.trim();
-	if (local) return local;
-	return browseTargetVersion(addon);
+/** Same human label as「安装到 {label}」(flavor Chinese name / client label). */
+function browseInstallVersionLabel(install: WowInstall, locale: LocaleCode): string {
+	return translateInstallLabel(install.flavorKey, install.label, locale).trim();
 }
 
 export function AddonCard(props: Props) {
@@ -217,7 +207,6 @@ export function AddonCard(props: Props) {
 			modId && onOpenDetail
 				? () => onOpenDetail(modId, addon.name)
 				: undefined;
-		const targetVersion = browseTargetVersion(addon);
 		return (
 			<article className="addon-card addon-card-browse">
 				<Thumb
@@ -268,29 +257,24 @@ export function AddonCard(props: Props) {
 									/>
 								);
 							}
+							const versionLabel = browseInstallVersionLabel(install, locale);
 							const installed = state?.installed ?? null;
 							if (installed && !state?.needsUpdate) {
-								const version = browseInstalledVersion(addon, installed);
 								return (
 									<button
 										key={install.id}
 										type="button"
 										className="btn"
 										disabled
-										title={translateInstallLabel(
-											install.flavorKey,
-											install.label,
-											locale,
-										)}
+										title={versionLabel}
 									>
-										{version
-											? t("card.versionInstalled", { version })
-											: t("card.versionInstalled", { version: "—" })}
+										{t("card.versionInstalled", {
+											version: versionLabel || "—",
+										})}
 									</button>
 								);
 							}
 							if (installed && state?.needsUpdate) {
-								const version = targetVersion || browseInstalledVersion(addon, installed);
 								return (
 									<button
 										key={install.id}
@@ -298,14 +282,10 @@ export function AddonCard(props: Props) {
 										className="btn primary"
 										disabled={busy}
 										onClick={() => onInstall(install.id)}
-										title={translateInstallLabel(
-											install.flavorKey,
-											install.label,
-											locale,
-										)}
+										title={versionLabel}
 									>
-										{version
-											? t("card.updateToVersion", { version })
+										{versionLabel
+											? t("card.updateToVersion", { version: versionLabel })
 											: t("card.update")}
 									</button>
 								);
@@ -319,11 +299,7 @@ export function AddonCard(props: Props) {
 									onClick={() => onInstall(install.id)}
 								>
 									{t("card.installTo", {
-										label: translateInstallLabel(
-											install.flavorKey,
-											install.label,
-											locale,
-										),
+										label: versionLabel,
 									})}
 								</button>
 							);
