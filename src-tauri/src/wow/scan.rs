@@ -101,8 +101,10 @@ fn cached_or_local_scan(install: &WowInstall) -> Result<Vec<InstalledAddon>, Str
 pub async fn check_installed_updates(
 	install: &WowInstall,
 ) -> Result<Vec<InstalledAddon>, String> {
+	let started_at = load_scan_cache(install).and_then(|c| c.scanned_at);
 	let results = cached_or_local_scan(install)?;
 	let results = apply_remote_updates(install, results).await?;
+	let results = reconcile_with_fresher_cache(install, started_at.as_deref(), results);
 	save_scan_cache(install, &results)?;
 	log::info!(
 		"check_installed_updates done install={} count={}",
@@ -116,8 +118,10 @@ pub async fn check_installed_updates(
 pub async fn localize_installed_icons(
 	install: &WowInstall,
 ) -> Result<Vec<InstalledAddon>, String> {
+	let started_at = load_scan_cache(install).and_then(|c| c.scanned_at);
 	let mut results = cached_or_local_scan(install)?;
 	crate::icon_cache::localize_installed_thumbnails(&mut results).await;
+	results = reconcile_with_fresher_cache(install, started_at.as_deref(), results);
 	save_scan_cache(install, &results)?;
 	log::info!(
 		"localize_installed_icons done install={} count={}",
@@ -125,6 +129,44 @@ pub async fn localize_installed_icons(
 		results.len()
 	);
 	Ok(results)
+}
+
+/// If install/update refreshed the scan cache while a long network pass ran, keep
+/// the fresher disk listing and copy update flags onto matching rows.
+fn reconcile_with_fresher_cache(
+	install: &WowInstall,
+	started_at: Option<&str>,
+	results: Vec<InstalledAddon>,
+) -> Vec<InstalledAddon> {
+	let Some(latest) = load_scan_cache(install) else {
+		return results;
+	};
+	let latest_at = latest.scanned_at.as_deref();
+	if latest_at.is_none() || latest_at == started_at {
+		return results;
+	}
+	let flag_by_folder: HashMap<&str, &InstalledAddon> = results
+		.iter()
+		.map(|a| (a.folder_name.as_str(), a))
+		.collect();
+	let mut merged = latest.addons;
+	for addon in &mut merged {
+		let Some(prev) = flag_by_folder.get(addon.folder_name.as_str()) else {
+			continue;
+		};
+		if addon.file_id == prev.file_id {
+			addon.has_update = prev.has_update;
+			addon.remote_version = prev.remote_version.clone();
+			addon.remote_file_id = prev.remote_file_id;
+		}
+	}
+	log::info!(
+		"reconcile_with_fresher_cache install={} kept fresher scan (started={:?} latest={:?})",
+		install.label,
+		started_at,
+		latest_at
+	);
+	merged
 }
 
 /// After install / update / delete: refresh disk listing without network update checks.
@@ -522,14 +564,14 @@ fn scan_disk_only(
 			.or_else(|| tracked.and_then(|t| t.summary.clone()));
 
 		// Prefer TOC X-Curse-Project-ID over a stale slug/title bind in the manifest.
-		let tracked_is_suite = tracked
-			.map(|t| t.related_folders.len() > 1)
-			.unwrap_or(false);
+		// Keep tracked binds for suite members and explicit CurseForge installs
+		// (many solo TOCs omit X-Curse-Project-ID; clearing broke Browse「已安装」).
+		let keep_tracked = keep_tracked_curseforge_bind(tracked);
 		let (curseforge_id, curseforge_slug) = prefer_toc_curseforge_bind(
 			meta.curseforge_project_id,
 			tracked.and_then(|t| t.curseforge_id),
 			tracked.and_then(|t| t.curseforge_slug.clone()),
-			tracked_is_suite,
+			keep_tracked,
 		);
 
 		let title = crate::wow::toc::clean_toc_title(&raw_title);
@@ -597,21 +639,33 @@ fn scan_disk_only(
 	Ok(results)
 }
 
+/// Whether scan should keep a manifest CurseForge id/slug when TOC omits project id.
+/// Suite children and app CurseForge installs are authoritative; search-enriched
+/// / manual rows still clear so name matching can correct wrong binds (WOW-3).
+pub fn keep_tracked_curseforge_bind(tracked: Option<&ManifestAddon>) -> bool {
+	tracked
+		.map(|t| {
+			t.related_folders.len() > 1
+				|| t.install_source.as_deref() == Some("curseforge")
+		})
+		.unwrap_or(false)
+}
+
 /// Update-matching bind policy:
 /// - TOC `X-Curse-Project-ID` present → use that id (overrides stale manifest binds).
-/// - TOC id absent + suite member (`related_folders` > 1) → keep tracked id/slug so
-///   suite children stay grouped with the parent (many child TOCs omit project id).
-/// - TOC id absent + solo → clear id/slug; callers fall back to name matching.
+/// - TOC id absent + keep_tracked → keep tracked id/slug (suite members; explicit
+///   CurseForge installs — many TOCs omit project id).
+/// - TOC id absent otherwise → clear id/slug; callers fall back to name matching.
 pub fn prefer_toc_curseforge_bind(
 	toc_id: Option<i64>,
 	tracked_id: Option<i64>,
 	tracked_slug: Option<String>,
-	tracked_is_suite_member: bool,
+	keep_tracked_when_toc_absent: bool,
 ) -> (Option<i64>, Option<String>) {
 	match toc_id {
 		Some(toc) if tracked_id.is_some_and(|id| id != toc) => (Some(toc), None),
 		Some(toc) => (Some(toc), tracked_slug),
-		None if tracked_is_suite_member => (tracked_id, tracked_slug),
+		None if keep_tracked_when_toc_absent => (tracked_id, tracked_slug),
 		None => (None, None),
 	}
 }
@@ -994,6 +1048,48 @@ mod tests {
 	}
 
 	#[test]
+	fn prefer_toc_absent_keeps_explicit_curseforge_install_bind() {
+		let (id, slug) =
+			prefer_toc_curseforge_bind(None, Some(12345), Some("solo-addon".into()), true);
+		assert_eq!(id, Some(12345));
+		assert_eq!(slug.as_deref(), Some("solo-addon"));
+	}
+
+	#[test]
+	fn keep_tracked_for_curseforge_install_source_and_suite() {
+		let mut solo_cf = ManifestAddon {
+			folder_name: "Solo".into(),
+			curseforge_id: Some(1),
+			curseforge_slug: Some("solo".into()),
+			file_id: None,
+			name: None,
+			author: None,
+			summary: None,
+			thumbnail_url: None,
+			categories: vec![],
+			flavors: vec![],
+			download_count: None,
+			latest_game_version: None,
+			website_url: None,
+			installed_at: None,
+			updated_at: None,
+			version: None,
+			install_source: Some("curseforge".into()),
+			archive_name: None,
+			related_folders: vec!["Solo".into()],
+			is_primary: true,
+		};
+		assert!(keep_tracked_curseforge_bind(Some(&solo_cf)));
+
+		solo_cf.install_source = Some("manual".into());
+		assert!(!keep_tracked_curseforge_bind(Some(&solo_cf)));
+
+		solo_cf.related_folders = vec!["Solo".into(), "SoloLib".into()];
+		assert!(keep_tracked_curseforge_bind(Some(&solo_cf)));
+		assert!(!keep_tracked_curseforge_bind(None));
+	}
+
+	#[test]
 	fn remote_matches_by_folder_name_without_curseforge_meta() {
 		let addon = sample_installed("WeakAuras");
 		let item = AddonSummary {
@@ -1300,6 +1396,72 @@ mod tests {
 		assert!(!legacy_path.exists());
 
 		let _ = fs::remove_file(appdata_scan_cache_path(&install).unwrap());
+		let _ = fs::remove_dir_all(dir);
+	}
+
+	#[test]
+	fn scan_disk_keeps_curseforge_install_bind_when_toc_omits_project_id() {
+		let dir = std::env::temp_dir().join(format!(
+			"wam-scan-cf-solo-{}-{}",
+			std::process::id(),
+			std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let _ = fs::remove_dir_all(&dir);
+		let addons = dir.join("AddOns");
+		let folder = addons.join("SoloAddon");
+		fs::create_dir_all(&folder).unwrap();
+		fs::write(
+			folder.join("SoloAddon.toc"),
+			"## Interface: 110207\n## Title: Solo Addon\n## Author: Test\n## Version: 1.2.3\n",
+		)
+		.unwrap();
+		manifest::upsert(
+			&addons,
+			ManifestAddon {
+				folder_name: "SoloAddon".into(),
+				curseforge_id: Some(424242),
+				curseforge_slug: Some("solo-addon".into()),
+				file_id: Some(99),
+				name: Some("Solo Addon".into()),
+				author: Some("Test".into()),
+				summary: None,
+				thumbnail_url: None,
+				categories: vec![],
+				flavors: vec!["Retail".into()],
+				download_count: None,
+				latest_game_version: None,
+				website_url: None,
+				installed_at: Some("2026-11-23T00:00:00Z".into()),
+				updated_at: None,
+				version: Some("1.2.3".into()),
+				install_source: Some("curseforge".into()),
+				archive_name: None,
+				related_folders: vec!["SoloAddon".into()],
+				is_primary: true,
+			},
+		)
+		.unwrap();
+
+		let install = WowInstall {
+			id: "cf-solo".into(),
+			label: "Retail".into(),
+			flavor: "Retail".into(),
+			flavor_key: "retail".into(),
+			install_path: dir.display().to_string(),
+			addons_path: addons.display().to_string(),
+			game_version: Some("11.0.0".into()),
+			game_version_type_id: Some(517),
+			backup_path: String::new(),
+		};
+		let list = scan_disk_only(&install, None).unwrap();
+		assert_eq!(list.len(), 1);
+		assert_eq!(list[0].curseforge_id, Some(424242));
+		assert_eq!(list[0].curseforge_slug.as_deref(), Some("solo-addon"));
+		assert_eq!(list[0].file_id, Some(99));
+
 		let _ = fs::remove_dir_all(dir);
 	}
 

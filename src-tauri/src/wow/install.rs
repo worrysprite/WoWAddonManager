@@ -138,7 +138,11 @@ pub async fn install_addon_with_progress(
 
 	let list = scan::refresh_local_cache(&install)?;
 	list.into_iter()
-		.find(|a| a.folder_name == primary)
+		.find(|a| {
+			a.folder_name == primary
+				|| a.related_folders.iter().any(|f| f == &primary)
+				|| a.curseforge_id == Some(addon.id)
+		})
 		.ok_or_else(|| "安装完成但未能读取插件信息".to_string())
 }
 
