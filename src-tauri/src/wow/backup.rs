@@ -1,6 +1,6 @@
 use crate::config;
 use crate::types::WowInstall;
-use crate::wow::{detect, install};
+use crate::wow::{detect, install, scan};
 use filetime::{set_file_mtime, FileTime};
 use serde::Serialize;
 use std::collections::HashSet;
@@ -341,6 +341,31 @@ pub fn restore_install(
 		src_root.display(),
 		synced.join("+")
 	);
+	// Mirror may replace AddOns + wow-addon-manager.json; refresh the scan
+	// cache so the Installed list matches disk without a manual rescan.
+	match scan::refresh_local_cache(&install) {
+		Ok(list) => {
+			log::info!(
+				"恢复后已刷新插件列表 install={} count={}",
+				install.label,
+				list.len()
+			);
+			emit(
+				&mut on_progress,
+				&format!("已刷新插件列表: {} 个", list.len()),
+			);
+		}
+		Err(err) => {
+			log::warn!(
+				"恢复后刷新插件列表失败 install={} err={err}",
+				install.label
+			);
+			emit(
+				&mut on_progress,
+				&format!("警告: 刷新插件列表失败: {err}"),
+			);
+		}
+	}
 	Ok(SyncReport {
 		path: src_root.display().to_string(),
 		engine,
@@ -425,6 +450,85 @@ mod tests {
 			fs::read_to_string(client.join("Interface/AddOns/Foo/Foo.toc")).unwrap(),
 			"## Interface: restored\n## From backup\n"
 		);
+
+		let _ = fs::remove_dir_all(root);
+	}
+
+	#[test]
+	fn restore_like_mirror_then_refresh_picks_up_addon_churn() {
+		use crate::types::WowInstall;
+		use crate::wow::manifest::{self, ManifestAddon};
+
+		let root = std::env::temp_dir().join(format!("wam-restore-refresh-{}", stamp()));
+		let client = root.join("client");
+		let backup = root.join("backup");
+		let _ = fs::remove_dir_all(&root);
+		let client_addons = client.join("Interface/AddOns");
+		let backup_addons = backup.join("Interface/AddOns");
+		fs::create_dir_all(client_addons.join("OldOnly")).unwrap();
+		fs::write(
+			client_addons.join("OldOnly/OldOnly.toc"),
+			"## Interface: 110207\n## Title: Old Only\n",
+		)
+		.unwrap();
+		fs::create_dir_all(backup_addons.join("FromBackup")).unwrap();
+		fs::write(
+			backup_addons.join("FromBackup/FromBackup.toc"),
+			"## Interface: 110207\n## Title: From Backup\n## Version: 2.0\n",
+		)
+		.unwrap();
+		manifest::upsert(
+			&backup_addons,
+			ManifestAddon {
+				folder_name: "FromBackup".into(),
+				curseforge_id: Some(99),
+				curseforge_slug: Some("from-backup".into()),
+				file_id: Some(1),
+				name: Some("From Backup".into()),
+				author: None,
+				summary: None,
+				thumbnail_url: None,
+				categories: vec![],
+				flavors: vec![],
+				download_count: None,
+				latest_game_version: None,
+				website_url: None,
+				installed_at: None,
+				updated_at: None,
+				version: Some("2.0".into()),
+				install_source: Some("curseforge".into()),
+				archive_name: None,
+				related_folders: vec!["FromBackup".into()],
+				is_primary: true,
+			},
+		)
+		.unwrap();
+
+		mirror_tree(
+			&backup.join("Interface"),
+			&client.join("Interface"),
+			&mut noop,
+		)
+		.unwrap();
+		assert!(!client_addons.join("OldOnly").exists());
+		assert!(client_addons.join("FromBackup/FromBackup.toc").is_file());
+		assert!(client_addons.join("wow-addon-manager.json").is_file());
+
+		let install = WowInstall {
+			id: format!("restore-refresh-{}", stamp()),
+			label: "Test".into(),
+			flavor: "Retail".into(),
+			flavor_key: "retail".into(),
+			install_path: client.display().to_string(),
+			addons_path: client_addons.display().to_string(),
+			game_version: None,
+			game_version_type_id: None,
+			backup_path: String::new(),
+		};
+		let list = scan::refresh_local_cache(&install).unwrap();
+		assert_eq!(list.len(), 1);
+		assert_eq!(list[0].folder_name, "FromBackup");
+		assert_eq!(list[0].curseforge_id, Some(99));
 
 		let _ = fs::remove_dir_all(root);
 	}

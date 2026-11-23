@@ -12,6 +12,7 @@ import {
 	enrichAfterScan,
 	getInstalledUpdateEpoch,
 	getLastInstalledUpdateResult,
+	noteInstalledDiskScan,
 	subscribeInstalledUpdates,
 } from "../installedUpdates";
 import type {
@@ -543,8 +544,12 @@ export function InstalledTab({
 		try {
 			const seq = beginRequest(forInstallId);
 			if (seq === null) return;
+			// Force disk+manifest re-read (backup may have swapped wow-addon-manager.json).
 			const list = await api.rescanInstalledAddons(forInstallId);
 			if (!isCurrent(forInstallId, seq)) return;
+			// Publish before setState so remount / Browse / stale CF emits see the
+			// post-restore list; bumps check generation to drop in-flight emits.
+			noteInstalledDiskScan(forInstallId, list);
 			setAddons(list);
 			void enrichAfterScan(forInstallId);
 		} catch (err) {

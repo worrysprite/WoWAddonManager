@@ -1,6 +1,6 @@
 # Windows 预编译包
 
-当前版本：**1.7.2**
+当前版本：**1.7.3**
 
 - 安装包（推荐，支持应用内自动更新）：见 [GitHub Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 中的 `*-setup.exe`
 - 便携版：同页的 `WoW-Addon-Manager.exe`（需手动下载替换）
@@ -15,6 +15,9 @@
 - 仓库 Secrets 需配置 `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。
 
 下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
+
+## 1.7.3 更新
+- 修复：从备份恢复后已安装列表仍显示恢复前内容，需手动扫描才更新
 
 ## 1.7.2 更新
 - 修复：浏览页安装成功后按钮仍显示「安装到{版本}」，未变为「{客户端版本名}已安装」
