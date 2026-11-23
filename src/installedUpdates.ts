@@ -45,6 +45,19 @@ function emit(installId: string, list: InstalledAddon[]) {
 	}
 }
 
+/**
+ * After restore / disk rescan: treat `list` as authoritative for this install.
+ * Bumps the update-check generation so in-flight CF checks cannot emit a
+ * pre-restore list over the UI (and remounts read this via lastResults).
+ */
+export function noteInstalledDiskScan(
+	installId: string,
+	list: InstalledAddon[],
+) {
+	generation += 1;
+	emit(installId, list);
+}
+
 function clearTimers() {
 	if (startTimer !== null) {
 		clearTimeout(startTimer);
