@@ -117,10 +117,32 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 
 	useEffect(() => {
 		return subscribeInstalledUpdates((installId, list) => {
-			setInstalledByInstallId((prev) => ({
-				...prev,
-				[installId]: list,
-			}));
+			setInstalledByInstallId((prev) => {
+				const current = prev[installId] ?? [];
+				// Stale hourly-check emits can omit a just-installed row; keep local
+				// CF-bound extras until a later emit includes them.
+				const covered = (item: InstalledAddon) =>
+					list.some(
+						(row) =>
+							(item.curseforgeId != null &&
+								row.curseforgeId === item.curseforgeId) ||
+							(item.curseforgeSlug &&
+								row.curseforgeSlug?.trim().toLowerCase() ===
+									item.curseforgeSlug.trim().toLowerCase()) ||
+							row.folderName === item.folderName ||
+							(row.relatedFolders?.includes(item.folderName) ?? false) ||
+							(item.relatedFolders?.includes(row.folderName) ?? false),
+					);
+				const extras = current.filter(
+					(item) =>
+						(item.curseforgeId != null || Boolean(item.curseforgeSlug)) &&
+						!covered(item),
+				);
+				return {
+					...prev,
+					[installId]: extras.length > 0 ? [...list, ...extras] : list,
+				};
+			});
 		});
 	}, []);
 
@@ -197,7 +219,14 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 			const installed = await api.installAddon(installId, addon, (progress) => {
 				setProgressByKey((prev) => ({ ...prev, [key]: progress }));
 			});
-			upsertInstalled(installId, installed);
+			// Scan may historically drop TOC-less CF id/slug; keep Browse match keys
+			// from the addon we just installed so the button becomes「{版本}已安装」.
+			upsertInstalled(installId, {
+				...installed,
+				curseforgeId: installed.curseforgeId ?? addon.id,
+				curseforgeSlug: installed.curseforgeSlug ?? addon.slug,
+				fileId: installed.fileId ?? addon.latestFileId ?? null,
+			});
 			onInstalled();
 		} catch (err) {
 			if (isApiDistributionDisabledError(err)) {
