@@ -1,6 +1,6 @@
 # Windows 预编译包
 
-当前版本：**1.7.3**
+当前版本：**1.7.2**
 
 - 安装包（推荐，支持应用内自动更新）：见 [GitHub Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 中的 `*-setup.exe`
 - 便携版：同页的 `WoW-Addon-Manager.exe`（需手动下载替换）
@@ -16,11 +16,9 @@
 
 下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
 
-## 1.7.3 更新
-- 修复：从备份恢复后已安装列表仍显示恢复前内容，需手动扫描才更新
-
 ## 1.7.2 更新
 - 修复：浏览页安装成功后按钮仍显示「安装到{版本}」，未变为「{客户端版本名}已安装」
+- 修复：从备份恢复后已安装列表仍显示恢复前内容，需手动扫描才更新
 
 ## 1.7.1 更新
 - 修复：浏览页已安装按钮误显示 ISO 时间戳（如 `2026-11-19T…Z已安装`），改为与「安装到」相同的客户端版本名（如「经典旧世已安装」）
