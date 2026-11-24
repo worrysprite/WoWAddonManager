@@ -179,10 +179,18 @@ fn parse_search_result(json: &Value, params: &SearchParams) -> Result<SearchResu
 		.and_then(|v| v.as_array())
 		.ok_or_else(|| ApiError::Parse("缺少 data".into()))?;
 
+	// Match the first flavor filter (same as build_search_query) so Browse
+	// latestFileId is Forever/Classic-scoped when that filter is active —
+	// not Retail mainFileId, which false-triggered 「更新到无限」.
+	let preferred_type_id = params
+		.game_version_type_ids
+		.as_ref()
+		.and_then(|ids| ids.first().copied());
+
 	let mut items = Vec::new();
 	let mut skipped = 0usize;
-		for entry in data {
-		if let Some(item) = map_mod(entry, None) {
+	for entry in data {
+		if let Some(item) = map_mod(entry, preferred_type_id) {
 			items.push(item);
 		} else {
 			skipped += 1;
@@ -924,6 +932,57 @@ mod tests {
 		assert_eq!(item.latest_file_id, None);
 		assert!(item.latest_game_version.is_empty());
 		assert_eq!(item.flavors, vec!["Retail".to_string()]);
+	}
+
+	#[test]
+	fn parse_search_result_scopes_latest_file_to_flavor_filter() {
+		let json = serde_json::json!({
+			"data": [{
+				"id": 9999,
+				"slug": "questiedb",
+				"name": "QuestieDB",
+				"summary": "db",
+				"authors": [{"name": "Q"}],
+				"downloadCount": 10,
+				"dateModified": "2026-11-23",
+				"mainFileId": 111,
+				"categories": [],
+				"latestFilesIndexes": [
+					{
+						"fileId": 111,
+						"gameVersion": "12.0.0",
+						"gameVersionTypeId": 517
+					},
+					{
+						"fileId": 222,
+						"gameVersion": "1.60.1",
+						"gameVersionTypeId": 88568
+					}
+				],
+				"latestFiles": [
+					{ "id": 111, "displayName": "QuestieDB 12.0", "fileName": "a.zip" },
+					{ "id": 222, "displayName": "QuestieDB 1.60.1", "fileName": "b.zip" }
+				]
+			}],
+			"pagination": { "totalCount": 1 }
+		});
+		let forever = SearchParams {
+			search: None,
+			page: Some(1),
+			page_size: Some(20),
+			categories: None,
+			game_version_type_ids: Some(vec![88568]),
+			sort_by: None,
+		};
+		let scoped = parse_search_result(&json, &forever).unwrap();
+		assert_eq!(scoped.items[0].latest_file_id, Some(222));
+
+		let unfiltered = SearchParams {
+			game_version_type_ids: None,
+			..forever
+		};
+		let open = parse_search_result(&json, &unfiltered).unwrap();
+		assert_eq!(open.items[0].latest_file_id, Some(111));
 	}
 
 	#[test]

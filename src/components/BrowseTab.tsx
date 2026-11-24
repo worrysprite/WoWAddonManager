@@ -42,17 +42,20 @@ function findInstalledMatch(
 	);
 }
 
+/**
+ * Browse update affordance must match the Installed tab.
+ *
+ * Installed already ran a flavor-scoped CF check into `hasUpdate` (Forever =
+ * 无限 included). Browse search `latestFileId` is historically unflavored
+ * (or Retail mainFileId), and a null local `fileId` used to always mean
+ * "needs update" — that diverged from WOW-21 version compare and false-showed
+ * 「更新到无限」for current Forever installs such as QuestieDB.
+ */
 function browseNeedsUpdate(
-	addon: AddonSummary,
+	_addon: AddonSummary,
 	installed: InstalledAddon,
 ): boolean {
-	const remoteFile = addon.latestFileId;
-	if (remoteFile == null) {
-		return Boolean(installed.hasUpdate);
-	}
-	const localFile = installed.fileId;
-	if (localFile == null) return true;
-	return remoteFile > localFile;
+	return Boolean(installed.hasUpdate);
 }
 
 export function BrowseTab({ installs, onInstalled }: Props) {
@@ -226,6 +229,7 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 				curseforgeId: installed.curseforgeId ?? addon.id,
 				curseforgeSlug: installed.curseforgeSlug ?? addon.slug,
 				fileId: installed.fileId ?? addon.latestFileId ?? null,
+				hasUpdate: false,
 			});
 			onInstalled();
 		} catch (err) {
