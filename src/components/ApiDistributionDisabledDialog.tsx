@@ -2,15 +2,18 @@ import { useEffect } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useI18n } from "../i18n";
 
-export type ApiDistributionDisabledDialogProps = {
+export type ApiDisabledAddonEntry = {
 	addonName: string;
 	curseforgeUrl: string;
+};
+
+export type ApiDistributionDisabledDialogProps = {
+	addons: ApiDisabledAddonEntry[];
 	onClose: () => void;
 };
 
 export function ApiDistributionDisabledDialog({
-	addonName,
-	curseforgeUrl,
+	addons,
 	onClose,
 }: ApiDistributionDisabledDialogProps) {
 	const { t } = useI18n();
@@ -23,9 +26,9 @@ export function ApiDistributionDisabledDialog({
 		return () => window.removeEventListener("keydown", onKey);
 	}, [onClose]);
 
-	async function handleOpen() {
+	async function handleOpen(url: string) {
 		try {
-			await openUrl(curseforgeUrl);
+			await openUrl(url);
 		} catch (err) {
 			console.error(err);
 		}
@@ -45,19 +48,38 @@ export function ApiDistributionDisabledDialog({
 				aria-modal="true"
 				aria-labelledby="api-disabled-title"
 			>
-				<h3 id="api-disabled-title">{t("apiDisabled.title")}</h3>
-				<p className="api-disabled-body">
-					{t("apiDisabled.body", { name: addonName })}
-				</p>
-				<p className="muted api-disabled-hint">{t("apiDisabled.hint")}</p>
-				<div className="api-disabled-actions">
-					<button className="btn" type="button" onClick={onClose}>
-						{t("apiDisabled.close")}
-					</button>
-					<button className="btn primary" type="button" onClick={handleOpen}>
-						{t("apiDisabled.openCurseForge")}
+				<div className="api-disabled-header">
+					<h3 id="api-disabled-title">{t("apiDisabled.title")}</h3>
+					<button
+						className="api-disabled-close"
+						type="button"
+						aria-label={t("apiDisabled.close")}
+						onClick={onClose}
+					>
+						×
 					</button>
 				</div>
+				<p className="api-disabled-body">{t("apiDisabled.body")}</p>
+				<ul className="api-disabled-list">
+					{addons.map((entry) => (
+						<li
+							key={entry.curseforgeUrl}
+							className="api-disabled-row"
+						>
+							<span className="api-disabled-row-name" title={entry.addonName}>
+								{entry.addonName}
+							</span>
+							<button
+								className="btn primary"
+								type="button"
+								onClick={() => void handleOpen(entry.curseforgeUrl)}
+							>
+								{t("apiDisabled.openCurseForge")}
+							</button>
+						</li>
+					))}
+				</ul>
+				<p className="muted api-disabled-hint">{t("apiDisabled.hint")}</p>
 			</div>
 		</div>
 	);

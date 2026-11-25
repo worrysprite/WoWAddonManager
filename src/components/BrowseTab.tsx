@@ -80,10 +80,9 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 	const [detail, setDetail] = useState<{ modId: number; title: string } | null>(
 		null,
 	);
-	const [apiDisabledDialog, setApiDisabledDialog] = useState<{
-		addonName: string;
-		curseforgeUrl: string;
-	} | null>(null);
+	const [apiDisabledDialog, setApiDisabledDialog] = useState<
+		Array<{ addonName: string; curseforgeUrl: string }>
+	>([]);
 	const requestSeq = useRef(0);
 	const installedLoadSeq = useRef(0);
 
@@ -240,9 +239,14 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 					id: addon.id,
 				});
 				if (curseforgeUrl) {
-					setApiDisabledDialog({
-						addonName: addon.name,
-						curseforgeUrl,
+					setApiDisabledDialog((prev) => {
+						if (prev.some((entry) => entry.curseforgeUrl === curseforgeUrl)) {
+							return prev;
+						}
+						return [
+							...prev,
+							{ addonName: addon.name, curseforgeUrl },
+						];
 					});
 					return;
 				}
@@ -430,11 +434,10 @@ export function BrowseTab({ installs, onInstalled }: Props) {
 					onClose={() => setDetail(null)}
 				/>
 			) : null}
-			{apiDisabledDialog ? (
+			{apiDisabledDialog.length > 0 ? (
 				<ApiDistributionDisabledDialog
-					addonName={apiDisabledDialog.addonName}
-					curseforgeUrl={apiDisabledDialog.curseforgeUrl}
-					onClose={() => setApiDisabledDialog(null)}
+					addons={apiDisabledDialog}
+					onClose={() => setApiDisabledDialog([])}
 				/>
 			) : null}
 		</div>

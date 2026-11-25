@@ -69,10 +69,9 @@ export function InstalledTab({
 	const [detail, setDetail] = useState<{ modId: number; title: string } | null>(
 		null,
 	);
-	const [apiDisabledDialog, setApiDisabledDialog] = useState<{
-		addonName: string;
-		curseforgeUrl: string;
-	} | null>(null);
+	const [apiDisabledDialog, setApiDisabledDialog] = useState<
+		Array<{ addonName: string; curseforgeUrl: string }>
+	>([]);
 	const syncOutputRef = useRef<HTMLPreElement | null>(null);
 	const syncLiveLogRef = useRef("");
 	const syncFlushTimerRef = useRef<number | null>(null);
@@ -212,7 +211,7 @@ export function InstalledTab({
 			setScanning(false);
 			setScanProgress(null);
 			setSyncDialog(null);
-			setApiDisabledDialog(null);
+			setApiDisabledDialog([]);
 		}
 		setLoading(false);
 		// If launch/hourly check already finished for this client, show it now
@@ -232,9 +231,12 @@ export function InstalledTab({
 			id: addon?.curseforgeId,
 		});
 		if (!curseforgeUrl) return false;
-		setApiDisabledDialog({
-			addonName: addon?.title || folderName,
-			curseforgeUrl,
+		const addonName = addon?.title || folderName;
+		setApiDisabledDialog((prev) => {
+			if (prev.some((entry) => entry.curseforgeUrl === curseforgeUrl)) {
+				return prev;
+			}
+			return [...prev, { addonName, curseforgeUrl }];
 		});
 		return true;
 	}
@@ -755,11 +757,10 @@ export function InstalledTab({
 					onClose={() => setDetail(null)}
 				/>
 			) : null}
-			{apiDisabledDialog ? (
+			{apiDisabledDialog.length > 0 ? (
 				<ApiDistributionDisabledDialog
-					addonName={apiDisabledDialog.addonName}
-					curseforgeUrl={apiDisabledDialog.curseforgeUrl}
-					onClose={() => setApiDisabledDialog(null)}
+					addons={apiDisabledDialog}
+					onClose={() => setApiDisabledDialog([])}
 				/>
 			) : null}
 			{toastNode}
