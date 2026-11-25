@@ -1,6 +1,6 @@
 # Windows 预编译包
 
-当前版本：**1.7.3**
+当前版本：**1.8.0**
 
 - 安装包（推荐，支持应用内自动更新）：见 [GitHub Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 中的 `*-setup.exe`
 - 便携版：同页的 `WoW-Addon-Manager.exe`（需手动下载替换）
@@ -15,6 +15,9 @@
 - 仓库 Secrets 需配置 `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。
 
 下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
+
+## 1.8.0 更新
+- 手动安装支持一次多选压缩包，按顺序安装；按钮显示进度，失败项汇总到错误提示
 
 ## 1.7.3 更新
 - 修复：无限客户端上已是最新的插件（如 QuestieDB）在浏览页仍显示「更新到无限」，已安装页仅有删除

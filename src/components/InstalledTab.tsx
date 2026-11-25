@@ -64,6 +64,11 @@ export function InstalledTab({
 	>({});
 	/** Remaining Update All work (in-flight + queued). 0 = idle. */
 	const [updateAllRemaining, setUpdateAllRemaining] = useState(0);
+	/** Manual multi-archive install progress (1-based current). */
+	const [manualProgress, setManualProgress] = useState<{
+		current: number;
+		total: number;
+	} | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [syncDialog, setSyncDialog] = useState<SyncDialogState | null>(null);
 	const [detail, setDetail] = useState<{ modId: number; title: string } | null>(
@@ -208,6 +213,7 @@ export function InstalledTab({
 			setUpdateProgressById({});
 			updateAllActiveRef.current = false;
 			setUpdateAllRemaining(0);
+			setManualProgress(null);
 			setScanning(false);
 			setScanProgress(null);
 			setSyncDialog(null);
@@ -363,12 +369,17 @@ export function InstalledTab({
 		}
 	}
 
+	function archiveBaseName(path: string): string {
+		const parts = path.replace(/\\/g, "/").split("/");
+		return parts[parts.length - 1] || path;
+	}
+
 	async function handleManualInstall() {
 		const forInstallId = install.id;
 		setError(null);
 		try {
 			const selected = await open({
-				multiple: false,
+				multiple: true,
 				title: t("installed.pickArchive"),
 				filters: [
 					{
@@ -377,24 +388,73 @@ export function InstalledTab({
 					},
 				],
 			});
-			if (!selected || Array.isArray(selected)) return;
+			if (!selected) return;
+			const paths = (Array.isArray(selected) ? selected : [selected]).filter(
+				Boolean,
+			);
+			if (paths.length === 0) return;
 			if (installIdRef.current !== forInstallId) return;
-			markBusy("__manual__");
-			const installed = await api.installFromArchive(forInstallId, selected);
-			if (installIdRef.current !== forInstallId) return;
-			await loadCached(forInstallId);
-			if (installIdRef.current !== forInstallId) return;
-			const names = installed.map((item) => item.title).join("、");
-			showToast(t("installed.manualDone", { names: names || selected }));
-			// Recompute hasUpdate (manual installs have no file_id; version compare).
-			void enrichAfterScan(forInstallId);
+			if (!markBusy("__manual__")) return;
+
+			const installedTitles: string[] = [];
+			const failures: string[] = [];
+			try {
+				for (let i = 0; i < paths.length; i++) {
+					if (installIdRef.current !== forInstallId) return;
+					const archivePath = paths[i];
+					setManualProgress({ current: i + 1, total: paths.length });
+					try {
+						const installed = await api.installFromArchive(
+							forInstallId,
+							archivePath,
+						);
+						if (installIdRef.current !== forInstallId) return;
+						const names = installed
+							.map((item) => item.title)
+							.filter(Boolean);
+						if (names.length > 0) {
+							installedTitles.push(...names);
+						} else {
+							installedTitles.push(archiveBaseName(archivePath));
+						}
+					} catch (err) {
+						failures.push(
+							`${archiveBaseName(archivePath)}: ${String(err)}`,
+						);
+					}
+				}
+				if (installIdRef.current !== forInstallId) return;
+				await loadCached(forInstallId);
+				if (installIdRef.current !== forInstallId) return;
+				if (installedTitles.length > 0) {
+					showToast(
+						t("installed.manualDone", {
+							names: installedTitles.join("、"),
+						}),
+					);
+					// Recompute hasUpdate (manual installs have no file_id; version compare).
+					void enrichAfterScan(forInstallId);
+				}
+				if (failures.length > 0) {
+					setError(
+						t("installed.manualPartialFail", {
+							failed: failures.length,
+							total: paths.length,
+							details: failures.join("；"),
+						}),
+					);
+				}
+			} finally {
+				setManualProgress(null);
+				if (installIdRef.current === forInstallId) {
+					clearBusy("__manual__");
+				}
+			}
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return;
 			setError(String(err));
-		} finally {
-			if (installIdRef.current === forInstallId) {
-				clearBusy("__manual__");
-			}
+			setManualProgress(null);
+			clearBusy("__manual__");
 		}
 	}
 
@@ -612,7 +672,12 @@ export function InstalledTab({
 						onClick={handleManualInstall}
 						disabled={blocked}
 					>
-						{t("installed.manual")}
+						{busyIds.__manual__ && manualProgress
+							? t("installed.manualInstalling", {
+									current: manualProgress.current,
+									total: manualProgress.total,
+								})
+							: t("installed.manual")}
 					</button>
 					<button
 						className="btn"
