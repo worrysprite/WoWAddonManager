@@ -234,7 +234,7 @@ export const en: Messages = {
 	"detail.noDescription": "No detailed description available.",
 	"apiDisabled.title": "Cannot download via API",
 	"apiDisabled.body":
-		"The author of “{name}” has disabled API distribution, so this app cannot download the file automatically.",
+		"These authors have disabled API distribution, so this app cannot download the files automatically.",
 	"apiDisabled.hint": "Open the CurseForge page to download manually, then use Manual install if needed.",
 	"apiDisabled.openCurseForge": "Open CurseForge",
 	"apiDisabled.close": "Close",
@@ -423,7 +423,7 @@ export const zhCN: Messages = {
 	"detail.noDescription": "暂无详细介绍。",
 	"apiDisabled.title": "无法通过 API 下载",
 	"apiDisabled.body":
-		"「{name}」的作者禁用了 API 分发，本应用无法自动下载该插件文件。",
+		"下列插件的作者禁用了 API 分发，本应用无法自动下载这些文件。",
 	"apiDisabled.hint": "请打开 CurseForge 页面手动下载，如需本地安装可使用「手动安装」。",
 	"apiDisabled.openCurseForge": "打开 CurseForge",
 	"apiDisabled.close": "关闭",
