@@ -249,8 +249,20 @@ export function InstalledTab({
 				setAddonProgress(folderName, progress);
 			});
 			if (installIdRef.current !== forInstallId) return true;
-			// Silent so other in-flight update progress UIs stay visible.
-			await loadCached(forInstallId, { silent: true });
+			// Re-read disk cache (hasUpdate cleared for the new file) and publish
+			// so Browse — which stays mounted — drops 「更新到{版本}」immediately.
+			const epochAtStart = getInstalledUpdateEpoch();
+			const list = await api.listInstalledAddons(forInstallId);
+			if (installIdRef.current !== forInstallId) return true;
+			if (getInstalledUpdateEpoch() !== epochAtStart) {
+				const newer = getLastInstalledUpdateResult(forInstallId);
+				if (newer) {
+					setAddons(newer);
+					return true;
+				}
+			}
+			noteInstalledDiskScan(forInstallId, list);
+			setAddons(list);
 		} catch (err) {
 			if (installIdRef.current !== forInstallId) return true;
 			if (
