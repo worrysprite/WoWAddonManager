@@ -73,11 +73,17 @@ export function WtfConfigPanel({ install }: Props) {
 		void load(install.id);
 	}, [install.id]);
 
+	function resolveWtfPath(current = tree): string {
+		return (
+			current?.wtfPath ||
+			`${install.installPath.replace(/[\\/]+$/, "")}/WTF`
+		);
+	}
+
 	async function handleOpenWtf() {
 		setError(null);
 		try {
-			const path = tree?.wtfPath || `${install.installPath.replace(/[\\/]+$/, "")}/WTF`;
-			await api.openDir(path);
+			await api.openDir(resolveWtfPath());
 		} catch (err) {
 			setError(String(err));
 		}
@@ -242,6 +248,7 @@ export function WtfConfigPanel({ install }: Props) {
 	}
 
 	const accounts = tree?.accounts ?? [];
+	const wtfPath = resolveWtfPath();
 	const otherAccounts =
 		copySource?.kind === "account"
 			? accounts.filter(
@@ -272,7 +279,13 @@ export function WtfConfigPanel({ install }: Props) {
 	return (
 		<div className="wtf-panel">
 			<div className="wtf-toolbar">
-				<div className="muted">{t("wtf.hint")}</div>
+				<div>
+					<div className="muted">
+						{wtfPath}
+						{install.gameVersion ? ` · ${install.gameVersion}` : ""}
+					</div>
+					<div className="muted">{t("wtf.hint")}</div>
+				</div>
 				<div className="toolbar-actions">
 					<button
 						className="btn"
