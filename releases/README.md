@@ -17,6 +17,7 @@
 下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
 
 ## 1.8.1 更新
+- 改进：「已安装」页的标题、路径与操作按钮仅在「插件」页签内显示，不再出现在「配置管理」页签上方
 - 修复：配置管理扫描账号时不再把 `WTF/Account/SavedVariables` 误列为账号
 - 清理 Release 工作流警告：升级 `actions/checkout` / `actions/setup-node` 至 Node 24 运行时，并将 `tauri-apps/tauri-action` 升至 v1（修正被忽略的 `uploadUpdaterJson` 输入）
 

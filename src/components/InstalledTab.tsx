@@ -649,82 +649,6 @@ export function InstalledTab({
 
 	return (
 		<section className="installed-layout">
-			<div className="installed-toolbar">
-				<div>
-					<h2>{t("installed.title", { label: installLabel })}</h2>
-					<div className="muted">
-						{install.installPath}
-						{install.gameVersion ? ` · ${install.gameVersion}` : ""}
-					</div>
-				</div>
-				{pane === "addons" ? (
-					<div className="toolbar-actions">
-						{showUpdateAll ? (
-							<button
-								className="btn primary"
-								onClick={handleUpdateAll}
-								disabled={loading || scanning || updateAllRunning}
-								title={t("installed.updateAll")}
-							>
-								{updateAllRunning
-									? t("installed.updateAllRemaining", {
-											n: String(updateAllRemaining),
-										})
-									: t("installed.updateAll")}
-							</button>
-						) : null}
-						<button
-							className="btn primary"
-							onClick={handleManualInstall}
-							disabled={blocked}
-						>
-							{busyIds.__manual__ && manualProgress
-								? t("installed.manualInstalling", {
-										current: manualProgress.current,
-										total: manualProgress.total,
-									})
-								: t("installed.manual")}
-						</button>
-						<button
-							className="btn"
-							onClick={handleRescan}
-							disabled={blocked}
-							title={t("installed.rescan")}
-						>
-							{scanning ? t("installed.scanning") : t("installed.rescan")}
-						</button>
-						<button
-							className="btn"
-							onClick={handleOpenInterface}
-							disabled={blocked}
-							title={t("installed.openInterface")}
-						>
-							{t("installed.openInterface")}
-						</button>
-						<button
-							className="btn"
-							onClick={handleBackup}
-							disabled={blocked}
-							title={t("installed.backup")}
-						>
-							{busyIds.__backup__
-								? t("installed.backingUp")
-								: t("installed.backup")}
-						</button>
-						<button
-							className="btn"
-							onClick={handleRestore}
-							disabled={blocked}
-							title={t("installed.restore")}
-						>
-							{busyIds.__restore__
-								? t("installed.restoring")
-								: t("installed.restore")}
-						</button>
-					</div>
-				) : null}
-			</div>
-
 			<div className="installed-subtabs" role="tablist" aria-label={t("installed.subtabs")}>
 				<button
 					type="button"
@@ -745,8 +669,6 @@ export function InstalledTab({
 					{t("installed.tabWtf")}
 				</button>
 			</div>
-
-			{pane === "addons" && error ? <div className="banner">{error}</div> : null}
 
 			{syncDialog ? (
 				<div className="modal-backdrop" role="presentation">
@@ -808,6 +730,82 @@ export function InstalledTab({
 
 			{pane === "addons" ? (
 				<>
+					<div className="installed-toolbar">
+						<div>
+							<h2>{t("installed.title", { label: installLabel })}</h2>
+							<div className="muted">
+								{install.installPath}
+								{install.gameVersion ? ` · ${install.gameVersion}` : ""}
+							</div>
+						</div>
+						<div className="toolbar-actions">
+							{showUpdateAll ? (
+								<button
+									className="btn primary"
+									onClick={handleUpdateAll}
+									disabled={loading || scanning || updateAllRunning}
+									title={t("installed.updateAll")}
+								>
+									{updateAllRunning
+										? t("installed.updateAllRemaining", {
+												n: String(updateAllRemaining),
+											})
+										: t("installed.updateAll")}
+								</button>
+							) : null}
+							<button
+								className="btn primary"
+								onClick={handleManualInstall}
+								disabled={blocked}
+							>
+								{busyIds.__manual__ && manualProgress
+									? t("installed.manualInstalling", {
+											current: manualProgress.current,
+											total: manualProgress.total,
+										})
+									: t("installed.manual")}
+							</button>
+							<button
+								className="btn"
+								onClick={handleRescan}
+								disabled={blocked}
+								title={t("installed.rescan")}
+							>
+								{scanning ? t("installed.scanning") : t("installed.rescan")}
+							</button>
+							<button
+								className="btn"
+								onClick={handleOpenInterface}
+								disabled={blocked}
+								title={t("installed.openInterface")}
+							>
+								{t("installed.openInterface")}
+							</button>
+							<button
+								className="btn"
+								onClick={handleBackup}
+								disabled={blocked}
+								title={t("installed.backup")}
+							>
+								{busyIds.__backup__
+									? t("installed.backingUp")
+									: t("installed.backup")}
+							</button>
+							<button
+								className="btn"
+								onClick={handleRestore}
+								disabled={blocked}
+								title={t("installed.restore")}
+							>
+								{busyIds.__restore__
+									? t("installed.restoring")
+									: t("installed.restore")}
+							</button>
+						</div>
+					</div>
+
+					{error ? <div className="banner">{error}</div> : null}
+
 					<div className="list-pane">
 						{loading || scanning ? (
 							<div className="list-loading" role="status" aria-live="polite">
