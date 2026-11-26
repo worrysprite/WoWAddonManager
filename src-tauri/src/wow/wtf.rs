@@ -99,6 +99,9 @@ pub struct WtfCopyAccountRequest {
 	pub install_id: String,
 	pub from: WtfAccountRef,
 	pub to: WtfAccountRef,
+	/// Relative names under the account folder; must be in `ACCOUNT_COPY_ITEMS`.
+	#[serde(default)]
+	pub items: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +110,9 @@ pub struct WtfCopyCharacterRequest {
 	pub install_id: String,
 	pub from: WtfCharacterRef,
 	pub to: WtfCharacterRef,
+	/// Relative names under the character folder; must be in `CHAR_COPY_ITEMS`.
+	#[serde(default)]
+	pub items: Vec<String>,
 }
 
 fn resolve_install(install_id: &str) -> Result<WowInstall, String> {
@@ -384,7 +390,45 @@ fn copy_named_items(src_root: &Path, dst_root: &Path, items: &[&str]) -> Result<
 	Ok(copied)
 }
 
-pub fn copy_account(install_id: &str, from: &WtfAccountRef, to: &WtfAccountRef) -> Result<usize, String> {
+/// Resolve requested copy names against an allowlist; empty → all allowlisted items.
+fn resolve_copy_items<'a>(
+	requested: &[String],
+	allowed: &[&'a str],
+) -> Result<Vec<&'a str>, String> {
+	if requested.is_empty() {
+		return Ok(allowed.to_vec());
+	}
+	let mut out = Vec::new();
+	for name in requested {
+		let trimmed = name.trim();
+		if trimmed.is_empty() {
+			continue;
+		}
+		let matched = allowed
+			.iter()
+			.copied()
+			.find(|a| a.eq_ignore_ascii_case(trimmed));
+		match matched {
+			Some(item) => {
+				if !out.iter().any(|x| *x == item) {
+					out.push(item);
+				}
+			}
+			None => return Err(format!("不支持的复制项: {trimmed}")),
+		}
+	}
+	if out.is_empty() {
+		return Err("未选择任何复制项".into());
+	}
+	Ok(out)
+}
+
+pub fn copy_account(
+	install_id: &str,
+	from: &WtfAccountRef,
+	to: &WtfAccountRef,
+	items: &[String],
+) -> Result<usize, String> {
 	validate_segment("账号", &from.account)?;
 	validate_segment("账号", &to.account)?;
 	if is_skipped_account_dir(&from.account) || is_skipped_account_dir(&to.account) {
@@ -393,6 +437,7 @@ pub fn copy_account(install_id: &str, from: &WtfAccountRef, to: &WtfAccountRef) 
 	if from.account.eq_ignore_ascii_case(&to.account) {
 		return Err("源账号与目标账号相同".into());
 	}
+	let selected = resolve_copy_items(items, ACCOUNT_COPY_ITEMS)?;
 	let install = resolve_install(install_id)?;
 	let wtf = wtf_root_for(&install);
 	let accounts_root = account_root(&wtf);
@@ -409,7 +454,7 @@ pub fn copy_account(install_id: &str, from: &WtfAccountRef, to: &WtfAccountRef) 
 	}
 	ensure_under(&src, &accounts_root)?;
 	ensure_under(&dst, &accounts_root)?;
-	let n = copy_named_items(&src, &dst, ACCOUNT_COPY_ITEMS)?;
+	let n = copy_named_items(&src, &dst, &selected)?;
 	if n == 0 {
 		return Err("源账号没有可复制的配置项".into());
 	}
@@ -425,6 +470,7 @@ pub fn copy_character(
 	install_id: &str,
 	from: &WtfCharacterRef,
 	to: &WtfCharacterRef,
+	items: &[String],
 ) -> Result<usize, String> {
 	validate_segment("账号", &from.account)?;
 	validate_segment("服务器", &from.realm)?;
@@ -438,6 +484,7 @@ pub fn copy_character(
 	{
 		return Err("源角色与目标角色相同".into());
 	}
+	let selected = resolve_copy_items(items, CHAR_COPY_ITEMS)?;
 	let install = resolve_install(install_id)?;
 	let wtf = wtf_root_for(&install);
 	let accounts_root = account_root(&wtf);
@@ -466,7 +513,7 @@ pub fn copy_character(
 	}
 	ensure_under(&src, &accounts_root)?;
 	ensure_under(&dst, &accounts_root)?;
-	let n = copy_named_items(&src, &dst, CHAR_COPY_ITEMS)?;
+	let n = copy_named_items(&src, &dst, &selected)?;
 	if n == 0 {
 		return Err("源角色没有可复制的配置项".into());
 	}
@@ -502,6 +549,56 @@ mod tests {
 		assert!(validate_segment("账号", "a/b").is_err());
 		assert!(validate_segment("账号", "a\\b").is_err());
 		assert!(validate_segment("账号", "Main").is_ok());
+	}
+
+	#[test]
+	fn resolve_copy_items_filters_and_rejects_unknown() {
+		let all = resolve_copy_items(&[], CHAR_COPY_ITEMS).unwrap();
+		assert_eq!(all.len(), CHAR_COPY_ITEMS.len());
+		let selected = resolve_copy_items(
+			&["SavedVariables".into(), "AddOns.txt".into()],
+			CHAR_COPY_ITEMS,
+		)
+		.unwrap();
+		assert_eq!(selected, vec!["SavedVariables", "AddOns.txt"]);
+		assert!(resolve_copy_items(&["evil.txt".into()], CHAR_COPY_ITEMS).is_err());
+		assert!(resolve_copy_items(&["".into(), "  ".into()], CHAR_COPY_ITEMS).is_err());
+	}
+
+	#[test]
+	fn copy_named_items_respects_subset() {
+		let root = std::env::temp_dir().join(format!(
+			"wow-wtf-subset-{}",
+			std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		let src = root.join("src");
+		let dst = root.join("dst");
+		write_file(&src.join("SavedVariables/Foo.lua"), "Foo = {}\n");
+		write_file(&src.join("AddOns.txt"), "Addon: enabled\n");
+		write_file(&src.join("bindings-cache.wtf"), "BINDINGS\n");
+		write_file(&dst.join("bindings-cache.wtf"), "KEEP\n");
+		fs::create_dir_all(&dst).unwrap();
+
+		let selected = resolve_copy_items(
+			&["SavedVariables".into(), "AddOns.txt".into()],
+			CHAR_COPY_ITEMS,
+		)
+		.unwrap();
+		let n = copy_named_items(&src, &dst, &selected).unwrap();
+		assert_eq!(n, 2);
+		assert!(dst.join("SavedVariables/Foo.lua").is_file());
+		assert_eq!(
+			fs::read_to_string(dst.join("AddOns.txt")).unwrap(),
+			"Addon: enabled\n"
+		);
+		assert_eq!(
+			fs::read_to_string(dst.join("bindings-cache.wtf")).unwrap(),
+			"KEEP\n"
+		);
+		let _ = fs::remove_dir_all(&root);
 	}
 
 	#[test]

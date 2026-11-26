@@ -322,7 +322,13 @@ async fn copy_wtf_account(request: WtfCopyAccountRequest) -> Result<u32, String>
 		request.to.account
 	);
 	run_blocking(move || {
-		wtf::copy_account(&request.install_id, &request.from, &request.to).map(|n| n as u32)
+		wtf::copy_account(
+			&request.install_id,
+			&request.from,
+			&request.to,
+			&request.items,
+		)
+		.map(|n| n as u32)
 	})
 	.await
 }
@@ -330,17 +336,24 @@ async fn copy_wtf_account(request: WtfCopyAccountRequest) -> Result<u32, String>
 #[tauri::command]
 async fn copy_wtf_character(request: WtfCopyCharacterRequest) -> Result<u32, String> {
 	log::info!(
-		"copy_wtf_character install_id={} from={}/{}/{} to={}/{}/{}",
+		"copy_wtf_character install_id={} from={}/{}/{} to={}/{}/{} items={}",
 		request.install_id,
 		request.from.account,
 		request.from.realm,
 		request.from.character,
 		request.to.account,
 		request.to.realm,
-		request.to.character
+		request.to.character,
+		request.items.len()
 	);
 	run_blocking(move || {
-		wtf::copy_character(&request.install_id, &request.from, &request.to).map(|n| n as u32)
+		wtf::copy_character(
+			&request.install_id,
+			&request.from,
+			&request.to,
+			&request.items,
+		)
+		.map(|n| n as u32)
 	})
 	.await
 }

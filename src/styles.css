@@ -815,9 +815,41 @@ button {
 	max-width: 480px;
 }
 
-.wtf-copy-scope {
-	font-size: 12px;
-	line-height: 1.45;
+.wtf-copy-items {
+	margin: 0;
+	padding: 0;
+	border: none;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.wtf-copy-items legend {
+	padding: 0;
+	margin: 0 0 4px;
+	font-size: 13px;
+	color: var(--text-muted);
+}
+
+.wtf-copy-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 14px;
+	cursor: pointer;
+	user-select: none;
+}
+
+.wtf-copy-item input {
+	width: 16px;
+	height: 16px;
+	accent-color: var(--accent);
+	cursor: pointer;
+}
+
+.wtf-copy-items:disabled .wtf-copy-item {
+	cursor: default;
+	opacity: 0.7;
 }
 
 .muted {

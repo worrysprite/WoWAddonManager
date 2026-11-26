@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
 import { useToast } from "../hooks/useToast";
-import { useI18n } from "../i18n";
+import { useI18n, type MessageKey } from "../i18n";
 import type {
 	WtfAccount,
 	WtfCharacterRef,
@@ -17,6 +17,122 @@ type Props = {
 type CopyTarget =
 	| { kind: "account"; account: string }
 	| { kind: "character"; account: string; realm: string; character: string };
+
+type CopyCategoryId =
+	| "savedVariables"
+	| "addOns"
+	| "layout"
+	| "configCache"
+	| "chatCache"
+	| "bindings"
+	| "macros"
+	| "editMode";
+
+type CopyCategory = {
+	id: CopyCategoryId;
+	labelKey: MessageKey;
+	files: string[];
+	defaultChecked: boolean;
+};
+
+const CHARACTER_COPY_CATEGORIES: CopyCategory[] = [
+	{
+		id: "savedVariables",
+		labelKey: "wtf.copyItemSavedVariables",
+		files: ["SavedVariables"],
+		defaultChecked: true,
+	},
+	{
+		id: "addOns",
+		labelKey: "wtf.copyItemAddOns",
+		files: ["AddOns.txt"],
+		defaultChecked: false,
+	},
+	{
+		id: "layout",
+		labelKey: "wtf.copyItemLayout",
+		files: ["layout-local.txt", "layout-cache.txt"],
+		defaultChecked: false,
+	},
+	{
+		id: "configCache",
+		labelKey: "wtf.copyItemConfigCache",
+		files: ["config-cache.wtf"],
+		defaultChecked: false,
+	},
+	{
+		id: "chatCache",
+		labelKey: "wtf.copyItemChatCache",
+		files: ["chat-cache.txt"],
+		defaultChecked: false,
+	},
+	{
+		id: "bindings",
+		labelKey: "wtf.copyItemBindings",
+		files: ["bindings-cache.wtf"],
+		defaultChecked: false,
+	},
+];
+
+const ACCOUNT_COPY_CATEGORIES: CopyCategory[] = [
+	{
+		id: "savedVariables",
+		labelKey: "wtf.copyItemSavedVariables",
+		files: ["SavedVariables", "SavedVariables.lua"],
+		defaultChecked: true,
+	},
+	{
+		id: "configCache",
+		labelKey: "wtf.copyItemConfigCache",
+		files: ["config-cache.wtf"],
+		defaultChecked: false,
+	},
+	{
+		id: "macros",
+		labelKey: "wtf.copyItemMacros",
+		files: ["macros-cache.txt"],
+		defaultChecked: false,
+	},
+	{
+		id: "bindings",
+		labelKey: "wtf.copyItemBindings",
+		files: ["bindings-cache.wtf"],
+		defaultChecked: false,
+	},
+	{
+		id: "editMode",
+		labelKey: "wtf.copyItemEditMode",
+		files: ["edit-mode-cache-account.txt"],
+		defaultChecked: false,
+	},
+];
+
+function defaultCopySelection(
+	kind: CopyTarget["kind"],
+): Partial<Record<CopyCategoryId, boolean>> {
+	const cats =
+		kind === "account" ? ACCOUNT_COPY_CATEGORIES : CHARACTER_COPY_CATEGORIES;
+	const out: Partial<Record<CopyCategoryId, boolean>> = {};
+	for (const cat of cats) {
+		out[cat.id] = cat.defaultChecked;
+	}
+	return out;
+}
+
+function selectedCopyFiles(
+	kind: CopyTarget["kind"],
+	selection: Partial<Record<CopyCategoryId, boolean>>,
+): string[] {
+	const cats =
+		kind === "account" ? ACCOUNT_COPY_CATEGORIES : CHARACTER_COPY_CATEGORIES;
+	const files: string[] = [];
+	for (const cat of cats) {
+		if (selection[cat.id]) {
+			files.push(...cat.files);
+		}
+	}
+	return files;
+}
 
 function charKey(account: string, realm: string, name: string): string {
 	return `${account}\0${realm}\0${name}`;
@@ -36,6 +152,9 @@ export function WtfConfigPanel({ install }: Props) {
 	const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 	const [copySource, setCopySource] = useState<CopyTarget | null>(null);
 	const [copyDestKey, setCopyDestKey] = useState("");
+	const [copySelection, setCopySelection] = useState<
+		Partial<Record<CopyCategoryId, boolean>>
+	>(() => defaultCopySelection("character"));
 	const installIdRef = useRef(install.id);
 	installIdRef.current = install.id;
 
@@ -69,9 +188,16 @@ export function WtfConfigPanel({ install }: Props) {
 		setError(null);
 		setCopySource(null);
 		setCopyDestKey("");
+		setCopySelection(defaultCopySelection("character"));
 		setBusyKey(null);
 		void load(install.id);
 	}, [install.id]);
+
+	function closeCopyDialog() {
+		if (busyKey === "copy") return;
+		setCopySource(null);
+		setCopyDestKey("");
+	}
 
 	function resolveWtfPath(current = tree): string {
 		return (
@@ -157,15 +283,19 @@ export function WtfConfigPanel({ install }: Props) {
 	function openCopyAccount(account: string) {
 		setCopySource({ kind: "account", account });
 		setCopyDestKey("");
+		setCopySelection(defaultCopySelection("account"));
 	}
 
 	function openCopyCharacter(account: string, realm: string, character: string) {
 		setCopySource({ kind: "character", account, realm, character });
 		setCopyDestKey("");
+		setCopySelection(defaultCopySelection("character"));
 	}
 
 	async function confirmCopy() {
 		if (!copySource || !copyDestKey || !tree) return;
+		const items = selectedCopyFiles(copySource.kind, copySelection);
+		if (items.length === 0) return;
 		const forInstallId = install.id;
 		setError(null);
 		setBusyKey("copy");
@@ -189,6 +319,7 @@ export function WtfConfigPanel({ install }: Props) {
 					forInstallId,
 					{ account: copySource.account },
 					{ account: toAccount },
+					items,
 				);
 				if (installIdRef.current !== forInstallId) return;
 				showToast(
@@ -224,11 +355,16 @@ export function WtfConfigPanel({ install }: Props) {
 					realm: copySource.realm,
 					character: copySource.character,
 				};
-				await api.copyWtfCharacter(forInstallId, from, {
-					account: toAccount,
-					realm: toRealm,
-					character: toCharacter,
-				});
+				await api.copyWtfCharacter(
+					forInstallId,
+					from,
+					{
+						account: toAccount,
+						realm: toRealm,
+						character: toCharacter,
+					},
+					items,
+				);
 				if (installIdRef.current !== forInstallId) return;
 				showToast(
 					t("wtf.copyCharacterDone", { from: fromLabel, to: toLabel }),
@@ -249,6 +385,13 @@ export function WtfConfigPanel({ install }: Props) {
 
 	const accounts = tree?.accounts ?? [];
 	const wtfPath = resolveWtfPath();
+	const copyCategories =
+		copySource?.kind === "account"
+			? ACCOUNT_COPY_CATEGORIES
+			: CHARACTER_COPY_CATEGORIES;
+	const copyItemsSelected = copySource
+		? selectedCopyFiles(copySource.kind, copySelection).length > 0
+		: false;
 	const otherAccounts =
 		copySource?.kind === "account"
 			? accounts.filter(
@@ -438,7 +581,15 @@ export function WtfConfigPanel({ install }: Props) {
 			)}
 
 			{copySource ? (
-				<div className="modal-backdrop" role="presentation">
+				<div
+					className="modal-backdrop"
+					role="presentation"
+					onClick={(event) => {
+						if (event.target === event.currentTarget) {
+							closeCopyDialog();
+						}
+					}}
+				>
 					<div
 						className="modal-card wtf-copy-modal"
 						role="dialog"
@@ -457,11 +608,27 @@ export function WtfConfigPanel({ install }: Props) {
 										),
 									})}
 						</p>
-						<p className="muted wtf-copy-scope">
-							{copySource.kind === "account"
-								? t("wtf.copyAccountScope")
-								: t("wtf.copyCharacterScope")}
-						</p>
+						<fieldset
+							className="wtf-copy-items"
+							disabled={busyKey === "copy"}
+						>
+							<legend>{t("wtf.copyItems")}</legend>
+							{copyCategories.map((cat) => (
+								<label className="wtf-copy-item" key={cat.id}>
+									<input
+										type="checkbox"
+										checked={!!copySelection[cat.id]}
+										onChange={(e) =>
+											setCopySelection((prev) => ({
+												...prev,
+												[cat.id]: e.target.checked,
+											}))
+										}
+									/>
+									<span>{t(cat.labelKey)}</span>
+								</label>
+							))}
+						</fieldset>
 						<label className="settings-field">
 							<span>{t("wtf.copyDest")}</span>
 							{copySource.kind === "account" ? (
@@ -494,23 +661,22 @@ export function WtfConfigPanel({ install }: Props) {
 						</label>
 						<div className="card-actions">
 							<button
-								className="btn"
-								type="button"
-								disabled={busyKey === "copy"}
-								onClick={() => {
-									setCopySource(null);
-									setCopyDestKey("");
-								}}
-							>
-								{t("wtf.copyCancel")}
-							</button>
-							<button
 								className="btn primary"
 								type="button"
-								disabled={!copyDestKey || busyKey === "copy"}
+								disabled={
+									!copyDestKey || !copyItemsSelected || busyKey === "copy"
+								}
 								onClick={() => void confirmCopy()}
 							>
 								{busyKey === "copy" ? t("wtf.copying") : t("wtf.copyOk")}
+							</button>
+							<button
+								className="btn"
+								type="button"
+								disabled={busyKey === "copy"}
+								onClick={closeCopyDialog}
+							>
+								{t("wtf.copyCancel")}
 							</button>
 						</div>
 					</div>

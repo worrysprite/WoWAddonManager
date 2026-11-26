@@ -213,9 +213,10 @@ export function copyWtfAccount(
 	installId: string,
 	from: WtfAccountRef,
 	to: WtfAccountRef,
+	items: string[],
 ) {
 	return invoke<number>("copy_wtf_account", {
-		request: { installId, from, to },
+		request: { installId, from, to, items },
 	});
 }
 
@@ -223,9 +224,10 @@ export function copyWtfCharacter(
 	installId: string,
 	from: WtfCharacterRef,
 	to: WtfCharacterRef,
+	items: string[],
 ) {
 	return invoke<number>("copy_wtf_character", {
-		request: { installId, from, to },
+		request: { installId, from, to, items },
 	});
 }
 

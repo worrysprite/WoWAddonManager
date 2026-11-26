@@ -139,8 +139,15 @@ export type MessageKey =
 	| "wtf.copyDestPlaceholder"
 	| "wtf.copyAccountFrom"
 	| "wtf.copyCharacterFrom"
-	| "wtf.copyAccountScope"
-	| "wtf.copyCharacterScope"
+	| "wtf.copyItems"
+	| "wtf.copyItemSavedVariables"
+	| "wtf.copyItemAddOns"
+	| "wtf.copyItemLayout"
+	| "wtf.copyItemConfigCache"
+	| "wtf.copyItemChatCache"
+	| "wtf.copyItemBindings"
+	| "wtf.copyItemMacros"
+	| "wtf.copyItemEditMode"
 	| "wtf.copyAccountConfirm"
 	| "wtf.copyCharacterConfirm"
 	| "wtf.copyAccountDone"
@@ -369,14 +376,19 @@ export const en: Messages = {
 	"wtf.copyDestPlaceholder": "Select destination…",
 	"wtf.copyAccountFrom": "Copy from account {name}",
 	"wtf.copyCharacterFrom": "Copy from character {name}",
-	"wtf.copyAccountScope":
-		"Copies SavedVariables, SavedVariables.lua, config-cache.wtf, macros-cache.txt, bindings-cache.wtf, and edit-mode-cache-account.txt. Character folders are not copied.",
-	"wtf.copyCharacterScope":
-		"Copies SavedVariables, layout-local.txt, layout-cache.txt, config-cache.wtf, chat-cache.txt, AddOns.txt, and bindings-cache.wtf (key bindings). Destination macros (macros-cache.txt) are kept.",
+	"wtf.copyItems": "What to copy",
+	"wtf.copyItemSavedVariables": "SavedVariables",
+	"wtf.copyItemAddOns": "Enabled addons (AddOns.txt)",
+	"wtf.copyItemLayout": "Layout cache",
+	"wtf.copyItemConfigCache": "Config cache",
+	"wtf.copyItemChatCache": "Chat cache",
+	"wtf.copyItemBindings": "Key bindings",
+	"wtf.copyItemMacros": "Account macros",
+	"wtf.copyItemEditMode": "Edit Mode cache",
 	"wtf.copyAccountConfirm":
-		"Overwrite matching account-level config on {to} with data from {from}?",
+		"Overwrite selected account-level config on {to} with data from {from}?",
 	"wtf.copyCharacterConfirm":
-		"Overwrite matching character config on {to} with data from {from}?",
+		"Overwrite selected character config on {to} with data from {from}?",
 	"wtf.copyAccountDone": "Copied account config {from} → {to}",
 	"wtf.copyCharacterDone": "Copied character config {from} → {to}",
 	"settings.back": "← Back",
@@ -604,14 +616,19 @@ export const zhCN: Messages = {
 	"wtf.copyDestPlaceholder": "选择目标…",
 	"wtf.copyAccountFrom": "从账号 {name} 复制",
 	"wtf.copyCharacterFrom": "从角色 {name} 复制",
-	"wtf.copyAccountScope":
-		"将复制 SavedVariables、SavedVariables.lua、config-cache.wtf、macros-cache.txt、bindings-cache.wtf、edit-mode-cache-account.txt；不会复制角色目录。",
-	"wtf.copyCharacterScope":
-		"将复制 SavedVariables、layout-local.txt、layout-cache.txt、config-cache.wtf、chat-cache.txt、AddOns.txt、bindings-cache.wtf（按键绑定）；目标角色的宏（macros-cache.txt）会保留。",
+	"wtf.copyItems": "要复制的内容",
+	"wtf.copyItemSavedVariables": "保存的变量 (SavedVariables)",
+	"wtf.copyItemAddOns": "启用的插件 (AddOns.txt)",
+	"wtf.copyItemLayout": "界面布局缓存",
+	"wtf.copyItemConfigCache": "配置缓存 (config-cache)",
+	"wtf.copyItemChatCache": "聊天缓存",
+	"wtf.copyItemBindings": "按键绑定",
+	"wtf.copyItemMacros": "账号宏",
+	"wtf.copyItemEditMode": "编辑模式缓存",
 	"wtf.copyAccountConfirm":
-		"确定用 {from} 的账号级配置覆盖 {to} 中对应项？",
+		"确定用 {from} 的所选账号级配置覆盖 {to} 中对应项？",
 	"wtf.copyCharacterConfirm":
-		"确定用 {from} 的角色配置覆盖 {to} 中对应项？",
+		"确定用 {from} 的所选角色配置覆盖 {to} 中对应项？",
 	"wtf.copyAccountDone": "已复制账号配置 {from} → {to}",
 	"wtf.copyCharacterDone": "已复制角色配置 {from} → {to}",
 	"settings.back": "← 返回",
