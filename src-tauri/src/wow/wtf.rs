@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Known non-realm directory names directly under an account folder.
+/// Known non-account / non-realm directory names under `WTF/Account/` (or under
+/// an account folder). `SavedVariables` is addon data, never an account or realm.
 const ACCOUNT_SKIP_DIRS: &[&str] = &["SavedVariables"];
 
 /// Files/dirs copied for character → character (relative to char folder).
@@ -200,41 +201,49 @@ fn list_dir_names(path: &Path) -> Result<Vec<String>, String> {
 	Ok(names)
 }
 
+/// Scan `WTF/Account/` for real accounts; skips known non-account folders.
+fn scan_accounts(accounts_root: &Path) -> Result<Vec<WtfAccount>, String> {
+	let mut accounts = Vec::new();
+	if !accounts_root.is_dir() {
+		return Ok(accounts);
+	}
+	for account_name in list_dir_names(accounts_root)? {
+		if is_skipped_account_dir(&account_name) {
+			continue;
+		}
+		let account_path = accounts_root.join(&account_name);
+		let mut characters = Vec::new();
+		for realm_name in list_dir_names(&account_path)? {
+			if is_skipped_account_dir(&realm_name) {
+				continue;
+			}
+			let realm_path = account_path.join(&realm_name);
+			for char_name in list_dir_names(&realm_path)? {
+				if is_skipped_account_dir(&char_name) {
+					continue;
+				}
+				let char_path = realm_path.join(&char_name);
+				if looks_like_character_dir(&char_path) {
+					characters.push(WtfCharacter {
+						realm: realm_name.clone(),
+						name: char_name,
+					});
+				}
+			}
+		}
+		accounts.push(WtfAccount {
+			name: account_name,
+			characters,
+		});
+	}
+	Ok(accounts)
+}
+
 pub fn list_profiles(install_id: &str) -> Result<WtfProfileTree, String> {
 	let install = resolve_install(install_id)?;
 	let wtf = wtf_root_for(&install);
 	let accounts_root = account_root(&wtf);
-	let mut accounts = Vec::new();
-
-	if accounts_root.is_dir() {
-		for account_name in list_dir_names(&accounts_root)? {
-			let account_path = accounts_root.join(&account_name);
-			let mut characters = Vec::new();
-			for realm_name in list_dir_names(&account_path)? {
-				if is_skipped_account_dir(&realm_name) {
-					continue;
-				}
-				let realm_path = account_path.join(&realm_name);
-				for char_name in list_dir_names(&realm_path)? {
-					if is_skipped_account_dir(&char_name) {
-						continue;
-					}
-					let char_path = realm_path.join(&char_name);
-					if looks_like_character_dir(&char_path) {
-						characters.push(WtfCharacter {
-							realm: realm_name.clone(),
-							name: char_name,
-						});
-					}
-				}
-			}
-			accounts.push(WtfAccount {
-				name: account_name,
-				characters,
-			});
-		}
-	}
-
+	let accounts = scan_accounts(&accounts_root)?;
 	Ok(WtfProfileTree {
 		wtf_path: wtf.display().to_string(),
 		accounts,
@@ -243,6 +252,9 @@ pub fn list_profiles(install_id: &str) -> Result<WtfProfileTree, String> {
 
 pub fn delete_account(install_id: &str, account: &str) -> Result<(), String> {
 	validate_segment("账号", account)?;
+	if is_skipped_account_dir(account) {
+		return Err(format!("不能将 {account} 作为账号操作"));
+	}
 	let install = resolve_install(install_id)?;
 	let wtf = wtf_root_for(&install);
 	let accounts_root = account_root(&wtf);
@@ -375,6 +387,9 @@ fn copy_named_items(src_root: &Path, dst_root: &Path, items: &[&str]) -> Result<
 pub fn copy_account(install_id: &str, from: &WtfAccountRef, to: &WtfAccountRef) -> Result<usize, String> {
 	validate_segment("账号", &from.account)?;
 	validate_segment("账号", &to.account)?;
+	if is_skipped_account_dir(&from.account) || is_skipped_account_dir(&to.account) {
+		return Err("不能将 SavedVariables 等非账号目录作为账号操作".into());
+	}
 	if from.account.eq_ignore_ascii_case(&to.account) {
 		return Err("源账号与目标账号相同".into());
 	}
@@ -583,35 +598,25 @@ mod tests {
 		);
 		// Empty dir under realm should not count as character.
 		fs::create_dir_all(account.join("RealmA/EmptyFolder")).unwrap();
+		// Top-level SavedVariables under Account must not appear as an account.
+		write_file(
+			&root.join("WTF/Account/SavedVariables/Orphan.lua"),
+			"Orphan = {}\n",
+		);
 
-		let accounts_root = root.join("WTF/Account");
-		let mut accounts = Vec::new();
-		for account_name in list_dir_names(&accounts_root).unwrap() {
-			let account_path = accounts_root.join(&account_name);
-			let mut characters = Vec::new();
-			for realm_name in list_dir_names(&account_path).unwrap() {
-				if is_skipped_account_dir(&realm_name) {
-					continue;
-				}
-				let realm_path = account_path.join(&realm_name);
-				for char_name in list_dir_names(&realm_path).unwrap() {
-					let char_path = realm_path.join(&char_name);
-					if looks_like_character_dir(&char_path) {
-						characters.push(WtfCharacter {
-							realm: realm_name.clone(),
-							name: char_name,
-						});
-					}
-				}
-			}
-			accounts.push(WtfAccount {
-				name: account_name,
-				characters,
-			});
-		}
+		let accounts = scan_accounts(&root.join("WTF/Account")).unwrap();
 		assert_eq!(accounts.len(), 1);
 		assert_eq!(accounts[0].name, "123456");
 		assert_eq!(accounts[0].characters.len(), 2);
+		assert!(accounts.iter().all(|a| !a.name.eq_ignore_ascii_case("SavedVariables")));
 		let _ = fs::remove_dir_all(&root);
+	}
+
+	#[test]
+	fn skipped_dirs_are_case_insensitive() {
+		assert!(is_skipped_account_dir("SavedVariables"));
+		assert!(is_skipped_account_dir("savedvariables"));
+		assert!(is_skipped_account_dir("SAVEDVARIABLES"));
+		assert!(!is_skipped_account_dir("123456"));
 	}
 }
