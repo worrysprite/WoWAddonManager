@@ -8,3 +8,4 @@ pub mod scan;
 pub mod suite;
 pub mod toc;
 pub mod version;
+pub mod wtf;

@@ -155,3 +155,28 @@ export interface SyncReport {
 	log: string;
 	success: boolean;
 }
+
+export interface WtfCharacter {
+	realm: string;
+	name: string;
+}
+
+export interface WtfAccount {
+	name: string;
+	characters: WtfCharacter[];
+}
+
+export interface WtfProfileTree {
+	wtfPath: string;
+	accounts: WtfAccount[];
+}
+
+export interface WtfAccountRef {
+	account: string;
+}
+
+export interface WtfCharacterRef {
+	account: string;
+	realm: string;
+	character: string;
+}

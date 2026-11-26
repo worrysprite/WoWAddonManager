@@ -12,6 +12,9 @@ import type {
 	SearchResult,
 	SettingsView,
 	SyncReport,
+	WtfAccountRef,
+	WtfCharacterRef,
+	WtfProfileTree,
 	WowInstall,
 } from "./types";
 
@@ -183,6 +186,47 @@ export function saveLogs(path: string) {
 
 export function openDir(path: string) {
 	return invoke<void>("open_dir", { path });
+}
+
+export function listWtfProfiles(installId: string) {
+	return invoke<WtfProfileTree>("list_wtf_profiles", { installId });
+}
+
+export function deleteWtfAccount(installId: string, account: string) {
+	return invoke<void>("delete_wtf_account", {
+		request: { installId, account },
+	});
+}
+
+export function deleteWtfCharacter(
+	installId: string,
+	account: string,
+	realm: string,
+	character: string,
+) {
+	return invoke<void>("delete_wtf_character", {
+		request: { installId, account, realm, character },
+	});
+}
+
+export function copyWtfAccount(
+	installId: string,
+	from: WtfAccountRef,
+	to: WtfAccountRef,
+) {
+	return invoke<number>("copy_wtf_account", {
+		request: { installId, from, to },
+	});
+}
+
+export function copyWtfCharacter(
+	installId: string,
+	from: WtfCharacterRef,
+	to: WtfCharacterRef,
+) {
+	return invoke<number>("copy_wtf_character", {
+		request: { installId, from, to },
+	});
 }
 
 export function getAppVersion() {
