@@ -20,6 +20,7 @@
 - 改进：插件页「备份 / 恢复」仅同步 `Interface`；配置管理页新增「{版本} 角色列表」标题与「备份 / 恢复」，仅同步 `WTF`；设置中的备份路径仍为两者的父目录
 - 修复：手动安装 `DBM-Vanilla_SoD` 合集后，已安装列表误以子插件「World Bosses / DBM-Azeroth」为父项；无限客户端上点更新提示找不到「DBM-Azeroth」包。现优先以带 `X-Curse-Project-ID` 的文件夹（如 `DBM-Raids-Vanilla`）为合集父项，更新时读取兄弟 TOC 的项目 ID，并显示 CurseForge 包名「DBM - Forever and Vanilla」
 - 修复：设置中切换语言后，「语言已更新」提示改为目标语言显示
+- 改进：设置页改为全宽双列布局（窄屏仍单列堆叠）
 
 ## 1.8.1 更新
 - 改进：配置管理「复制配置」对话框改为勾选要复制的类别（默认勾选 SavedVariables）；可点空白处关闭；按钮顺序为「复制 / 取消」

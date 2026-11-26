@@ -336,119 +336,68 @@ export function SettingsPage({
 
 			{error ? <div className="banner">{error}</div> : null}
 
-			<div className="settings-card">
-				<h3 className="settings-card-title">{t("update.title")}</h3>
-				<p className="muted settings-hint">
-					{t("update.current", {
-						version: updater.currentVersion || "…",
-					})}
-				</p>
-				{updater.status === "checking" ? (
-					<p className="muted settings-hint">{t("update.checking")}</p>
-				) : null}
-				{updater.status === "upToDate" ? (
-					<p className="muted settings-hint">{t("update.upToDate")}</p>
-				) : null}
-				{updater.status === "downloading" ? (
+			<div className="settings-grid">
+				<div className="settings-card settings-card-update">
+					<h3 className="settings-card-title">{t("update.title")}</h3>
 					<p className="muted settings-hint">
-						{t("update.downloading", {
-							version: updater.remoteVersion || "",
+						{t("update.current", {
+							version: updater.currentVersion || "…",
 						})}
 					</p>
-				) : null}
-				{updater.status === "ready" ? (
-					<p className="muted settings-hint">
-						{t("update.ready", { version: updater.remoteVersion || "" })}
-					</p>
-				) : null}
-				{updater.status === "availableManual" ? (
-					<>
+					{updater.status === "checking" ? (
+						<p className="muted settings-hint">{t("update.checking")}</p>
+					) : null}
+					{updater.status === "upToDate" ? (
+						<p className="muted settings-hint">{t("update.upToDate")}</p>
+					) : null}
+					{updater.status === "downloading" ? (
 						<p className="muted settings-hint">
-							{t("update.availableManual", {
+							{t("update.downloading", {
 								version: updater.remoteVersion || "",
 							})}
 						</p>
-						{updater.installKind === "portable" ? (
-							<p className="muted settings-hint">{t("update.portableHint")}</p>
-						) : null}
-					</>
-				) : null}
-				{updater.status === "installing" ? (
-					<p className="muted settings-hint">{t("update.installing")}</p>
-				) : null}
-				{updater.status === "error" && updater.error ? (
-					<p className="muted settings-hint">
-						{t("update.error", { error: updater.error })}
-					</p>
-				) : null}
-				{updater.notes ? (
-					<details className="settings-update-notes">
-						<summary>{t("update.notes")}</summary>
-						<pre className="settings-update-notes-body">{updater.notes}</pre>
-					</details>
-				) : null}
-				<div className="settings-actions">
-					<button
-						className="btn"
-						type="button"
-						disabled={updateBusy || updater.status === "checking"}
-						onClick={async () => {
-							setUpdateBusy(true);
-							setError(null);
-							try {
-								await runUpdateCheck({ autoDownload: true });
-							} catch (err) {
-								setError(String(err));
-							} finally {
-								setUpdateBusy(false);
-							}
-						}}
-					>
-						{t("update.checkNow")}
-					</button>
-					<button
-						className="btn"
-						type="button"
-						onClick={async () => {
-							setError(null);
-							try {
-								await openWebsite();
-							} catch (err) {
-								setError(String(err));
-							}
-						}}
-					>
-						{t("update.openWebsite")}
-					</button>
+					) : null}
 					{updater.status === "ready" ? (
-						<button
-							className="btn primary"
-							type="button"
-							disabled={updateBusy}
-							onClick={async () => {
-								setUpdateBusy(true);
-								setError(null);
-								try {
-									await installDownloadedUpdate();
-								} catch (err) {
-									setError(String(err));
-									setUpdateBusy(false);
-								}
-							}}
-						>
-							{t("update.installRestart")}
-						</button>
+						<p className="muted settings-hint">
+							{t("update.ready", { version: updater.remoteVersion || "" })}
+						</p>
 					) : null}
 					{updater.status === "availableManual" ? (
+						<>
+							<p className="muted settings-hint">
+								{t("update.availableManual", {
+									version: updater.remoteVersion || "",
+								})}
+							</p>
+							{updater.installKind === "portable" ? (
+								<p className="muted settings-hint">{t("update.portableHint")}</p>
+							) : null}
+						</>
+					) : null}
+					{updater.status === "installing" ? (
+						<p className="muted settings-hint">{t("update.installing")}</p>
+					) : null}
+					{updater.status === "error" && updater.error ? (
+						<p className="muted settings-hint">
+							{t("update.error", { error: updater.error })}
+						</p>
+					) : null}
+					{updater.notes ? (
+						<details className="settings-update-notes">
+							<summary>{t("update.notes")}</summary>
+							<pre className="settings-update-notes-body">{updater.notes}</pre>
+						</details>
+					) : null}
+					<div className="settings-actions">
 						<button
-							className="btn primary"
+							className="btn"
 							type="button"
-							disabled={updateBusy}
+							disabled={updateBusy || updater.status === "checking"}
 							onClick={async () => {
 								setUpdateBusy(true);
 								setError(null);
 								try {
-									await openLatestReleasePage();
+									await runUpdateCheck({ autoDownload: true });
 								} catch (err) {
 									setError(String(err));
 								} finally {
@@ -456,247 +405,300 @@ export function SettingsPage({
 								}
 							}}
 						>
-							{t("update.openDownload")}
+							{t("update.checkNow")}
 						</button>
-					) : null}
-				</div>
-			</div>
-
-			<div className="settings-card">
-				<h3 className="settings-card-title">{t("settings.language")}</h3>
-				<p className="muted settings-hint">{t("settings.languageHint")}</p>
-				<label className="settings-field">
-					<span>{t("settings.language")}</span>
-					<select
-						value={localeDraft}
-						disabled={!ready || busy || saving}
-						onChange={(e) => handleSaveLocale(e.target.value as LocalePreference)}
-					>
-						<option value="system">{t("settings.languageSystem")}</option>
-						<option value="zh-CN">{t("settings.languageZh")}</option>
-						<option value="en">{t("settings.languageEn")}</option>
-					</select>
-				</label>
-			</div>
-
-			<form className="settings-card" onSubmit={handleSaveApiKey}>
-				<h3 className="settings-card-title">{t("settings.apiTitle")}</h3>
-				<label className="settings-field">
-					<span>{t("settings.apiKey")}</span>
-					<input
-						type="password"
-						autoComplete="off"
-						spellCheck={false}
-						placeholder={t("settings.apiPlaceholder")}
-						value={apiKey}
-						onChange={(e) => setApiKey(e.target.value)}
-					/>
-				</label>
-
-				<p className="muted settings-hint">
-					{t("settings.apiHint")}
-					{settings?.hasApiKey ? t("settings.apiEnabled") : t("settings.apiDisabled")}
-				</p>
-
-				<div className="settings-links muted">
-					{settings ? (
-						<>
-							<a href={settings.applyUrl} target="_blank" rel="noreferrer">
-								{t("settings.applyKey")}
-							</a>
-							<span>·</span>
-							<a href={settings.docsUrl} target="_blank" rel="noreferrer">
-								{t("settings.apiDocs")}
-							</a>
-						</>
-					) : null}
-				</div>
-
-				<div className="card-actions">
-					<button className="btn primary" type="submit" disabled={saving}>
-						{saving ? t("settings.saving") : t("settings.saveApiKey")}
-					</button>
-					<button
-						className="btn"
-						type="button"
-						disabled={saving || !apiKey}
-						onClick={() => setApiKey("")}
-					>
-						{t("settings.clearInput")}
-					</button>
-				</div>
-			</form>
-
-			<div className="settings-card">
-				<h3 className="settings-card-title">{t("settings.wowTitle")}</h3>
-				<p className="muted settings-hint">{t("settings.wowHint")}</p>
-
-				<div className="card-actions">
-					<button className="btn primary" type="button" disabled={busy} onClick={handleAddWowPath}>
-						{t("settings.addWowPath")}
-					</button>
-					<button className="btn" type="button" disabled={busy} onClick={handleRescan}>
-						{t("settings.rescan")}
-					</button>
+						<button
+							className="btn"
+							type="button"
+							onClick={async () => {
+								setError(null);
+								try {
+									await openWebsite();
+								} catch (err) {
+									setError(String(err));
+								}
+							}}
+						>
+							{t("update.openWebsite")}
+						</button>
+						{updater.status === "ready" ? (
+							<button
+								className="btn primary"
+								type="button"
+								disabled={updateBusy}
+								onClick={async () => {
+									setUpdateBusy(true);
+									setError(null);
+									try {
+										await installDownloadedUpdate();
+									} catch (err) {
+										setError(String(err));
+										setUpdateBusy(false);
+									}
+								}}
+							>
+								{t("update.installRestart")}
+							</button>
+						) : null}
+						{updater.status === "availableManual" ? (
+							<button
+								className="btn primary"
+								type="button"
+								disabled={updateBusy}
+								onClick={async () => {
+									setUpdateBusy(true);
+									setError(null);
+									try {
+										await openLatestReleasePage();
+									} catch (err) {
+										setError(String(err));
+									} finally {
+										setUpdateBusy(false);
+									}
+								}}
+							>
+								{t("update.openDownload")}
+							</button>
+						) : null}
+					</div>
 				</div>
 
-				{settings?.detectedInstalls?.length ? (
-					<div className="settings-list">
-						<div className="settings-list-label">{t("settings.detectedClients")}</div>
-						{settings.detectedInstalls.map((install) => {
-							const backupPath = install.backupPath?.trim() || "";
-							const installLabel = translateInstallLabel(
-								install.flavorKey,
-								install.label,
-								locale,
-							);
-							return (
-								<div
-									key={install.id}
-									className={`settings-list-item settings-client-item${
-										highlightInstallId === install.id ? " settings-card-focus" : ""
-									}`}
-									ref={(el) => {
-										installRowRefs.current[install.id] = el;
-									}}
-								>
-									<div className="settings-client-main">
-										<div className="settings-client-header">
-											<strong>{installLabel}</strong>
-											<span className="muted">
-												{install.gameVersion || t("settings.versionUnknown")}
-											</span>
+				<div className="settings-card settings-card-language">
+					<h3 className="settings-card-title">{t("settings.language")}</h3>
+					<p className="muted settings-hint">{t("settings.languageHint")}</p>
+					<label className="settings-field">
+						<span>{t("settings.language")}</span>
+						<select
+							value={localeDraft}
+							disabled={!ready || busy || saving}
+							onChange={(e) => handleSaveLocale(e.target.value as LocalePreference)}
+						>
+							<option value="system">{t("settings.languageSystem")}</option>
+							<option value="zh-CN">{t("settings.languageZh")}</option>
+							<option value="en">{t("settings.languageEn")}</option>
+						</select>
+					</label>
+				</div>
+
+				<form className="settings-card settings-card-api" onSubmit={handleSaveApiKey}>
+					<h3 className="settings-card-title">{t("settings.apiTitle")}</h3>
+					<label className="settings-field">
+						<span>{t("settings.apiKey")}</span>
+						<input
+							type="password"
+							autoComplete="off"
+							spellCheck={false}
+							placeholder={t("settings.apiPlaceholder")}
+							value={apiKey}
+							onChange={(e) => setApiKey(e.target.value)}
+						/>
+					</label>
+
+					<p className="muted settings-hint">
+						{t("settings.apiHint")}
+						{settings?.hasApiKey ? t("settings.apiEnabled") : t("settings.apiDisabled")}
+					</p>
+
+					<div className="settings-links muted">
+						{settings ? (
+							<>
+								<a href={settings.applyUrl} target="_blank" rel="noreferrer">
+									{t("settings.applyKey")}
+								</a>
+								<span>·</span>
+								<a href={settings.docsUrl} target="_blank" rel="noreferrer">
+									{t("settings.apiDocs")}
+								</a>
+							</>
+						) : null}
+					</div>
+
+					<div className="card-actions">
+						<button className="btn primary" type="submit" disabled={saving}>
+							{saving ? t("settings.saving") : t("settings.saveApiKey")}
+						</button>
+						<button
+							className="btn"
+							type="button"
+							disabled={saving || !apiKey}
+							onClick={() => setApiKey("")}
+						>
+							{t("settings.clearInput")}
+						</button>
+					</div>
+				</form>
+
+				<div className="settings-card settings-card-wow">
+					<h3 className="settings-card-title">{t("settings.wowTitle")}</h3>
+					<p className="muted settings-hint">{t("settings.wowHint")}</p>
+
+					<div className="card-actions">
+						<button className="btn primary" type="button" disabled={busy} onClick={handleAddWowPath}>
+							{t("settings.addWowPath")}
+						</button>
+						<button className="btn" type="button" disabled={busy} onClick={handleRescan}>
+							{t("settings.rescan")}
+						</button>
+					</div>
+
+					{settings?.detectedInstalls?.length ? (
+						<div className="settings-list">
+							<div className="settings-list-label">{t("settings.detectedClients")}</div>
+							{settings.detectedInstalls.map((install) => {
+								const backupPath = install.backupPath?.trim() || "";
+								const installLabel = translateInstallLabel(
+									install.flavorKey,
+									install.label,
+									locale,
+								);
+								return (
+									<div
+										key={install.id}
+										className={`settings-list-item settings-client-item${
+											highlightInstallId === install.id ? " settings-card-focus" : ""
+										}`}
+										ref={(el) => {
+											installRowRefs.current[install.id] = el;
+										}}
+									>
+										<div className="settings-client-main">
+											<div className="settings-client-header">
+												<strong>{installLabel}</strong>
+												<span className="muted">
+													{install.gameVersion || t("settings.versionUnknown")}
+												</span>
+											</div>
+											<div className="muted">{install.installPath}</div>
+											<div className="settings-client-backup">
+												<span className="muted settings-backup-label">
+													{t("settings.backupPath")}
+												</span>
+												<span
+													className={`settings-backup-value${backupPath ? "" : " is-empty"}`}
+													title={backupPath || undefined}
+												>
+													{backupPath || t("settings.backupPathPlaceholder")}
+												</span>
+											</div>
 										</div>
-										<div className="muted">{install.installPath}</div>
-										<div className="settings-client-backup">
-											<span className="muted settings-backup-label">
-												{t("settings.backupPath")}
-											</span>
-											<span
-												className={`settings-backup-value${backupPath ? "" : " is-empty"}`}
-												title={backupPath || undefined}
-											>
-												{backupPath || t("settings.backupPathPlaceholder")}
-											</span>
-										</div>
-									</div>
-									<div className="settings-client-actions">
-										<button
-											className="btn"
-											type="button"
-											disabled={busy || !ready}
-											onClick={() =>
-												handleChooseBackupPath(install.id, installLabel, backupPath)
-											}
-										>
-											{t("settings.chooseBackupPath")}
-										</button>
-										{backupPath ? (
+										<div className="settings-client-actions">
 											<button
 												className="btn"
 												type="button"
-												disabled={busy}
+												disabled={busy || !ready}
 												onClick={() =>
-													handleClearBackupPath(install.id, installLabel)
+													handleChooseBackupPath(install.id, installLabel, backupPath)
 												}
 											>
-												{t("settings.clearBackupPath")}
+												{t("settings.chooseBackupPath")}
 											</button>
-										) : null}
+											{backupPath ? (
+												<button
+													className="btn"
+													type="button"
+													disabled={busy}
+													onClick={() =>
+														handleClearBackupPath(install.id, installLabel)
+													}
+												>
+													{t("settings.clearBackupPath")}
+												</button>
+											) : null}
+										</div>
 									</div>
+								);
+							})}
+						</div>
+					) : (
+						<div className="banner">{t("settings.noClients")}</div>
+					)}
+
+					{settings?.wowRoots?.length ? (
+						<div className="settings-list">
+							<div className="settings-list-label">{t("settings.manualPaths")}</div>
+							{settings.wowRoots.map((root) => (
+								<div key={root} className="settings-list-item">
+									<div className="muted">{root}</div>
+									<button
+										className="btn danger"
+										type="button"
+										disabled={busy}
+										onClick={() => handleRemoveWowPath(root)}
+									>
+										{t("settings.remove")}
+									</button>
 								</div>
-							);
-						})}
-					</div>
-				) : (
-					<div className="banner">{t("settings.noClients")}</div>
-				)}
+							))}
+						</div>
+					) : null}
 
-				{settings?.wowRoots?.length ? (
-					<div className="settings-list">
-						<div className="settings-list-label">{t("settings.manualPaths")}</div>
-						{settings.wowRoots.map((root) => (
-							<div key={root} className="settings-list-item">
-								<div className="muted">{root}</div>
-								<button
-									className="btn danger"
-									type="button"
-									disabled={busy}
-									onClick={() => handleRemoveWowPath(root)}
-								>
-									{t("settings.remove")}
-								</button>
-							</div>
-						))}
-					</div>
-				) : null}
-
-				{settings?.invalidWowRoots?.length ? (
-					<div className="banner">
-						{t("settings.invalidPaths")}
-						{settings.invalidWowRoots.join("；")}
-					</div>
-				) : null}
-			</div>
-
-			<div className="settings-card">
-				<h3 className="settings-card-title">{t("settings.logsTitle")}</h3>
-				<p className="muted settings-hint">{t("settings.logsHint")}</p>
-				<div className="card-actions">
-					<button
-						className="btn primary"
-						type="button"
-						disabled={logsBusy}
-						onClick={logsOpen ? () => setLogsOpen(false) : handleOpenLogs}
-					>
-						{logsOpen ? t("settings.closeLogs") : t("settings.openLogs")}
-					</button>
-					<button
-						className="btn"
-						type="button"
-						disabled={logsBusy || !logsOpen}
-						onClick={handleSaveLogs}
-					>
-						{t("settings.saveLogs")}
-					</button>
-					<button
-						className="btn"
-						type="button"
-						disabled={logsBusy || !logsOpen}
-						onClick={handleClearLogs}
-					>
-						{t("settings.clearLogs")}
-					</button>
+					{settings?.invalidWowRoots?.length ? (
+						<div className="banner">
+							{t("settings.invalidPaths")}
+							{settings.invalidWowRoots.join("；")}
+						</div>
+					) : null}
 				</div>
 
-				{logsOpen ? (
-					<>
-						<label className="settings-field">
-							<span>{t("settings.logLevel")}</span>
-							<select
-								value={logLevel}
-								disabled={logsBusy}
-								onChange={(e) => handleChangeLogLevel(e.target.value)}
-							>
-								{LOG_LEVELS.map((level) => (
-									<option key={level} value={level}>
-										{level.toUpperCase()}
-									</option>
-								))}
-							</select>
-						</label>
-						<pre className="log-pane" ref={logPaneRef}>
-							{logEntries.length === 0
-								? t("settings.noLogs")
-								: logEntries
-										.map(
-											(entry) =>
-												`${entry.timestamp} [${entry.level.padEnd(5)}] ${entry.target}: ${entry.message}`,
-										)
-										.join("\n")}
-						</pre>
-					</>
-				) : null}
+				<div className="settings-card settings-card-logs">
+					<h3 className="settings-card-title">{t("settings.logsTitle")}</h3>
+					<p className="muted settings-hint">{t("settings.logsHint")}</p>
+					<div className="card-actions">
+						<button
+							className="btn primary"
+							type="button"
+							disabled={logsBusy}
+							onClick={logsOpen ? () => setLogsOpen(false) : handleOpenLogs}
+						>
+							{logsOpen ? t("settings.closeLogs") : t("settings.openLogs")}
+						</button>
+						<button
+							className="btn"
+							type="button"
+							disabled={logsBusy || !logsOpen}
+							onClick={handleSaveLogs}
+						>
+							{t("settings.saveLogs")}
+						</button>
+						<button
+							className="btn"
+							type="button"
+							disabled={logsBusy || !logsOpen}
+							onClick={handleClearLogs}
+						>
+							{t("settings.clearLogs")}
+						</button>
+					</div>
+
+					{logsOpen ? (
+						<>
+							<label className="settings-field">
+								<span>{t("settings.logLevel")}</span>
+								<select
+									value={logLevel}
+									disabled={logsBusy}
+									onChange={(e) => handleChangeLogLevel(e.target.value)}
+								>
+									{LOG_LEVELS.map((level) => (
+										<option key={level} value={level}>
+											{level.toUpperCase()}
+										</option>
+									))}
+								</select>
+							</label>
+							<pre className="log-pane" ref={logPaneRef}>
+								{logEntries.length === 0
+									? t("settings.noLogs")
+									: logEntries
+											.map(
+												(entry) =>
+													`${entry.timestamp} [${entry.level.padEnd(5)}] ${entry.target}: ${entry.message}`,
+											)
+											.join("\n")}
+							</pre>
+						</>
+					) : null}
+				</div>
 			</div>
 			{toastNode}
 		</section>
