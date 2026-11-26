@@ -734,7 +734,7 @@ export function InstalledTab({
 						<div>
 							<h2>{t("installed.title", { label: installLabel })}</h2>
 							<div className="muted">
-								{install.installPath}
+								{interfaceDirFromAddonsPath(install.addonsPath)}
 								{install.gameVersion ? ` · ${install.gameVersion}` : ""}
 							</div>
 						</div>
