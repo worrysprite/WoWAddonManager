@@ -78,6 +78,8 @@ export type MessageKey =
 	| "installed.emptyHint"
 	| "installed.rescanDone"
 	| "installed.manualDone"
+	| "installed.manualInstalling"
+	| "installed.manualPartialFail"
 	| "installed.deleteConfirm"
 	| "installed.deleteSuiteConfirm"
 	| "installed.deleteTitle"
@@ -259,16 +261,19 @@ export const en: Messages = {
 	"installed.loadingList": "Loading addon list…",
 	"installed.emptyTitle": "No installed addons yet",
 	"installed.emptyHint":
-		'Install from Browse All, or click "Manual install" and choose an archive.',
+		'Install from Browse All, or click "Manual install" and choose one or more archives.',
 	"installed.rescanDone": "Addon scan complete. {count} addon(s).",
 	"installed.manualDone": "Manually installed: {names}",
+	"installed.manualInstalling": "Installing {current}/{total}…",
+	"installed.manualPartialFail":
+		"Failed {failed} of {total}: {details}",
 	"installed.deleteConfirm": "Delete addon {name}?",
 	"installed.deleteSuiteConfirm":
 		"Delete {name}? This removes the whole package ({count} folders).",
 	"installed.deleteTitle": "Delete addon",
 	"installed.deleteOk": "Delete",
 	"installed.deleteCancel": "Cancel",
-	"installed.pickArchive": "Select addon archive",
+	"installed.pickArchive": "Select addon archive(s)",
 	"installed.archiveFilter": "Addon Archive",
 	"installed.clientMissing": "Client not found",
 	"installed.backup": "Backup",
@@ -447,16 +452,19 @@ export const zhCN: Messages = {
 	"installed.scanFound": "已找到{name}插件，共{count}个",
 	"installed.loadingList": "正在读取插件列表…",
 	"installed.emptyTitle": "还没有已安装插件",
-	"installed.emptyHint": "可从「浏览全部」安装，或点击右上角「手动安装」选择压缩包。",
+	"installed.emptyHint": "可从「浏览全部」安装，或点击右上角「手动安装」选择一个或多个压缩包。",
 	"installed.rescanDone": "插件扫描完成，共 {count} 个插件",
 	"installed.manualDone": "已手动安装：{names}",
+	"installed.manualInstalling": "正在安装 {current}/{total}…",
+	"installed.manualPartialFail":
+		"有 {failed}/{total} 个安装失败：{details}",
 	"installed.deleteConfirm": "确定删除插件 {name}？",
 	"installed.deleteSuiteConfirm":
 		"确定删除 {name}？将一并删除整个合集（共 {count} 个插件目录）。",
 	"installed.deleteTitle": "删除插件",
 	"installed.deleteOk": "删除",
 	"installed.deleteCancel": "取消",
-	"installed.pickArchive": "选择插件压缩包",
+	"installed.pickArchive": "选择插件压缩包（可多选）",
 	"installed.archiveFilter": "插件压缩包",
 	"installed.clientMissing": "未找到该客户端",
 	"installed.backup": "备份",
