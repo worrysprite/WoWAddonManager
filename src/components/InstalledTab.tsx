@@ -25,6 +25,9 @@ import type {
 import { AddonCard } from "./AddonCard";
 import { AddonDetailModal } from "./AddonDetailModal";
 import { ApiDistributionDisabledDialog } from "./ApiDistributionDisabledDialog";
+import { WtfConfigPanel } from "./WtfConfigPanel";
+
+type InstalledPane = "addons" | "wtf";
 
 type SyncDialogState = {
 	kind: "backup" | "restore";
@@ -77,6 +80,7 @@ export function InstalledTab({
 	const [apiDisabledDialog, setApiDisabledDialog] = useState<
 		Array<{ addonName: string; curseforgeUrl: string }>
 	>([]);
+	const [pane, setPane] = useState<InstalledPane>("addons");
 	const syncOutputRef = useRef<HTMLPreElement | null>(null);
 	const syncLiveLogRef = useRef("");
 	const syncFlushTimerRef = useRef<number | null>(null);
@@ -218,6 +222,7 @@ export function InstalledTab({
 			setScanProgress(null);
 			setSyncDialog(null);
 			setApiDisabledDialog([]);
+			setPane("addons");
 		}
 		setLoading(false);
 		// If launch/hourly check already finished for this client, show it now
@@ -652,69 +657,96 @@ export function InstalledTab({
 						{install.gameVersion ? ` · ${install.gameVersion}` : ""}
 					</div>
 				</div>
-				<div className="toolbar-actions">
-					{showUpdateAll ? (
+				{pane === "addons" ? (
+					<div className="toolbar-actions">
+						{showUpdateAll ? (
+							<button
+								className="btn primary"
+								onClick={handleUpdateAll}
+								disabled={loading || scanning || updateAllRunning}
+								title={t("installed.updateAll")}
+							>
+								{updateAllRunning
+									? t("installed.updateAllRemaining", {
+											n: String(updateAllRemaining),
+										})
+									: t("installed.updateAll")}
+							</button>
+						) : null}
 						<button
 							className="btn primary"
-							onClick={handleUpdateAll}
-							disabled={loading || scanning || updateAllRunning}
-							title={t("installed.updateAll")}
+							onClick={handleManualInstall}
+							disabled={blocked}
 						>
-							{updateAllRunning
-								? t("installed.updateAllRemaining", {
-										n: String(updateAllRemaining),
+							{busyIds.__manual__ && manualProgress
+								? t("installed.manualInstalling", {
+										current: manualProgress.current,
+										total: manualProgress.total,
 									})
-								: t("installed.updateAll")}
+								: t("installed.manual")}
 						</button>
-					) : null}
-					<button
-						className="btn primary"
-						onClick={handleManualInstall}
-						disabled={blocked}
-					>
-						{busyIds.__manual__ && manualProgress
-							? t("installed.manualInstalling", {
-									current: manualProgress.current,
-									total: manualProgress.total,
-								})
-							: t("installed.manual")}
-					</button>
-					<button
-						className="btn"
-						onClick={handleRescan}
-						disabled={blocked}
-						title={t("installed.rescan")}
-					>
-						{scanning ? t("installed.scanning") : t("installed.rescan")}
-					</button>
-					<button
-						className="btn"
-						onClick={handleOpenInterface}
-						disabled={blocked}
-						title={t("installed.openInterface")}
-					>
-						{t("installed.openInterface")}
-					</button>
-					<button
-						className="btn"
-						onClick={handleBackup}
-						disabled={blocked}
-						title={t("installed.backup")}
-					>
-						{busyIds.__backup__ ? t("installed.backingUp") : t("installed.backup")}
-					</button>
-					<button
-						className="btn"
-						onClick={handleRestore}
-						disabled={blocked}
-						title={t("installed.restore")}
-					>
-						{busyIds.__restore__ ? t("installed.restoring") : t("installed.restore")}
-					</button>
-				</div>
+						<button
+							className="btn"
+							onClick={handleRescan}
+							disabled={blocked}
+							title={t("installed.rescan")}
+						>
+							{scanning ? t("installed.scanning") : t("installed.rescan")}
+						</button>
+						<button
+							className="btn"
+							onClick={handleOpenInterface}
+							disabled={blocked}
+							title={t("installed.openInterface")}
+						>
+							{t("installed.openInterface")}
+						</button>
+						<button
+							className="btn"
+							onClick={handleBackup}
+							disabled={blocked}
+							title={t("installed.backup")}
+						>
+							{busyIds.__backup__
+								? t("installed.backingUp")
+								: t("installed.backup")}
+						</button>
+						<button
+							className="btn"
+							onClick={handleRestore}
+							disabled={blocked}
+							title={t("installed.restore")}
+						>
+							{busyIds.__restore__
+								? t("installed.restoring")
+								: t("installed.restore")}
+						</button>
+					</div>
+				) : null}
 			</div>
 
-			{error ? <div className="banner">{error}</div> : null}
+			<div className="installed-subtabs" role="tablist" aria-label={t("installed.subtabs")}>
+				<button
+					type="button"
+					role="tab"
+					aria-selected={pane === "addons"}
+					className={`installed-subtab ${pane === "addons" ? "active" : ""}`}
+					onClick={() => setPane("addons")}
+				>
+					{t("installed.tabAddons")}
+				</button>
+				<button
+					type="button"
+					role="tab"
+					aria-selected={pane === "wtf"}
+					className={`installed-subtab ${pane === "wtf" ? "active" : ""}`}
+					onClick={() => setPane("wtf")}
+				>
+					{t("installed.tabWtf")}
+				</button>
+			</div>
+
+			{pane === "addons" && error ? <div className="banner">{error}</div> : null}
 
 			{syncDialog ? (
 				<div className="modal-backdrop" role="presentation">
@@ -774,61 +806,71 @@ export function InstalledTab({
 				</div>
 			) : null}
 
-			<div className="list-pane">
-				{loading || scanning ? (
-					<div className="list-loading" role="status" aria-live="polite">
-						<div className="list-loading-spinner" aria-hidden="true" />
-						<span>
-							{scanning ? t("installed.rescanning") : t("installed.loadingList")}
-						</span>
-						{scanning && scanProgress ? (
-							<span className="list-loading-progress">
-								{t("installed.scanFound", {
-									name: scanProgress.name,
-									count: scanProgress.count,
-								})}
-							</span>
-						) : null}
-					</div>
-				) : (
-					<>
-						{addons.map((addon) => (
-							<AddonCard
-								key={`${install.id}:${addon.folderName}`}
-								mode="installed"
-								addon={addon}
-								busy={Boolean(busyIds[addon.folderName])}
-								updateProgress={
-									updateProgressById[addon.folderName] ?? null
-								}
-								onUpdate={() => handleUpdate(addon.folderName)}
-								onDelete={() => handleDelete(addon.folderName)}
-								onOpenDetail={(modId, title) => setDetail({ modId, title })}
-							/>
-						))}
-						{addons.length === 0 ? (
-							<div className="empty">
-								<strong>{t("installed.emptyTitle")}</strong>
-								{t("installed.emptyHint")}
+			{pane === "addons" ? (
+				<>
+					<div className="list-pane">
+						{loading || scanning ? (
+							<div className="list-loading" role="status" aria-live="polite">
+								<div className="list-loading-spinner" aria-hidden="true" />
+								<span>
+									{scanning
+										? t("installed.rescanning")
+										: t("installed.loadingList")}
+								</span>
+								{scanning && scanProgress ? (
+									<span className="list-loading-progress">
+										{t("installed.scanFound", {
+											name: scanProgress.name,
+											count: scanProgress.count,
+										})}
+									</span>
+								) : null}
 							</div>
-						) : null}
-					</>
-				)}
-			</div>
-			{detail ? (
-				<AddonDetailModal
-					modId={detail.modId}
-					fallbackTitle={detail.title}
-					onClose={() => setDetail(null)}
-				/>
-			) : null}
-			{apiDisabledDialog.length > 0 ? (
-				<ApiDistributionDisabledDialog
-					addons={apiDisabledDialog}
-					onClose={() => setApiDisabledDialog([])}
-				/>
-			) : null}
-			{toastNode}
+						) : (
+							<>
+								{addons.map((addon) => (
+									<AddonCard
+										key={`${install.id}:${addon.folderName}`}
+										mode="installed"
+										addon={addon}
+										busy={Boolean(busyIds[addon.folderName])}
+										updateProgress={
+											updateProgressById[addon.folderName] ?? null
+										}
+										onUpdate={() => handleUpdate(addon.folderName)}
+										onDelete={() => handleDelete(addon.folderName)}
+										onOpenDetail={(modId, title) =>
+											setDetail({ modId, title })
+										}
+									/>
+								))}
+								{addons.length === 0 ? (
+									<div className="empty">
+										<strong>{t("installed.emptyTitle")}</strong>
+										{t("installed.emptyHint")}
+									</div>
+								) : null}
+							</>
+						)}
+					</div>
+					{detail ? (
+						<AddonDetailModal
+							modId={detail.modId}
+							fallbackTitle={detail.title}
+							onClose={() => setDetail(null)}
+						/>
+					) : null}
+					{apiDisabledDialog.length > 0 ? (
+						<ApiDistributionDisabledDialog
+							addons={apiDisabledDialog}
+							onClose={() => setApiDisabledDialog([])}
+						/>
+					) : null}
+					{toastNode}
+				</>
+			) : (
+				<WtfConfigPanel install={install} />
+			)}
 		</section>
 	);
 }

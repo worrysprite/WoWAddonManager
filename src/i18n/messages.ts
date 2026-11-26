@@ -108,6 +108,43 @@ export type MessageKey =
 	| "installed.syncItems"
 	| "installed.syncClose"
 	| "installed.syncOutput"
+	| "installed.subtabs"
+	| "installed.tabAddons"
+	| "installed.tabWtf"
+	| "wtf.hint"
+	| "wtf.refresh"
+	| "wtf.refreshing"
+	| "wtf.openFolder"
+	| "wtf.loading"
+	| "wtf.emptyTitle"
+	| "wtf.emptyHint"
+	| "wtf.accountMeta"
+	| "wtf.noCharacters"
+	| "wtf.copy"
+	| "wtf.delete"
+	| "wtf.deleting"
+	| "wtf.deleteOk"
+	| "wtf.deleteCancel"
+	| "wtf.deleteAccountTitle"
+	| "wtf.deleteAccountConfirm"
+	| "wtf.deleteAccountDone"
+	| "wtf.deleteCharacterTitle"
+	| "wtf.deleteCharacterConfirm"
+	| "wtf.deleteCharacterDone"
+	| "wtf.copyTitle"
+	| "wtf.copyOk"
+	| "wtf.copyCancel"
+	| "wtf.copying"
+	| "wtf.copyDest"
+	| "wtf.copyDestPlaceholder"
+	| "wtf.copyAccountFrom"
+	| "wtf.copyCharacterFrom"
+	| "wtf.copyAccountScope"
+	| "wtf.copyCharacterScope"
+	| "wtf.copyAccountConfirm"
+	| "wtf.copyCharacterConfirm"
+	| "wtf.copyAccountDone"
+	| "wtf.copyCharacterDone"
 	| "settings.back"
 	| "settings.title"
 	| "settings.subtitle"
@@ -297,6 +334,51 @@ export const en: Messages = {
 	"installed.syncItems": "Folders: {items}",
 	"installed.syncClose": "Close",
 	"installed.syncOutput": "Output",
+	"installed.subtabs": "Installed page sections",
+	"installed.tabAddons": "Addons",
+	"installed.tabWtf": "Config",
+	"wtf.hint":
+		"Manage WTF account and character profiles for this client. Close the game before deleting or copying.",
+	"wtf.refresh": "Refresh",
+	"wtf.refreshing": "Refreshing…",
+	"wtf.openFolder": "Open WTF folder",
+	"wtf.loading": "Loading WTF profiles…",
+	"wtf.emptyTitle": "No WTF accounts found",
+	"wtf.emptyHint":
+		"Log into the game once, or check that this client’s WTF/Account folder exists.",
+	"wtf.accountMeta": "{count} character(s)",
+	"wtf.noCharacters": "No character folders under this account.",
+	"wtf.copy": "Copy",
+	"wtf.delete": "Delete",
+	"wtf.deleting": "Deleting…",
+	"wtf.deleteOk": "Delete",
+	"wtf.deleteCancel": "Cancel",
+	"wtf.deleteAccountTitle": "Delete account config",
+	"wtf.deleteAccountConfirm":
+		"Delete the entire WTF config for account {name}? This cannot be undone.",
+	"wtf.deleteAccountDone": "Deleted account config: {name}",
+	"wtf.deleteCharacterTitle": "Delete character config",
+	"wtf.deleteCharacterConfirm":
+		"Delete WTF config for character {name}? This cannot be undone.",
+	"wtf.deleteCharacterDone": "Deleted character config: {name}",
+	"wtf.copyTitle": "Copy config",
+	"wtf.copyOk": "Copy",
+	"wtf.copyCancel": "Cancel",
+	"wtf.copying": "Copying…",
+	"wtf.copyDest": "Destination",
+	"wtf.copyDestPlaceholder": "Select destination…",
+	"wtf.copyAccountFrom": "Copy from account {name}",
+	"wtf.copyCharacterFrom": "Copy from character {name}",
+	"wtf.copyAccountScope":
+		"Copies SavedVariables, SavedVariables.lua, config-cache.wtf, macros-cache.txt, bindings-cache.wtf, and edit-mode-cache-account.txt. Character folders are not copied.",
+	"wtf.copyCharacterScope":
+		"Copies SavedVariables, layout-local.txt, layout-cache.txt, config-cache.wtf, chat-cache.txt, AddOns.txt, and bindings-cache.wtf (key bindings). Destination macros (macros-cache.txt) are kept.",
+	"wtf.copyAccountConfirm":
+		"Overwrite matching account-level config on {to} with data from {from}?",
+	"wtf.copyCharacterConfirm":
+		"Overwrite matching character config on {to} with data from {from}?",
+	"wtf.copyAccountDone": "Copied account config {from} → {to}",
+	"wtf.copyCharacterDone": "Copied character config {from} → {to}",
 	"settings.back": "← Back",
 	"settings.title": "Settings",
 	"settings.subtitle": "API Key, language, WoW paths, and logs",
@@ -488,6 +570,50 @@ export const zhCN: Messages = {
 	"installed.syncItems": "目录：{items}",
 	"installed.syncClose": "关闭",
 	"installed.syncOutput": "输出",
+	"installed.subtabs": "已安装页分区",
+	"installed.tabAddons": "插件",
+	"installed.tabWtf": "配置管理",
+	"wtf.hint":
+		"管理此客户端 WTF 下的账号与角色配置。删除或复制前请先完全退出游戏。",
+	"wtf.refresh": "刷新",
+	"wtf.refreshing": "刷新中…",
+	"wtf.openFolder": "打开 WTF 目录",
+	"wtf.loading": "正在读取 WTF 配置…",
+	"wtf.emptyTitle": "未找到 WTF 账号",
+	"wtf.emptyHint": "请先进入游戏登录一次，或确认该客户端存在 WTF/Account 目录。",
+	"wtf.accountMeta": "{count} 个角色",
+	"wtf.noCharacters": "该账号下暂无角色配置目录。",
+	"wtf.copy": "复制",
+	"wtf.delete": "删除",
+	"wtf.deleting": "删除中…",
+	"wtf.deleteOk": "删除",
+	"wtf.deleteCancel": "取消",
+	"wtf.deleteAccountTitle": "删除账号配置",
+	"wtf.deleteAccountConfirm":
+		"确定删除账号 {name} 的全部 WTF 配置？此操作不可恢复。",
+	"wtf.deleteAccountDone": "已删除账号配置：{name}",
+	"wtf.deleteCharacterTitle": "删除角色配置",
+	"wtf.deleteCharacterConfirm":
+		"确定删除角色 {name} 的 WTF 配置？此操作不可恢复。",
+	"wtf.deleteCharacterDone": "已删除角色配置：{name}",
+	"wtf.copyTitle": "复制配置",
+	"wtf.copyOk": "复制",
+	"wtf.copyCancel": "取消",
+	"wtf.copying": "复制中…",
+	"wtf.copyDest": "目标",
+	"wtf.copyDestPlaceholder": "选择目标…",
+	"wtf.copyAccountFrom": "从账号 {name} 复制",
+	"wtf.copyCharacterFrom": "从角色 {name} 复制",
+	"wtf.copyAccountScope":
+		"将复制 SavedVariables、SavedVariables.lua、config-cache.wtf、macros-cache.txt、bindings-cache.wtf、edit-mode-cache-account.txt；不会复制角色目录。",
+	"wtf.copyCharacterScope":
+		"将复制 SavedVariables、layout-local.txt、layout-cache.txt、config-cache.wtf、chat-cache.txt、AddOns.txt、bindings-cache.wtf（按键绑定）；目标角色的宏（macros-cache.txt）会保留。",
+	"wtf.copyAccountConfirm":
+		"确定用 {from} 的账号级配置覆盖 {to} 中对应项？",
+	"wtf.copyCharacterConfirm":
+		"确定用 {from} 的角色配置覆盖 {to} 中对应项？",
+	"wtf.copyAccountDone": "已复制账号配置 {from} → {to}",
+	"wtf.copyCharacterDone": "已复制角色配置 {from} → {to}",
 	"settings.back": "← 返回",
 	"settings.title": "设置",
 	"settings.subtitle": "配置语言、API Key、魔兽世界安装目录与日志",

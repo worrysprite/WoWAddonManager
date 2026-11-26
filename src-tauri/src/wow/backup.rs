@@ -456,8 +456,8 @@ mod tests {
 
 	#[test]
 	fn restore_like_mirror_then_refresh_picks_up_addon_churn() {
-		use crate::types::WowInstall;
-		use crate::wow::manifest::{self, ManifestAddon};
+		use crate::types::{ManifestAddon, WowInstall};
+		use crate::wow::manifest;
 
 		let root = std::env::temp_dir().join(format!("wam-restore-refresh-{}", stamp()));
 		let client = root.join("client");

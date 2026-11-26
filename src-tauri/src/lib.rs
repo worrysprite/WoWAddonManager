@@ -14,7 +14,11 @@ use types::{
 };
 use std::sync::Arc;
 use wow::backup::SyncReport;
-use wow::{backup, detect, install, scan};
+use wow::wtf::{
+	WtfCopyAccountRequest, WtfCopyCharacterRequest, WtfDeleteAccountRequest,
+	WtfDeleteCharacterRequest, WtfProfileTree,
+};
+use wow::{backup, detect, install, scan, wtf};
 
 async fn run_blocking<T, F>(f: F) -> Result<T, String>
 where
@@ -274,6 +278,74 @@ async fn restore_install(
 }
 
 #[tauri::command]
+async fn list_wtf_profiles(install_id: String) -> Result<WtfProfileTree, String> {
+	log::info!("list_wtf_profiles install_id={install_id}");
+	run_blocking(move || wtf::list_profiles(&install_id)).await
+}
+
+#[tauri::command]
+async fn delete_wtf_account(request: WtfDeleteAccountRequest) -> Result<(), String> {
+	log::warn!(
+		"delete_wtf_account install_id={} account={}",
+		request.install_id,
+		request.account
+	);
+	run_blocking(move || wtf::delete_account(&request.install_id, &request.account)).await
+}
+
+#[tauri::command]
+async fn delete_wtf_character(request: WtfDeleteCharacterRequest) -> Result<(), String> {
+	log::warn!(
+		"delete_wtf_character install_id={} account={} realm={} character={}",
+		request.install_id,
+		request.account,
+		request.realm,
+		request.character
+	);
+	run_blocking(move || {
+		wtf::delete_character(
+			&request.install_id,
+			&request.account,
+			&request.realm,
+			&request.character,
+		)
+	})
+	.await
+}
+
+#[tauri::command]
+async fn copy_wtf_account(request: WtfCopyAccountRequest) -> Result<u32, String> {
+	log::info!(
+		"copy_wtf_account install_id={} from={} to={}",
+		request.install_id,
+		request.from.account,
+		request.to.account
+	);
+	run_blocking(move || {
+		wtf::copy_account(&request.install_id, &request.from, &request.to).map(|n| n as u32)
+	})
+	.await
+}
+
+#[tauri::command]
+async fn copy_wtf_character(request: WtfCopyCharacterRequest) -> Result<u32, String> {
+	log::info!(
+		"copy_wtf_character install_id={} from={}/{}/{} to={}/{}/{}",
+		request.install_id,
+		request.from.account,
+		request.from.realm,
+		request.from.character,
+		request.to.account,
+		request.to.realm,
+		request.to.character
+	);
+	run_blocking(move || {
+		wtf::copy_character(&request.install_id, &request.from, &request.to).map(|n| n as u32)
+	})
+	.await
+}
+
+#[tauri::command]
 fn open_dir(path: String) -> Result<(), String> {
 	use std::path::PathBuf;
 	use std::process::Command;
@@ -405,6 +477,11 @@ pub fn run() {
 			save_logs,
 			backup_install,
 			restore_install,
+			list_wtf_profiles,
+			delete_wtf_account,
+			delete_wtf_character,
+			copy_wtf_account,
+			copy_wtf_character,
 			open_dir,
 			get_app_version,
 			get_update_install_kind
