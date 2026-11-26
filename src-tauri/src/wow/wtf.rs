@@ -2,11 +2,13 @@
 //!
 //! Copy scope (see internal note + PR):
 //! - Character → character: SavedVariables/, layout-local.txt, layout-cache.txt,
-//!   config-cache.wtf, chat-cache.txt, AddOns.txt.
-//!   Skips bindings-cache.wtf and macros-cache.txt so destination keybinds/macros stay.
+//!   config-cache.wtf, chat-cache.txt, AddOns.txt, bindings-cache.wtf (按键绑定).
+//!   Skips macros-cache.txt so destination character macros stay.
 //! - Account → account: SavedVariables/, SavedVariables.lua, config-cache.wtf,
-//!   macros-cache.txt, bindings-cache.wtf, edit-mode-cache-account.txt.
+//!   macros-cache.txt, bindings-cache.wtf (账号级按键), edit-mode-cache-account.txt.
 //!   Does not copy realm/character subfolders.
+//! Player keybinds live in bindings-cache.wtf (char and/or account folder).
+//! Bindings.xml is addon-defined binding metadata, not copied.
 
 use crate::config;
 use crate::types::WowInstall;
@@ -26,6 +28,7 @@ const CHAR_COPY_ITEMS: &[&str] = &[
 	"config-cache.wtf",
 	"chat-cache.txt",
 	"AddOns.txt",
+	"bindings-cache.wtf",
 ];
 
 /// Files/dirs copied for account → account (relative to account folder).
@@ -487,7 +490,7 @@ mod tests {
 	}
 
 	#[test]
-	fn copy_named_items_character_scope_skips_bindings() {
+	fn copy_named_items_character_scope_copies_bindings_skips_macros() {
 		let root = std::env::temp_dir().join(format!(
 			"wow-wtf-char-{}",
 			std::time::SystemTime::now()
@@ -506,7 +509,7 @@ mod tests {
 		write_file(&dst.join("macros-cache.txt"), "KEEP_MACRO\n");
 
 		let n = copy_named_items(&src, &dst, CHAR_COPY_ITEMS).unwrap();
-		assert!(n >= 2);
+		assert!(n >= 3);
 		assert_eq!(
 			fs::read_to_string(dst.join("SavedVariables/Foo.lua")).unwrap(),
 			"Foo = {}\n"
@@ -518,7 +521,7 @@ mod tests {
 		);
 		assert_eq!(
 			fs::read_to_string(dst.join("bindings-cache.wtf")).unwrap(),
-			"KEEP\n"
+			"BINDINGS\n"
 		);
 		assert_eq!(
 			fs::read_to_string(dst.join("macros-cache.txt")).unwrap(),

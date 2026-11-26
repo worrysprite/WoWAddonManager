@@ -372,7 +372,7 @@ export const en: Messages = {
 	"wtf.copyAccountScope":
 		"Copies SavedVariables, SavedVariables.lua, config-cache.wtf, macros-cache.txt, bindings-cache.wtf, and edit-mode-cache-account.txt. Character folders are not copied.",
 	"wtf.copyCharacterScope":
-		"Copies SavedVariables, layout-local.txt, layout-cache.txt, config-cache.wtf, chat-cache.txt, and AddOns.txt. Key bindings and macros on the destination are kept.",
+		"Copies SavedVariables, layout-local.txt, layout-cache.txt, config-cache.wtf, chat-cache.txt, AddOns.txt, and bindings-cache.wtf (key bindings). Destination macros (macros-cache.txt) are kept.",
 	"wtf.copyAccountConfirm":
 		"Overwrite matching account-level config on {to} with data from {from}?",
 	"wtf.copyCharacterConfirm":
@@ -607,7 +607,7 @@ export const zhCN: Messages = {
 	"wtf.copyAccountScope":
 		"将复制 SavedVariables、SavedVariables.lua、config-cache.wtf、macros-cache.txt、bindings-cache.wtf、edit-mode-cache-account.txt；不会复制角色目录。",
 	"wtf.copyCharacterScope":
-		"将复制 SavedVariables、layout-local.txt、layout-cache.txt、config-cache.wtf、chat-cache.txt、AddOns.txt；目标角色的按键与宏会保留。",
+		"将复制 SavedVariables、layout-local.txt、layout-cache.txt、config-cache.wtf、chat-cache.txt、AddOns.txt、bindings-cache.wtf（按键绑定）；目标角色的宏（macros-cache.txt）会保留。",
 	"wtf.copyAccountConfirm":
 		"确定用 {from} 的账号级配置覆盖 {to} 中对应项？",
 	"wtf.copyCharacterConfirm":
