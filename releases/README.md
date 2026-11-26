@@ -1,6 +1,6 @@
 # Windows 预编译包
 
-当前版本：**1.8.0**
+当前版本：**1.8.1**
 
 - 安装包（推荐，支持应用内自动更新）：见 [GitHub Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 中的 `*-setup.exe`
 - 便携版：同页的 `WoW-Addon-Manager.exe`（需手动下载替换）
@@ -15,6 +15,9 @@
 - 仓库 Secrets 需配置 `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。
 
 下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
+
+## 1.8.1 更新
+- 清理 Release 工作流警告：升级 `actions/checkout` / `actions/setup-node` 至 Node 24 运行时，并将 `tauri-apps/tauri-action` 升至 v1（修正被忽略的 `uploadUpdaterJson` 输入）
 
 ## 1.8.0 更新
 - 手动安装支持一次多选压缩包，按顺序安装；按钮显示进度，失败项汇总到错误提示
