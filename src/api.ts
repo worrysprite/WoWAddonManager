@@ -140,6 +140,7 @@ export function saveSettings(options: {
 	});
 }
 
+/** Backup only the client's `Interface` directory into the configured backup root. */
 export function backupInstall(
 	installId: string,
 	onProgress?: (line: string) => void,
@@ -154,6 +155,7 @@ export function backupInstall(
 	});
 }
 
+/** Restore only `Interface` from the configured backup root into the live client. */
 export function restoreInstall(
 	installId: string,
 	onProgress?: (line: string) => void,
@@ -163,6 +165,36 @@ export function restoreInstall(
 		onProgress?.(line);
 	};
 	return invoke<SyncReport>("restore_install", {
+		installId,
+		onProgress: channel,
+	});
+}
+
+/** Backup only the client's `WTF` directory into the configured backup root. */
+export function backupWtf(
+	installId: string,
+	onProgress?: (line: string) => void,
+) {
+	const channel = new Channel<string>();
+	channel.onmessage = (line) => {
+		onProgress?.(line);
+	};
+	return invoke<SyncReport>("backup_wtf", {
+		installId,
+		onProgress: channel,
+	});
+}
+
+/** Restore only `WTF` from the configured backup root into the live client. */
+export function restoreWtf(
+	installId: string,
+	onProgress?: (line: string) => void,
+) {
+	const channel = new Channel<string>();
+	channel.onmessage = (line) => {
+		onProgress?.(line);
+	};
+	return invoke<SyncReport>("restore_wtf", {
 		installId,
 		onProgress: channel,
 	});

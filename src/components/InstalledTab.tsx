@@ -601,7 +601,10 @@ export function InstalledTab({
 				onNeedBackupPath();
 				return;
 			}
-			if (message.includes("未找到该客户端的备份目录")) {
+			if (
+				message.includes("未找到该客户端的 Interface 备份") ||
+				message.includes("未找到该客户端的备份目录")
+			) {
 				finishSyncDialog("restore", {
 					report: null,
 					error: t("installed.restoreMissing"),
@@ -867,7 +870,10 @@ export function InstalledTab({
 					{toastNode}
 				</>
 			) : (
-				<WtfConfigPanel install={install} />
+				<WtfConfigPanel
+					install={install}
+					onNeedBackupPath={onNeedBackupPath}
+				/>
 			)}
 		</section>
 	);

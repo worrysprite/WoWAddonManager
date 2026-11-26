@@ -208,19 +208,18 @@ fn mirror_tree(
 	Ok(("mirror".into(), log))
 }
 
-fn sync_pair(
+/// Sync one named child (`Interface` or `WTF`) between two client/backup roots.
+fn sync_named_dir(
 	src_root: &Path,
 	dst_root: &Path,
-	label: &str,
+	name: &'static str,
+	src_label: &str,
 	on_progress: &mut impl FnMut(&str),
 ) -> Result<(Vec<&'static str>, String, String), String> {
-	let interface_src = src_root.join("Interface");
-	let wtf_src = src_root.join("WTF");
-	let has_interface = interface_src.is_dir();
-	let has_wtf = wtf_src.is_dir();
-	if !has_interface && !has_wtf {
+	let src = src_root.join(name);
+	if !src.is_dir() {
 		return Err(format!(
-			"{label}目录下未找到 Interface 或 WTF：{}",
+			"{src_label}目录下未找到 {name}：{}",
 			src_root.display()
 		));
 	}
@@ -228,52 +227,44 @@ fn sync_pair(
 	fs::create_dir_all(dst_root)
 		.map_err(|e| format!("无法创建目标目录 {}: {e}", dst_root.display()))?;
 
-	let mut synced = Vec::new();
-	let mut log_chunks = Vec::new();
-
-	if has_interface {
-		log::info!("同步 Interface …");
-		emit(on_progress, "===== Interface =====");
-		let (_engine, chunk) =
-			mirror_tree(&interface_src, &dst_root.join("Interface"), on_progress)?;
-		log_chunks.push(format!("===== Interface =====\n{chunk}"));
-		synced.push("Interface");
-	}
-	if has_wtf {
-		log::info!("同步 WTF …");
-		emit(on_progress, "===== WTF =====");
-		let (_engine, chunk) = mirror_tree(&wtf_src, &dst_root.join("WTF"), on_progress)?;
-		log_chunks.push(format!("===== WTF =====\n{chunk}"));
-		synced.push("WTF");
-	}
-
-	Ok((synced, "mirror".into(), log_chunks.join("\n")))
+	log::info!("同步 {name} …");
+	emit(on_progress, &format!("===== {name} ====="));
+	let (_engine, chunk) = mirror_tree(&src, &dst_root.join(name), on_progress)?;
+	let log_text = format!("===== {name} =====\n{chunk}");
+	Ok((vec![name], "mirror".into(), log_text))
 }
 
-/// Sync live `Interface` / `WTF` into this client's configured backup folder.
-pub fn backup_install(
+fn run_backup(
 	install_id: &str,
+	item: &'static str,
 	mut on_progress: impl FnMut(&str),
 ) -> Result<SyncReport, String> {
-	log::info!("开始备份 install_id={install_id}");
+	log::info!("开始备份 {item} install_id={install_id}");
 	let install = resolve_install(install_id)?;
 	let install_path = PathBuf::from(&install.install_path);
 	let dest_root = backup_root_for(install_id)?;
 	emit(
 		&mut on_progress,
-		&format!("开始备份 {} → {}", install.label, dest_root.display()),
+		&format!(
+			"开始备份 {item} {} → {}",
+			install.label,
+			dest_root.display()
+		),
 	);
 	log::info!(
-		"备份路径 install={} src={} dest={}",
+		"备份路径 item={item} install={} src={} dest={}",
 		install.label,
 		install_path.display(),
 		dest_root.display()
 	);
 	let (synced, engine, log_text) =
-		match sync_pair(&install_path, &dest_root, "客户端", &mut on_progress) {
+		match sync_named_dir(&install_path, &dest_root, item, "客户端", &mut on_progress) {
 			Ok(v) => v,
 			Err(err) => {
-				log::error!("备份失败 install={} err={err}", install.label);
+				log::error!(
+					"备份失败 item={item} install={} err={err}",
+					install.label
+				);
 				emit(&mut on_progress, &format!("错误: {err}"));
 				return Err(err);
 			}
@@ -283,7 +274,7 @@ pub fn backup_install(
 		&format!("备份完成: {}", synced.join(" + ")),
 	);
 	log::warn!(
-		"备份同步完成 install={} dest={} items={}",
+		"备份同步完成 item={item} install={} dest={} items={}",
 		install.label,
 		dest_root.display(),
 		synced.join("+")
@@ -297,36 +288,47 @@ pub fn backup_install(
 	})
 }
 
-/// Sync this client's backup `Interface` / `WTF` back into the live install.
-pub fn restore_install(
+fn run_restore(
 	install_id: &str,
+	item: &'static str,
+	refresh_addons: bool,
 	mut on_progress: impl FnMut(&str),
 ) -> Result<SyncReport, String> {
-	log::info!("开始恢复 install_id={install_id}");
+	log::info!("开始恢复 {item} install_id={install_id}");
 	let install = resolve_install(install_id)?;
 	let install_path = PathBuf::from(&install.install_path);
 	let src_root = backup_root_for(install_id)?;
-	if !src_root.join("Interface").is_dir() && !src_root.join("WTF").is_dir() {
-		let err = format!("未找到该客户端的备份目录：{}", src_root.display());
+	if !src_root.join(item).is_dir() {
+		let err = format!(
+			"未找到该客户端的 {item} 备份：{}",
+			src_root.join(item).display()
+		);
 		log::error!("{err}");
 		emit(&mut on_progress, &format!("错误: {err}"));
 		return Err(err);
 	}
 	emit(
 		&mut on_progress,
-		&format!("开始恢复 {} ← {}", install.label, src_root.display()),
+		&format!(
+			"开始恢复 {item} {} ← {}",
+			install.label,
+			src_root.display()
+		),
 	);
 	log::info!(
-		"恢复路径 install={} from={} to={}",
+		"恢复路径 item={item} install={} from={} to={}",
 		install.label,
 		src_root.display(),
 		install_path.display()
 	);
 	let (synced, engine, log_text) =
-		match sync_pair(&src_root, &install_path, "备份", &mut on_progress) {
+		match sync_named_dir(&src_root, &install_path, item, "备份", &mut on_progress) {
 			Ok(v) => v,
 			Err(err) => {
-				log::error!("恢复失败 install={} err={err}", install.label);
+				log::error!(
+					"恢复失败 item={item} install={} err={err}",
+					install.label
+				);
 				emit(&mut on_progress, &format!("错误: {err}"));
 				return Err(err);
 			}
@@ -336,34 +338,36 @@ pub fn restore_install(
 		&format!("恢复完成: {}", synced.join(" + ")),
 	);
 	log::warn!(
-		"恢复同步完成 install={} from={} items={}",
+		"恢复同步完成 item={item} install={} from={} items={}",
 		install.label,
 		src_root.display(),
 		synced.join("+")
 	);
-	// Mirror may replace AddOns + wow-addon-manager.json; refresh the scan
-	// cache so the Installed list matches disk without a manual rescan.
-	match scan::refresh_local_cache(&install) {
-		Ok(list) => {
-			log::info!(
-				"恢复后已刷新插件列表 install={} count={}",
-				install.label,
-				list.len()
-			);
-			emit(
-				&mut on_progress,
-				&format!("已刷新插件列表: {} 个", list.len()),
-			);
-		}
-		Err(err) => {
-			log::warn!(
-				"恢复后刷新插件列表失败 install={} err={err}",
-				install.label
-			);
-			emit(
-				&mut on_progress,
-				&format!("警告: 刷新插件列表失败: {err}"),
-			);
+	if refresh_addons {
+		// Mirror may replace AddOns + wow-addon-manager.json; refresh the scan
+		// cache so the Installed list matches disk without a manual rescan.
+		match scan::refresh_local_cache(&install) {
+			Ok(list) => {
+				log::info!(
+					"恢复后已刷新插件列表 install={} count={}",
+					install.label,
+					list.len()
+				);
+				emit(
+					&mut on_progress,
+					&format!("已刷新插件列表: {} 个", list.len()),
+				);
+			}
+			Err(err) => {
+				log::warn!(
+					"恢复后刷新插件列表失败 install={} err={err}",
+					install.label
+				);
+				emit(
+					&mut on_progress,
+					&format!("警告: 刷新插件列表失败: {err}"),
+				);
+			}
 		}
 	}
 	Ok(SyncReport {
@@ -373,6 +377,38 @@ pub fn restore_install(
 		log: log_text,
 		success: true,
 	})
+}
+
+/// Sync live `Interface` into this client's configured backup folder.
+pub fn backup_install(
+	install_id: &str,
+	on_progress: impl FnMut(&str),
+) -> Result<SyncReport, String> {
+	run_backup(install_id, "Interface", on_progress)
+}
+
+/// Sync this client's backup `Interface` back into the live install.
+pub fn restore_install(
+	install_id: &str,
+	on_progress: impl FnMut(&str),
+) -> Result<SyncReport, String> {
+	run_restore(install_id, "Interface", true, on_progress)
+}
+
+/// Sync live `WTF` into this client's configured backup folder.
+pub fn backup_wtf(
+	install_id: &str,
+	on_progress: impl FnMut(&str),
+) -> Result<SyncReport, String> {
+	run_backup(install_id, "WTF", on_progress)
+}
+
+/// Sync this client's backup `WTF` back into the live install.
+pub fn restore_wtf(
+	install_id: &str,
+	on_progress: impl FnMut(&str),
+) -> Result<SyncReport, String> {
+	run_restore(install_id, "WTF", false, on_progress)
 }
 
 #[cfg(test)]
@@ -558,6 +594,47 @@ mod tests {
 			streamed.iter().any(|l| l.contains("gone.txt")),
 			"live stream should include deleted file: {streamed:?}"
 		);
+		let _ = fs::remove_dir_all(root);
+	}
+
+	#[test]
+	fn sync_named_dir_only_mirrors_requested_folder() {
+		let root = std::env::temp_dir().join(format!("wam-sync-named-{}", stamp()));
+		let client = root.join("client");
+		let backup = root.join("backup");
+		let _ = fs::remove_dir_all(&root);
+		fs::create_dir_all(client.join("Interface/AddOns/Foo")).unwrap();
+		fs::write(
+			client.join("Interface/AddOns/Foo/Foo.toc"),
+			"## Interface: 16001\n",
+		)
+		.unwrap();
+		fs::create_dir_all(client.join("WTF/Account")).unwrap();
+		fs::write(client.join("WTF/Account/config.wtf"), "SET foo \"bar\"\n").unwrap();
+
+		sync_named_dir(&client, &backup, "Interface", "客户端", &mut noop).unwrap();
+		assert!(backup.join("Interface/AddOns/Foo/Foo.toc").is_file());
+		assert!(!backup.join("WTF").exists());
+
+		sync_named_dir(&client, &backup, "WTF", "客户端", &mut noop).unwrap();
+		assert!(backup.join("WTF/Account/config.wtf").is_file());
+
+		fs::write(backup.join("WTF/Account/config.wtf"), "SET foo \"bak\"\n").unwrap();
+		fs::write(
+			backup.join("Interface/AddOns/Foo/Foo.toc"),
+			"## Interface: bak\n",
+		)
+		.unwrap();
+		sync_named_dir(&backup, &client, "WTF", "备份", &mut noop).unwrap();
+		assert_eq!(
+			fs::read_to_string(client.join("WTF/Account/config.wtf")).unwrap(),
+			"SET foo \"bak\"\n"
+		);
+		assert_eq!(
+			fs::read_to_string(client.join("Interface/AddOns/Foo/Foo.toc")).unwrap(),
+			"## Interface: 16001\n"
+		);
+
 		let _ = fs::remove_dir_all(root);
 	}
 
