@@ -3,8 +3,9 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
 import { useAppUpdater } from "../hooks/useAppUpdater";
 import { useToast } from "../hooks/useToast";
-import { useI18n, type LocalePreference } from "../i18n";
+import { useI18n, resolveLocale, type LocalePreference } from "../i18n";
 import { translateInstallLabel } from "../i18n/catalogLabels";
+import { translate } from "../i18n/messages";
 import type { LogEntry, SettingsView } from "../types";
 import {
 	installDownloadedUpdate,
@@ -28,7 +29,7 @@ export function SettingsPage({
 	focusInstallId = null,
 	onFocusHandled,
 }: Props) {
-	const { t, locale, preference, setPreference } = useI18n();
+	const { t, locale, preference, systemLocale, setPreference } = useI18n();
 	const { showToast, toastNode } = useToast();
 	const updater = useAppUpdater({ autoCheck: false });
 	const [settings, setSettings] = useState<SettingsView | null>(null);
@@ -126,7 +127,10 @@ export function SettingsPage({
 			);
 			setSettings(next);
 			setPreference(nextLocale);
-			showToast(t("settings.languageSaved"));
+			// Resolve toast against the target locale — `t` still closes over the old one
+			// until React re-renders after setPreference.
+			const targetLocale = resolveLocale(nextLocale, systemLocale);
+			showToast(translate(targetLocale, "settings.languageSaved"));
 			onSaved(next);
 		} catch (err) {
 			setError(String(err));
