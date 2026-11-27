@@ -3,7 +3,9 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
 import { useToast } from "../hooks/useToast";
 import { useI18n, type MessageKey } from "../i18n";
+import { translateInstallLabel } from "../i18n/catalogLabels";
 import type {
+	SyncReport,
 	WtfAccount,
 	WtfCharacterRef,
 	WtfProfileTree,
@@ -12,6 +14,15 @@ import type {
 
 type Props = {
 	install: WowInstall;
+	onNeedBackupPath: () => void;
+};
+
+type SyncDialogState = {
+	kind: "backup" | "restore";
+	running: boolean;
+	liveLog: string;
+	report: SyncReport | null;
+	error: string | null;
 };
 
 type CopyTarget =
@@ -142,9 +153,11 @@ function charLabel(account: string, realm: string, name: string): string {
 	return `${account} / ${realm} / ${name}`;
 }
 
-export function WtfConfigPanel({ install }: Props) {
-	const { t } = useI18n();
+export function WtfConfigPanel({ install, onNeedBackupPath }: Props) {
+	const { t, locale } = useI18n();
 	const { showToast, toastNode } = useToast();
+	const hasBackupPath = Boolean(install.backupPath?.trim());
+	const installLabel = translateInstallLabel(install.flavorKey, install.label, locale);
 	const [tree, setTree] = useState<WtfProfileTree | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -155,6 +168,10 @@ export function WtfConfigPanel({ install }: Props) {
 	const [copySelection, setCopySelection] = useState<
 		Partial<Record<CopyCategoryId, boolean>>
 	>(() => defaultCopySelection("character"));
+	const [syncDialog, setSyncDialog] = useState<SyncDialogState | null>(null);
+	const syncOutputRef = useRef<HTMLPreElement | null>(null);
+	const syncLiveLogRef = useRef("");
+	const syncFlushTimerRef = useRef<number | null>(null);
 	const installIdRef = useRef(install.id);
 	installIdRef.current = install.id;
 
@@ -190,13 +207,171 @@ export function WtfConfigPanel({ install }: Props) {
 		setCopyDestKey("");
 		setCopySelection(defaultCopySelection("character"));
 		setBusyKey(null);
+		setSyncDialog(null);
 		void load(install.id);
 	}, [install.id]);
+
+	useEffect(() => {
+		if (!syncDialog || !syncOutputRef.current) return;
+		syncOutputRef.current.scrollTop = syncOutputRef.current.scrollHeight;
+	}, [syncDialog?.liveLog, syncDialog?.report?.log, syncDialog?.error, syncDialog?.running]);
+
+	useEffect(() => {
+		return () => {
+			if (syncFlushTimerRef.current !== null) {
+				window.clearTimeout(syncFlushTimerRef.current);
+				syncFlushTimerRef.current = null;
+			}
+		};
+	}, []);
 
 	function closeCopyDialog() {
 		if (busyKey === "copy") return;
 		setCopySource(null);
 		setCopyDestKey("");
+	}
+
+	function beginSyncDialog(kind: "backup" | "restore") {
+		if (syncFlushTimerRef.current !== null) {
+			window.clearTimeout(syncFlushTimerRef.current);
+			syncFlushTimerRef.current = null;
+		}
+		syncLiveLogRef.current = "";
+		setSyncDialog({
+			kind,
+			running: true,
+			liveLog: "",
+			report: null,
+			error: null,
+		});
+	}
+
+	function appendSyncLine(line: string) {
+		syncLiveLogRef.current += `${line}\n`;
+		if (syncFlushTimerRef.current !== null) return;
+		syncFlushTimerRef.current = window.setTimeout(() => {
+			syncFlushTimerRef.current = null;
+			const liveLog = syncLiveLogRef.current;
+			setSyncDialog((prev) => (prev ? { ...prev, liveLog } : prev));
+		}, 50);
+	}
+
+	function finishSyncDialog(
+		kind: "backup" | "restore",
+		patch: Partial<SyncDialogState>,
+	) {
+		if (syncFlushTimerRef.current !== null) {
+			window.clearTimeout(syncFlushTimerRef.current);
+			syncFlushTimerRef.current = null;
+		}
+		setSyncDialog({
+			kind,
+			running: false,
+			liveLog: syncLiveLogRef.current,
+			report: null,
+			error: null,
+			...patch,
+		});
+	}
+
+	async function handleBackup() {
+		const forInstallId = install.id;
+		setError(null);
+		if (!hasBackupPath) {
+			showToast(t("installed.backupNeedPath"));
+			onNeedBackupPath();
+			return;
+		}
+		setBusyKey("__backup__");
+		beginSyncDialog("backup");
+		try {
+			const report = await api.backupWtf(forInstallId, appendSyncLine);
+			if (installIdRef.current !== forInstallId) return;
+			finishSyncDialog("backup", { report, error: null });
+			showToast(t("wtf.backupDone", { path: report.path }));
+		} catch (err) {
+			if (installIdRef.current !== forInstallId) return;
+			const message = String(err);
+			if (message.includes("未设置备份路径")) {
+				setSyncDialog(null);
+				showToast(t("installed.backupNeedPath"));
+				onNeedBackupPath();
+				return;
+			}
+			finishSyncDialog("backup", { report: null, error: message });
+			setError(message);
+		} finally {
+			if (installIdRef.current === forInstallId) {
+				setBusyKey(null);
+			}
+		}
+	}
+
+	async function handleRestore() {
+		const forInstallId = install.id;
+		setError(null);
+		if (!hasBackupPath) {
+			showToast(t("installed.backupNeedPath"));
+			onNeedBackupPath();
+			return;
+		}
+		const confirmed = await ask(
+			t("wtf.restoreConfirm", { label: installLabel }),
+			{
+				title: t("wtf.restoreTitle"),
+				kind: "warning",
+				okLabel: t("wtf.restoreOk"),
+				cancelLabel: t("wtf.restoreCancel"),
+			},
+		);
+		if (!confirmed) return;
+		if (installIdRef.current !== forInstallId) return;
+		setBusyKey("__restore__");
+		beginSyncDialog("restore");
+		let report: SyncReport | null = null;
+		try {
+			report = await api.restoreWtf(forInstallId, appendSyncLine);
+		} catch (err) {
+			if (installIdRef.current !== forInstallId) return;
+			const message = String(err);
+			if (message.includes("未设置备份路径")) {
+				setSyncDialog(null);
+				showToast(t("installed.backupNeedPath"));
+				onNeedBackupPath();
+				return;
+			}
+			if (
+				message.includes("未找到该客户端的 WTF 备份") ||
+				message.includes("未找到该客户端的备份目录")
+			) {
+				finishSyncDialog("restore", {
+					report: null,
+					error: t("wtf.restoreMissing"),
+				});
+				setError(t("wtf.restoreMissing"));
+				return;
+			}
+			finishSyncDialog("restore", { report: null, error: message });
+			setError(message);
+			return;
+		} finally {
+			if (installIdRef.current === forInstallId && report === null) {
+				setBusyKey(null);
+			}
+		}
+		if (installIdRef.current !== forInstallId) return;
+		finishSyncDialog("restore", { report, error: null });
+		showToast(t("wtf.restoreDone", { path: report.path }));
+		try {
+			await load(forInstallId);
+		} catch (err) {
+			if (installIdRef.current !== forInstallId) return;
+			setError(String(err));
+		} finally {
+			if (installIdRef.current === forInstallId) {
+				setBusyKey(null);
+			}
+		}
 	}
 
 	function resolveWtfPath(current = tree): string {
@@ -385,6 +560,8 @@ export function WtfConfigPanel({ install }: Props) {
 
 	const accounts = tree?.accounts ?? [];
 	const wtfPath = resolveWtfPath();
+	const syncBusy = busyKey === "__backup__" || busyKey === "__restore__";
+	const toolbarBlocked = loading || busyKey !== null;
 	const copyCategories =
 		copySource?.kind === "account"
 			? ACCOUNT_COPY_CATEGORIES
@@ -421,8 +598,67 @@ export function WtfConfigPanel({ install }: Props) {
 
 	return (
 		<div className="wtf-panel">
+			{syncDialog ? (
+				<div className="modal-backdrop" role="presentation">
+					<div
+						className="modal-card sync-modal"
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="wtf-sync-modal-title"
+					>
+						<div className="sync-modal-header">
+							<h3 id="wtf-sync-modal-title">
+								{syncDialog.kind === "backup"
+									? t("installed.syncBackupTitle")
+									: t("installed.syncRestoreTitle")}
+							</h3>
+							{syncDialog.running ? (
+								<span className="muted">{t("installed.syncRunning")}</span>
+							) : syncDialog.error ? (
+								<span className="sync-modal-failed">{t("installed.syncFailed")}</span>
+							) : syncDialog.report ? (
+								<span className="sync-modal-ok">{t("installed.syncDone")}</span>
+							) : null}
+						</div>
+						{syncDialog.report ? (
+							<div className="muted sync-modal-meta">
+								<div>
+									{t("installed.syncItems", {
+										items: syncDialog.report.items.join(" / ") || "—",
+									})}
+								</div>
+								<div className="sync-modal-path">{syncDialog.report.path}</div>
+							</div>
+						) : null}
+						<label className="settings-field">
+							<span>{t("installed.syncOutput")}</span>
+							<pre className="sync-output" ref={syncOutputRef}>
+								{syncDialog.liveLog.trim()
+									? syncDialog.liveLog
+									: syncDialog.running
+										? t("installed.syncRunning")
+										: syncDialog.error ||
+											syncDialog.report?.log ||
+											"—"}
+							</pre>
+						</label>
+						<div className="card-actions">
+							<button
+								className="btn primary"
+								type="button"
+								disabled={syncDialog.running}
+								onClick={() => setSyncDialog(null)}
+							>
+								{t("installed.syncClose")}
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
+
 			<div className="wtf-toolbar">
 				<div>
+					<h2>{t("wtf.title", { label: installLabel })}</h2>
 					<div className="muted">
 						{wtfPath}
 						{install.gameVersion ? ` · ${install.gameVersion}` : ""}
@@ -434,17 +670,35 @@ export function WtfConfigPanel({ install }: Props) {
 						className="btn"
 						type="button"
 						onClick={() => void load()}
-						disabled={loading || busyKey !== null}
+						disabled={toolbarBlocked}
 					>
-						{loading ? t("wtf.refreshing") : t("wtf.refresh")}
+						{loading && !syncBusy ? t("wtf.refreshing") : t("wtf.refresh")}
 					</button>
 					<button
 						className="btn"
 						type="button"
 						onClick={() => void handleOpenWtf()}
-						disabled={loading || busyKey !== null}
+						disabled={toolbarBlocked}
 					>
 						{t("wtf.openFolder")}
+					</button>
+					<button
+						className="btn"
+						type="button"
+						onClick={() => void handleBackup()}
+						disabled={toolbarBlocked}
+						title={t("wtf.backup")}
+					>
+						{busyKey === "__backup__" ? t("wtf.backingUp") : t("wtf.backup")}
+					</button>
+					<button
+						className="btn"
+						type="button"
+						onClick={() => void handleRestore()}
+						disabled={toolbarBlocked}
+						title={t("wtf.restore")}
+					>
+						{busyKey === "__restore__" ? t("wtf.restoring") : t("wtf.restore")}
 					</button>
 				</div>
 			</div>

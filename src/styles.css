@@ -727,6 +727,11 @@ button {
 	padding: 12px 18px 0;
 }
 
+.wtf-toolbar h2 {
+	margin: 0;
+	font-size: 16px;
+}
+
 .wtf-list {
 	padding: 8px 18px 0;
 	overflow: auto;

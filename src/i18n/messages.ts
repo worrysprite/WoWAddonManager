@@ -111,10 +111,22 @@ export type MessageKey =
 	| "installed.subtabs"
 	| "installed.tabAddons"
 	| "installed.tabWtf"
+	| "wtf.title"
 	| "wtf.hint"
 	| "wtf.refresh"
 	| "wtf.refreshing"
 	| "wtf.openFolder"
+	| "wtf.backup"
+	| "wtf.backingUp"
+	| "wtf.backupDone"
+	| "wtf.restore"
+	| "wtf.restoring"
+	| "wtf.restoreDone"
+	| "wtf.restoreConfirm"
+	| "wtf.restoreTitle"
+	| "wtf.restoreOk"
+	| "wtf.restoreCancel"
+	| "wtf.restoreMissing"
 	| "wtf.loading"
 	| "wtf.emptyTitle"
 	| "wtf.emptyHint"
@@ -328,11 +340,11 @@ export const en: Messages = {
 	"installed.restoring": "Restoring…",
 	"installed.restoreDone": "Restore synced from: {path}",
 	"installed.restoreConfirm":
-		"Restore Interface and WTF for {label} from the backup folder? Current files will be overwritten to match the backup.",
-	"installed.restoreTitle": "Restore from backup",
+		"Restore Interface for {label} from the backup folder? Current Interface files will be overwritten to match the backup.",
+	"installed.restoreTitle": "Restore Interface from backup",
 	"installed.restoreOk": "Restore",
 	"installed.restoreCancel": "Cancel",
-	"installed.restoreMissing": "No backup found for this client.",
+	"installed.restoreMissing": "No Interface backup found for this client.",
 	"installed.syncBackupTitle": "Backup progress",
 	"installed.syncRestoreTitle": "Restore progress",
 	"installed.syncRunning": "Waiting for sync output…",
@@ -344,11 +356,24 @@ export const en: Messages = {
 	"installed.subtabs": "Installed page sections",
 	"installed.tabAddons": "Addons",
 	"installed.tabWtf": "Config",
+	"wtf.title": "{label} characters",
 	"wtf.hint":
 		"Manage WTF account and character profiles for this client. Close the game before deleting or copying.",
 	"wtf.refresh": "Refresh",
 	"wtf.refreshing": "Refreshing…",
 	"wtf.openFolder": "Open WTF folder",
+	"wtf.backup": "Backup",
+	"wtf.backingUp": "Backing up…",
+	"wtf.backupDone": "WTF backup synced: {path}",
+	"wtf.restore": "Restore",
+	"wtf.restoring": "Restoring…",
+	"wtf.restoreDone": "WTF restored from: {path}",
+	"wtf.restoreConfirm":
+		"Restore WTF for {label} from the backup folder? Current WTF files will be overwritten to match the backup.",
+	"wtf.restoreTitle": "Restore WTF from backup",
+	"wtf.restoreOk": "Restore",
+	"wtf.restoreCancel": "Cancel",
+	"wtf.restoreMissing": "No WTF backup found for this client.",
 	"wtf.loading": "Loading WTF profiles…",
 	"wtf.emptyTitle": "No WTF accounts found",
 	"wtf.emptyHint":
@@ -569,11 +594,11 @@ export const zhCN: Messages = {
 	"installed.restoring": "恢复中…",
 	"installed.restoreDone": "已从备份恢复：{path}",
 	"installed.restoreConfirm":
-		"确定将备份中的 Interface / WTF 恢复到 {label}？当前目录会同步为与备份一致。",
-	"installed.restoreTitle": "从备份恢复",
+		"确定将备份中的 Interface 恢复到 {label}？当前 Interface 目录会同步为与备份一致。",
+	"installed.restoreTitle": "从备份恢复 Interface",
 	"installed.restoreOk": "恢复",
 	"installed.restoreCancel": "取消",
-	"installed.restoreMissing": "未找到该客户端的备份",
+	"installed.restoreMissing": "未找到该客户端的 Interface 备份",
 	"installed.syncBackupTitle": "备份进度",
 	"installed.syncRestoreTitle": "恢复进度",
 	"installed.syncRunning": "等待同步输出…",
@@ -585,11 +610,24 @@ export const zhCN: Messages = {
 	"installed.subtabs": "已安装页分区",
 	"installed.tabAddons": "插件",
 	"installed.tabWtf": "配置管理",
+	"wtf.title": "{label} 角色列表",
 	"wtf.hint":
 		"管理此客户端 WTF 下的账号与角色配置。删除或复制前请先完全退出游戏。",
 	"wtf.refresh": "刷新",
 	"wtf.refreshing": "刷新中…",
 	"wtf.openFolder": "打开 WTF 目录",
+	"wtf.backup": "备份",
+	"wtf.backingUp": "备份中…",
+	"wtf.backupDone": "WTF 备份已同步：{path}",
+	"wtf.restore": "恢复",
+	"wtf.restoring": "恢复中…",
+	"wtf.restoreDone": "已从备份恢复 WTF：{path}",
+	"wtf.restoreConfirm":
+		"确定将备份中的 WTF 恢复到 {label}？当前 WTF 目录会同步为与备份一致。",
+	"wtf.restoreTitle": "从备份恢复 WTF",
+	"wtf.restoreOk": "恢复",
+	"wtf.restoreCancel": "取消",
+	"wtf.restoreMissing": "未找到该客户端的 WTF 备份",
 	"wtf.loading": "正在读取 WTF 配置…",
 	"wtf.emptyTitle": "未找到 WTF 账号",
 	"wtf.emptyHint": "请先进入游戏登录一次，或确认该客户端存在 WTF/Account 目录。",

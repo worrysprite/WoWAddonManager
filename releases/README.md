@@ -1,6 +1,6 @@
 # Windows 预编译包
 
-当前版本：**1.8.1**
+当前版本：**1.9.0**
 
 - 安装包（推荐，支持应用内自动更新）：见 [GitHub Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 中的 `*-setup.exe`
 - 便携版：同页的 `WoW-Addon-Manager.exe`（需手动下载替换）
@@ -15,6 +15,9 @@
 - 仓库 Secrets 需配置 `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。
 
 下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
+
+## 1.9.0 更新
+- 改进：插件页「备份 / 恢复」仅同步 `Interface`；配置管理页新增「{版本} 角色列表」标题与「备份 / 恢复」，仅同步 `WTF`；设置中的备份路径仍为两者的父目录
 
 ## 1.8.1 更新
 - 改进：配置管理「复制配置」对话框改为勾选要复制的类别（默认勾选 SavedVariables）；可点空白处关闭；按钮顺序为「复制 / 取消」

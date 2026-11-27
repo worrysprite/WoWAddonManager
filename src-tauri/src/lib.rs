@@ -254,7 +254,7 @@ async fn backup_install(
 	install_id: String,
 	on_progress: tauri::ipc::Channel<String>,
 ) -> Result<SyncReport, String> {
-	log::info!("backup_install install_id={install_id}");
+	log::info!("backup_install (Interface) install_id={install_id}");
 	run_blocking(move || {
 		backup::backup_install(&install_id, |line| {
 			let _ = on_progress.send(line.to_string());
@@ -268,9 +268,37 @@ async fn restore_install(
 	install_id: String,
 	on_progress: tauri::ipc::Channel<String>,
 ) -> Result<SyncReport, String> {
-	log::info!("restore_install install_id={install_id}");
+	log::info!("restore_install (Interface) install_id={install_id}");
 	run_blocking(move || {
 		backup::restore_install(&install_id, |line| {
+			let _ = on_progress.send(line.to_string());
+		})
+	})
+	.await
+}
+
+#[tauri::command]
+async fn backup_wtf(
+	install_id: String,
+	on_progress: tauri::ipc::Channel<String>,
+) -> Result<SyncReport, String> {
+	log::info!("backup_wtf install_id={install_id}");
+	run_blocking(move || {
+		backup::backup_wtf(&install_id, |line| {
+			let _ = on_progress.send(line.to_string());
+		})
+	})
+	.await
+}
+
+#[tauri::command]
+async fn restore_wtf(
+	install_id: String,
+	on_progress: tauri::ipc::Channel<String>,
+) -> Result<SyncReport, String> {
+	log::info!("restore_wtf install_id={install_id}");
+	run_blocking(move || {
+		backup::restore_wtf(&install_id, |line| {
 			let _ = on_progress.send(line.to_string());
 		})
 	})
@@ -490,6 +518,8 @@ pub fn run() {
 			save_logs,
 			backup_install,
 			restore_install,
+			backup_wtf,
+			restore_wtf,
 			list_wtf_profiles,
 			delete_wtf_account,
 			delete_wtf_character,
