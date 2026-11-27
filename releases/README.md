@@ -1,6 +1,6 @@
 # Windows 预编译包
 
-当前版本：**1.9.0**
+当前版本：**1.9.1**
 
 - 安装包（推荐，支持应用内自动更新）：见 [GitHub Releases](https://github.com/worrysprite/WoWAddonManager/releases/latest) 中的 `*-setup.exe`
 - 便携版：同页的 `WoW-Addon-Manager.exe`（需手动下载替换）
@@ -15,6 +15,11 @@
 - 仓库 Secrets 需配置 `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）。
 
 下载（最新）：https://github.com/worrysprite/WoWAddonManager/releases/latest
+
+## 1.9.1 更新
+- 修复：Forever（无限）上手动安装最新 `DBM-Vanilla_SoD` 后仍显示 Update。手动安装优先用压缩包名与 CF 文件名比较，确认已是最新后写入 `file_id`；无法比较时不再默认显示 Update
+- 修复：安装成功提示误用子 TOC 标题（如 World Bosses）；现只取合集父项，并等富化后再用 CurseForge 包名
+- 文案：安装成功提示由「已手动安装」改为「已安装」（英文同步为 Installed）
 
 ## 1.9.0 更新
 - 改进：插件页「备份 / 恢复」仅同步 `Interface`；配置管理页新增「{版本} 角色列表」标题与「备份 / 恢复」，仅同步 `WTF`；设置中的备份路径仍为两者的父目录

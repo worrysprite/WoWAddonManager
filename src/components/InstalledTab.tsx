@@ -401,7 +401,8 @@ export function InstalledTab({
 			if (installIdRef.current !== forInstallId) return;
 			if (!markBusy("__manual__")) return;
 
-			const installedTitles: string[] = [];
+			const installedFolders: string[] = [];
+			const fallbackTitles: string[] = [];
 			const failures: string[] = [];
 			try {
 				for (let i = 0; i < paths.length; i++) {
@@ -414,13 +415,18 @@ export function InstalledTab({
 							archivePath,
 						);
 						if (installIdRef.current !== forInstallId) return;
-						const names = installed
-							.map((item) => item.title)
-							.filter(Boolean);
-						if (names.length > 0) {
-							installedTitles.push(...names);
+						// One primary row per archive (suite children are hidden).
+						const primary =
+							installed.find((item) => item.isPrimary)
+							?? installed[0];
+						if (primary?.folderName) {
+							installedFolders.push(primary.folderName);
+						}
+						const title = primary?.title?.trim();
+						if (title) {
+							fallbackTitles.push(title);
 						} else {
-							installedTitles.push(archiveBaseName(archivePath));
+							fallbackTitles.push(archiveBaseName(archivePath));
 						}
 					} catch (err) {
 						failures.push(
@@ -431,14 +437,27 @@ export function InstalledTab({
 				if (installIdRef.current !== forInstallId) return;
 				await loadCached(forInstallId);
 				if (installIdRef.current !== forInstallId) return;
-				if (installedTitles.length > 0) {
+				// Await enrich so toast can use the CF package title (e.g.
+				// 「DBM - Forever and Vanilla」) instead of a child TOC name.
+				const enriched = await enrichAfterScan(forInstallId);
+				if (installIdRef.current !== forInstallId) return;
+				if (fallbackTitles.length > 0) {
+					const names = fallbackTitles.map((fallback, index) => {
+						const folder = installedFolders[index];
+						if (!folder || !enriched) return fallback;
+						const hit = enriched.find(
+							(item) =>
+								item.folderName === folder
+								|| item.relatedFolders?.includes(folder),
+						);
+						const enrichedTitle = hit?.title?.trim();
+						return enrichedTitle || fallback;
+					});
 					showToast(
-						t("installed.manualDone", {
-							names: installedTitles.join("、"),
+						t("installed.installDone", {
+							names: names.join("、"),
 						}),
 					);
-					// Recompute hasUpdate (manual installs have no file_id; version compare).
-					void enrichAfterScan(forInstallId);
 				}
 				if (failures.length > 0) {
 					setError(

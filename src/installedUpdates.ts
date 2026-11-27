@@ -129,20 +129,26 @@ export function stopInstalledUpdateSchedule() {
  * After disk scan (background): CurseForge update check + icon localize for this
  * install, then restart the hourly clock (next automatic round in one hour).
  */
-export async function enrichAfterScan(installId: string) {
+export async function enrichAfterScan(
+	installId: string,
+): Promise<InstalledAddon[] | null> {
 	if (getInstallIds) {
 		startInstalledUpdateSchedule(getInstallIds, { runSoon: false });
 	}
+	let latest: InstalledAddon[] | null = null;
 	try {
 		const updated = await api.checkInstalledUpdates(installId);
 		emit(installId, updated);
+		latest = updated;
 	} catch {
 		// Best-effort.
 	}
 	try {
 		const withIcons = await api.localizeInstalledIcons(installId);
 		emit(installId, withIcons);
+		latest = withIcons;
 	} catch {
 		// Best-effort.
 	}
+	return latest;
 }

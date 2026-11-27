@@ -1,6 +1,6 @@
 # WoW Addon Manager
 
-基于 **Tauri 2 + React + TypeScript** 的魔兽世界插件管理器（当前版本 **1.9.0**）。
+基于 **Tauri 2 + React + TypeScript** 的魔兽世界插件管理器（当前版本 **1.9.1**）。
 
 预编译安装包 / 便携版与发版说明见 [`releases/README.md`](releases/README.md)；最新包：https://github.com/worrysprite/WoWAddonManager/releases/latest
 
@@ -25,7 +25,7 @@
 
 - **套件**：列表只显示父插件；安装 / 更新 / 删除作用于整个套件；优先以带 `X-Curse-Project-ID` 的文件夹为合集父项
 - **全部更新**：最多 5 路并发，按钮显示剩余数量，各插件独立进度
-- **手动安装**：可一次多选压缩包，按顺序安装
+- **手动安装**：可一次多选压缩包，按顺序安装；成功提示显示合集 / CurseForge 包名（「已安装：…」），已是最新时不显示 Update
 - **备份 / 恢复**：插件页只同步 `Interface`，配置管理页只同步 `WTF`（内置镜像同步，弹窗显示进度）。设置里为每个客户端指定的备份路径是**父目录**（其下直接放 `Interface`、`WTF`）。未设置时点击备份会跳转设置
 - **配置管理**：可复制账号 / 角色配置（对话框勾选类别，默认勾选 SavedVariables；含按键绑定等）；扫描账号时排除顶层 `SavedVariables`，避免误列为账号
 
