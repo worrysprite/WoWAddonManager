@@ -454,8 +454,11 @@ async fn apply_remote_updates(
 			other => other,
 		};
 		if let Some(remote) = remote {
+			let prior_file_id = addon.file_id;
 			apply_update_flags(addon, &remote);
-			if apply_remote_metadata(addon, &remote) {
+			let file_id_pinned = addon.file_id != prior_file_id;
+			let meta_changed = apply_remote_metadata(addon, &remote);
+			if meta_changed || file_id_pinned {
 				upsert_remote_enrichment(&mut stored, addon);
 				manifest_dirty = true;
 			}
@@ -732,25 +735,47 @@ fn needs_thumbnail(addon: &InstalledAddon) -> bool {
 		.unwrap_or(true)
 }
 
-fn remote_newer_than_local(addon: &InstalledAddon, remote: &AddonSummary, remote_file: i64) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalFreshness {
+	/// Remote file id / version is newer than local.
+	Outdated,
+	/// Local covers remote (equal or newer) — safe to pin file_id.
+	Current,
+	/// No file_id and labels cannot be compared — hide Update, do not pin.
+	Unknown,
+}
+
+fn local_freshness(addon: &InstalledAddon, remote: &AddonSummary, remote_file: i64) -> LocalFreshness {
 	match addon.file_id {
-		Some(local) => remote_file > local,
+		Some(local) => {
+			if remote_file > local {
+				LocalFreshness::Outdated
+			} else {
+				LocalFreshness::Current
+			}
+		}
 		None => {
-			// Manual install / missing file_id: compare TOC/manifest version (and
-			// archive name as fallback) with CF displayName / filename. If local
-			// covers remote, do not offer Update (API-disabled addons rely on this).
+			// Manual install / missing file_id: prefer the zip fingerprint
+			// (archive_name) over TOC ## Version. DBM ships TOC `r837` alongside
+			// package `DBM-Vanilla_SoD-r837`; other suites may use TOC semver that
+			// falsely compares older than an rN CF displayName when version is first.
 			let remote_ver = remote.latest_version.as_deref();
-			match crate::wow::version::local_covers_remote(addon.version.as_deref(), remote_ver) {
-				Some(true) => false,
-				Some(false) => true,
+			match crate::wow::version::local_covers_remote(
+				addon.archive_name.as_deref(),
+				remote_ver,
+			) {
+				Some(true) => LocalFreshness::Current,
+				Some(false) => LocalFreshness::Outdated,
 				None => match crate::wow::version::local_covers_remote(
-					addon.archive_name.as_deref(),
+					addon.version.as_deref(),
 					remote_ver,
 				) {
-					Some(true) => false,
-					Some(false) => true,
-					// Cannot compare — keep offering update (same as before).
-					None => true,
+					Some(true) => LocalFreshness::Current,
+					Some(false) => LocalFreshness::Outdated,
+					// Cannot compare labels (or CF omitted latest_version): do not
+					// offer Update. Perpetual false positives (DBM on Forever) are
+					// worse than missing a tip until the next identifiable release.
+					None => LocalFreshness::Unknown,
 				},
 			}
 		}
@@ -763,16 +788,31 @@ fn apply_update_flags(addon: &mut InstalledAddon, remote: &AddonSummary) {
 	let Some(remote_file) = remote.latest_file_id else {
 		return;
 	};
-	let newer_file = remote_newer_than_local(addon, remote, remote_file);
-
-	if newer_file {
-		addon.has_update = true;
-		// Prefer CF displayName / filename; never use updatedAt as a "version".
-		addon.remote_version = remote
-			.latest_version
-			.clone()
-			.filter(|v| !v.trim().is_empty());
-		addon.remote_file_id = Some(remote_file);
+	match local_freshness(addon, remote, remote_file) {
+		LocalFreshness::Outdated => {
+			addon.has_update = true;
+			// Prefer CF displayName / filename; never use updatedAt as a "version".
+			addon.remote_version = remote
+				.latest_version
+				.clone()
+				.filter(|v| !v.trim().is_empty());
+			addon.remote_file_id = Some(remote_file);
+		}
+		LocalFreshness::Current => {
+			addon.has_update = false;
+			addon.remote_version = None;
+			addon.remote_file_id = None;
+			// Pin the matched CF file so later checks use file_id (not fragile
+			// version strings). Manual zip installs start with file_id=None.
+			if addon.file_id.is_none() {
+				addon.file_id = Some(remote_file);
+			}
+		}
+		LocalFreshness::Unknown => {
+			addon.has_update = false;
+			addon.remote_version = None;
+			addon.remote_file_id = None;
+		}
 	}
 }
 
@@ -866,6 +906,10 @@ fn upsert_remote_enrichment(stored: &mut crate::types::AddonManifest, addon: &In
 		{
 			entry.name = Some(addon.title.clone());
 		}
+		// Pin CF file_id after a manual install is confirmed current.
+		if addon.file_id.is_some() && entry.file_id != addon.file_id {
+			entry.file_id = addon.file_id;
+		}
 		if entry.curseforge_id != addon.curseforge_id && addon.curseforge_id.is_some() {
 			entry.curseforge_id = addon.curseforge_id;
 			entry.curseforge_slug = addon.curseforge_slug.clone();
@@ -925,6 +969,22 @@ fn upsert_remote_enrichment(stored: &mut crate::types::AddonManifest, addon: &In
 			related_folders: addon.related_folders.clone(),
 			is_primary: addon.is_primary,
 		});
+	}
+	// Suite siblings share the same CF package file once the primary is pinned.
+	if addon.related_folders.len() > 1 {
+		if let Some(fid) = addon.file_id {
+			for folder in &addon.related_folders {
+				if let Some(sibling) = stored
+					.addons
+					.iter_mut()
+					.find(|a| a.folder_name == *folder)
+				{
+					if sibling.file_id != Some(fid) {
+						sibling.file_id = Some(fid);
+					}
+				}
+			}
+		}
 	}
 	stored.version = 1;
 }
@@ -1207,6 +1267,8 @@ mod tests {
 		apply_update_flags(&mut addon, &remote);
 		assert!(!addon.has_update);
 		assert!(addon.remote_file_id.is_none());
+		// Pin CF file so later checks do not re-enter version compare.
+		assert_eq!(addon.file_id, Some(99));
 	}
 
 	#[test]
@@ -1219,6 +1281,7 @@ mod tests {
 		assert!(addon.has_update);
 		assert_eq!(addon.remote_file_id, Some(99));
 		assert_eq!(addon.remote_version.as_deref(), Some("PostBox 1.4.0"));
+		assert!(addon.file_id.is_none());
 	}
 
 	#[test]
@@ -1230,6 +1293,46 @@ mod tests {
 		let remote = sample_remote(99, Some("PostBox 1.4.0"));
 		apply_update_flags(&mut addon, &remote);
 		assert!(!addon.has_update);
+		assert_eq!(addon.file_id, Some(99));
+	}
+
+	#[test]
+	fn apply_update_flags_prefers_archive_over_mismatched_toc_semver() {
+		// DBM-style: TOC may carry an unrelated dotted version while the zip /
+		// CF displayName share an rN revision. Archive must win so Update hides.
+		let mut addon = sample_installed("DBM-Raids-Vanilla");
+		addon.file_id = None;
+		addon.version = Some("3.4.2".into());
+		addon.archive_name = Some("DBM-Vanilla_SoD-r837.zip".into());
+		let remote = sample_remote(9767225, Some("DBM-Vanilla_SoD-r837"));
+		apply_update_flags(&mut addon, &remote);
+		assert!(!addon.has_update);
+		assert_eq!(addon.file_id, Some(9767225));
+	}
+
+	#[test]
+	fn apply_update_flags_manual_r_revision_covers_remote() {
+		let mut addon = sample_installed("DBM-Raids-Vanilla");
+		addon.file_id = None;
+		addon.version = Some("r837".into());
+		addon.archive_name = Some("DBM-Vanilla_SoD-r837.zip".into());
+		let remote = sample_remote(9767225, Some("DBM-Vanilla_SoD-r837"));
+		apply_update_flags(&mut addon, &remote);
+		assert!(!addon.has_update);
+		assert_eq!(addon.file_id, Some(9767225));
+	}
+
+	#[test]
+	fn apply_update_flags_incomparable_manual_hides_update() {
+		let mut addon = sample_installed("Mystery");
+		addon.file_id = None;
+		addon.version = None;
+		addon.archive_name = None;
+		let remote = sample_remote(99, Some("Mystery Nightly"));
+		apply_update_flags(&mut addon, &remote);
+		assert!(!addon.has_update);
+		// Do not pin: we never proved local matches this remote file.
+		assert!(addon.file_id.is_none());
 	}
 
 	#[test]

@@ -313,9 +313,18 @@ pub async fn install_from_archive(
 	}
 
 	let list = scan::refresh_local_cache(&install)?;
+	// Return only the suite primary row (not every child TOC title). Toast / UI
+	// should show one package name — CF enrich later rewrites title from the
+	// project id on this primary.
 	let installed = list
 		.into_iter()
-		.filter(|a| a.folder_name == primary || accepted.iter().any(|f| f == &a.folder_name))
+		.filter(|a| {
+			a.folder_name == primary
+				|| (a.is_primary
+					&& a.related_folders
+						.iter()
+						.any(|f| accepted.iter().any(|x| x == f)))
+		})
 		.collect::<Vec<_>>();
 
 	Ok(installed)

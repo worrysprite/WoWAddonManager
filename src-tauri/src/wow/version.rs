@@ -137,6 +137,30 @@ mod tests {
 			extract_version_parts("PostBox-1.4.0.zip"),
 			Some(vec![1, 4, 0])
 		);
+		assert_eq!(extract_version_parts("r837"), Some(vec![837]));
+		assert_eq!(
+			extract_version_parts("DBM-Vanilla_SoD-r837.zip"),
+			Some(vec![837])
+		);
+	}
+
+	#[test]
+	fn dbm_revision_covers_cf_display_name() {
+		assert_eq!(
+			local_covers_remote(Some("r837"), Some("DBM-Vanilla_SoD-r837")),
+			Some(true)
+		);
+		assert_eq!(
+			local_covers_remote(
+				Some("DBM-Vanilla_SoD-r837.zip"),
+				Some("DBM-Vanilla_SoD-r837")
+			),
+			Some(true)
+		);
+		assert_eq!(
+			local_covers_remote(Some("r836"), Some("DBM-Vanilla_SoD-r837")),
+			Some(false)
+		);
 	}
 
 	#[test]

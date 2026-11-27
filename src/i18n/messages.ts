@@ -77,7 +77,7 @@ export type MessageKey =
 	| "installed.emptyTitle"
 	| "installed.emptyHint"
 	| "installed.rescanDone"
-	| "installed.manualDone"
+	| "installed.installDone"
 	| "installed.manualInstalling"
 	| "installed.manualPartialFail"
 	| "installed.deleteConfirm"
@@ -319,7 +319,7 @@ export const en: Messages = {
 	"installed.emptyHint":
 		'Install from Browse All, or click "Manual install" and choose one or more archives.',
 	"installed.rescanDone": "Addon scan complete. {count} addon(s).",
-	"installed.manualDone": "Manually installed: {names}",
+	"installed.installDone": "Installed: {names}",
 	"installed.manualInstalling": "Installing {current}/{total}…",
 	"installed.manualPartialFail":
 		"Failed {failed} of {total}: {details}",
@@ -573,7 +573,7 @@ export const zhCN: Messages = {
 	"installed.emptyTitle": "还没有已安装插件",
 	"installed.emptyHint": "可从「浏览全部」安装，或点击右上角「手动安装」选择一个或多个压缩包。",
 	"installed.rescanDone": "插件扫描完成，共 {count} 个插件",
-	"installed.manualDone": "已手动安装：{names}",
+	"installed.installDone": "已安装：{names}",
 	"installed.manualInstalling": "正在安装 {current}/{total}…",
 	"installed.manualPartialFail":
 		"有 {failed}/{total} 个安装失败：{details}",
