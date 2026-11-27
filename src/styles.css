@@ -952,12 +952,43 @@ button {
 
 .settings-page {
 	width: 100%;
-	max-width: 720px;
-	margin: 0 auto;
+	min-width: 0;
 	padding: 24px 18px 40px;
 	display: flex;
 	flex-direction: column;
 	gap: 16px;
+	box-sizing: border-box;
+}
+
+.settings-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	grid-template-areas:
+		"update language"
+		"api logs"
+		"wow wow";
+	gap: 16px;
+	align-items: start;
+}
+
+.settings-card-update {
+	grid-area: update;
+}
+
+.settings-card-language {
+	grid-area: language;
+}
+
+.settings-card-api {
+	grid-area: api;
+}
+
+.settings-card-logs {
+	grid-area: logs;
+}
+
+.settings-card-wow {
+	grid-area: wow;
 }
 
 .settings-header {
@@ -1462,5 +1493,15 @@ button {
 
 	.brand-title {
 		display: none;
+	}
+
+	.settings-grid {
+		grid-template-columns: 1fr;
+		grid-template-areas:
+			"update"
+			"language"
+			"api"
+			"wow"
+			"logs";
 	}
 }
