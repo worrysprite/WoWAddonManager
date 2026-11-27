@@ -780,6 +780,16 @@ fn apply_update_flags(addon: &mut InstalledAddon, remote: &AddonSummary) {
 fn apply_remote_metadata(addon: &mut InstalledAddon, remote: &AddonSummary) -> bool {
 	let mut changed = false;
 
+	// Suite row: show CurseForge package title (e.g. 「DBM - Forever and Vanilla」)
+	// instead of a child TOC title like 「World Bosses (Vanilla)」.
+	if addon.related_folders.len() > 1 {
+		let remote_name = remote.name.trim();
+		if !remote_name.is_empty() && addon.title != remote_name {
+			addon.title = remote_name.to_string();
+			changed = true;
+		}
+	}
+
 	if needs_thumbnail(addon) && !remote.thumbnail_url.trim().is_empty() {
 		addon.thumbnail_url = Some(remote.thumbnail_url.clone());
 		changed = true;
@@ -848,6 +858,13 @@ fn upsert_remote_enrichment(stored: &mut crate::types::AddonManifest, addon: &In
 	{
 		if entry.thumbnail_url.as_ref().map(|u| u.is_empty()).unwrap_or(true) {
 			entry.thumbnail_url = addon.thumbnail_url.clone();
+		}
+		// Keep suite display name in sync with CurseForge package title.
+		if addon.related_folders.len() > 1
+			&& !addon.title.trim().is_empty()
+			&& entry.name.as_deref() != Some(addon.title.as_str())
+		{
+			entry.name = Some(addon.title.clone());
 		}
 		if entry.curseforge_id != addon.curseforge_id && addon.curseforge_id.is_some() {
 			entry.curseforge_id = addon.curseforge_id;

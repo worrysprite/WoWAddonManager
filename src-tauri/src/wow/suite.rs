@@ -7,21 +7,52 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 /// Choose the main folder for a suite (slug/name match, then common-prefix parent).
+///
+/// When `prefer` is non-empty, only those folders are considered (e.g. members
+/// whose TOC declares `X-Curse-Project-ID`). Manual DBM-Vanilla_SoD zips ship
+/// `DBM-Azeroth` (World Bosses child, no project id) + `DBM-Raids-Vanilla`
+/// (has 16442); without prefer, shortest-name fallback wrongly picks Azeroth.
 pub fn pick_primary_folder(
 	folders: &[String],
 	slug: Option<&str>,
 	name: Option<&str>,
 ) -> String {
+	pick_primary_folder_preferring(folders, slug, name, &[])
+}
+
+/// Like [`pick_primary_folder`], but when `prefer` is non-empty restrict the
+/// candidate pool to the intersection with `folders` (falls back to all folders
+/// if the intersection is empty).
+pub fn pick_primary_folder_preferring(
+	folders: &[String],
+	slug: Option<&str>,
+	name: Option<&str>,
+	prefer: &[String],
+) -> String {
 	if folders.is_empty() {
 		return String::new();
 	}
-	if folders.len() == 1 {
-		return folders[0].clone();
+	let preferred: Vec<String> = if prefer.is_empty() {
+		Vec::new()
+	} else {
+		folders
+			.iter()
+			.filter(|f| prefer.iter().any(|p| p.eq_ignore_ascii_case(f)))
+			.cloned()
+			.collect()
+	};
+	let pool: &[String] = if preferred.is_empty() {
+		folders
+	} else {
+		preferred.as_slice()
+	};
+	if pool.len() == 1 {
+		return pool[0].clone();
 	}
 
 	if let Some(slug) = slug.map(str::trim).filter(|s| !s.is_empty()) {
 		let sanitized = sanitize_folder(slug);
-		if let Some(hit) = folders.iter().find(|f| {
+		if let Some(hit) = pool.iter().find(|f| {
 			f.eq_ignore_ascii_case(slug) || f.eq_ignore_ascii_case(&sanitized)
 		}) {
 			return hit.clone();
@@ -30,7 +61,7 @@ pub fn pick_primary_folder(
 
 	if let Some(name) = name.map(str::trim).filter(|s| !s.is_empty()) {
 		let compact = alnum_only(name);
-		if let Some(hit) = folders.iter().find(|f| {
+		if let Some(hit) = pool.iter().find(|f| {
 			f.eq_ignore_ascii_case(name) || alnum_only(f).eq_ignore_ascii_case(&compact)
 		}) {
 			return hit.clone();
@@ -38,10 +69,10 @@ pub fn pick_primary_folder(
 	}
 
 	// EllesmereUI + EllesmereUI_Foo: the shared prefix folder is the core.
-	if let Some(hit) = folders.iter().find(|candidate| {
+	if let Some(hit) = pool.iter().find(|candidate| {
 		let prefix_us = format!("{}_", candidate.to_lowercase());
 		let prefix_dash = format!("{}-", candidate.to_lowercase());
-		folders.iter().filter(|o| o.as_str() != candidate.as_str()).all(|other| {
+		pool.iter().filter(|o| o.as_str() != candidate.as_str()).all(|other| {
 			let lower = other.to_lowercase();
 			lower.starts_with(&prefix_us) || lower.starts_with(&prefix_dash)
 		})
@@ -49,11 +80,10 @@ pub fn pick_primary_folder(
 		return hit.clone();
 	}
 
-	folders
-		.iter()
+	pool.iter()
 		.min_by_key(|f| (f.len(), f.to_lowercase()))
 		.cloned()
-		.unwrap_or_else(|| folders[0].clone())
+		.unwrap_or_else(|| pool[0].clone())
 }
 
 /// All folders belonging to the same install suite as `folder_name`.
@@ -281,13 +311,27 @@ fn collapse_component(
 			None
 		}
 	});
-	let primary_name = members
+	// Folders that carry a CurseForge id (usually from TOC X-Curse-Project-ID).
+	let id_folders: Vec<String> = members
 		.iter()
-		.find(|m| m.is_primary)
+		.filter(|m| m.curseforge_id.is_some())
 		.map(|m| m.folder_name.clone())
-		.unwrap_or_else(|| {
-			pick_primary_folder(&member_folders, slug.as_deref(), name.as_deref())
-		});
+		.collect();
+	let marked_primary = members.iter().find(|m| m.is_primary);
+	// Manual DBM-Vanilla_SoD: install marked DBM-Azeroth (no id) as primary.
+	// Prefer a sibling that has the project id so Update resolves 16442, not
+	// a name search for 「DBM-Azeroth」.
+	let primary_name = match marked_primary {
+		Some(m) if m.curseforge_id.is_some() || id_folders.is_empty() => {
+			m.folder_name.clone()
+		}
+		Some(_) | None => pick_primary_folder_preferring(
+			&member_folders,
+			slug.as_deref(),
+			name.as_deref(),
+			&id_folders,
+		),
+	};
 
 	let mut primary = members
 		.iter()
@@ -560,5 +604,58 @@ mod tests {
 		];
 		let collapsed = collapse_suite_rows(rows);
 		assert_eq!(collapsed.len(), 2);
+	}
+
+	#[test]
+	fn prefer_project_id_folder_over_shortest_child() {
+		let folders = vec!["DBM-Azeroth".into(), "DBM-Raids-Vanilla".into()];
+		let prefer = vec!["DBM-Raids-Vanilla".into()];
+		assert_eq!(
+			pick_primary_folder_preferring(
+				&folders,
+				Some("DBM-Vanilla_SoD-r837"),
+				Some("DBM-Vanilla_SoD-r837"),
+				&prefer,
+			),
+			"DBM-Raids-Vanilla"
+		);
+		// Without prefer, shortest-name fallback still picks the World Bosses child.
+		assert_eq!(
+			pick_primary_folder(
+				&folders,
+				Some("DBM-Vanilla_SoD-r837"),
+				Some("DBM-Vanilla_SoD-r837"),
+			),
+			"DBM-Azeroth"
+		);
+	}
+
+	#[test]
+	fn collapse_repicks_primary_when_marked_child_lacks_curseforge_id() {
+		// Manual DBM-Vanilla_SoD: install marked DBM-Azeroth primary; sibling
+		// DBM-Raids-Vanilla carries X-Curse-Project-ID 16442.
+		let rows = vec![
+			sample(
+				"DBM-Azeroth",
+				"World Bosses (Vanilla)",
+				None,
+				vec!["DBM-Azeroth", "DBM-Raids-Vanilla"],
+				true,
+				None,
+			),
+			sample(
+				"DBM-Raids-Vanilla",
+				"Raids (Vanilla)",
+				Some(16442),
+				vec!["DBM-Azeroth", "DBM-Raids-Vanilla"],
+				false,
+				None,
+			),
+		];
+		let collapsed = collapse_suite_rows(rows);
+		assert_eq!(collapsed.len(), 1);
+		assert_eq!(collapsed[0].folder_name, "DBM-Raids-Vanilla");
+		assert_eq!(collapsed[0].curseforge_id, Some(16442));
+		assert_eq!(collapsed[0].related_folders.len(), 2);
 	}
 }

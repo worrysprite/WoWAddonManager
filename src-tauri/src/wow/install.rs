@@ -252,10 +252,22 @@ pub async fn install_from_archive(
 		.file_stem()
 		.and_then(|s| s.to_str())
 		.map(|s| s.to_string());
-	let primary = crate::wow::suite::pick_primary_folder(
+	// Prefer folders whose TOC declares X-Curse-Project-ID (DBM-Raids-Vanilla
+	// over DBM-Azeroth World Bosses child in DBM-Vanilla_SoD zips).
+	let prefer_project_id: Vec<String> = pending_meta
+		.iter()
+		.filter(|(_, meta)| {
+			meta.as_ref()
+				.and_then(|m| m.curseforge_project_id)
+				.is_some()
+		})
+		.map(|(folder, _)| folder.clone())
+		.collect();
+	let primary = crate::wow::suite::pick_primary_folder_preferring(
 		&accepted,
 		archive_stem.as_deref(),
 		archive_stem.as_deref(),
+		&prefer_project_id,
 	);
 
 	for (folder, meta) in pending_meta {
@@ -343,27 +355,34 @@ fn has_installable_file_for_flavor(item: &AddonSummary, preferred_type_id: Optio
 }
 
 /// Resolve a CurseForge mod for update.
-/// Policy: prefer TOC `X-Curse-Project-ID` when present; otherwise match by name.
-/// If the TOC/preferred id has no file for this client flavor, fall through to name search.
+/// Policy: prefer TOC / suite-sibling `X-Curse-Project-ID`; then name search;
+/// last resort enriched manifest id (when it has a file for this flavor).
+/// If a preferred id has no file for this client flavor, fall through.
 async fn find_curseforge_for_update(
 	folder_name: &str,
 	tracked: Option<&ManifestAddon>,
 	title: Option<&str>,
 	preferred_type_id: Option<i64>,
-	toc_project_id: Option<i64>,
+	toc_project_ids: &[i64],
 ) -> Option<AddonSummary> {
-	if let Some(id) = toc_project_id {
+	let mut tried = Vec::new();
+	for &id in toc_project_ids {
+		if tried.contains(&id) {
+			continue;
+		}
+		tried.push(id);
 		if let Some(item) = curseforge::get_addon_for_flavor(id, preferred_type_id).await {
 			if has_installable_file_for_flavor(&item, preferred_type_id) {
 				return Some(item);
 			}
 			log::warn!(
-				"TOC CurseForge mod {id} has no file for preferred={preferred_type_id:?}; searching name alternatives"
+				"TOC CurseForge mod {id} has no file for preferred={preferred_type_id:?}; trying alternatives"
 			);
 		}
 	}
 
-	// Name matching (no stale curseforge_id / slug binds).
+	// Name matching (no stale curseforge_id / slug binds as the first choice —
+	// those caused Forever PostBox → Retail PostBox).
 	let mut terms = Vec::new();
 	terms.push(folder_name.to_string());
 	if let Some(title) = title {
@@ -407,6 +426,19 @@ async fn find_curseforge_for_update(
 			}
 		}
 	}
+
+	// Suite primary may be a child without TOC id (DBM-Azeroth); enrich already
+	// copied the sibling project id onto the manifest — use it only when that
+	// mod actually has a file for this flavor.
+	if let Some(id) = tracked.and_then(|t| t.curseforge_id) {
+		if !tried.contains(&id) {
+			if let Some(item) = curseforge::get_addon_for_flavor(id, preferred_type_id).await {
+				if has_installable_file_for_flavor(&item, preferred_type_id) {
+					return Some(item);
+				}
+			}
+		}
+	}
 	None
 }
 
@@ -437,12 +469,32 @@ pub async fn update_addon_with_progress(
 		AddonJobProgress::download(Some(0), None, None),
 	);
 
+	let suite_folders = crate::wow::suite::suite_folders_for(&addons_path, folder_name);
+	// Primary may be a child without X-Curse-Project-ID (DBM-Azeroth); collect
+	// ids from this folder and every suite sibling TOC.
+	let mut toc_project_ids = Vec::new();
+	if let Some(id) = toc_meta.curseforge_project_id {
+		toc_project_ids.push(id);
+	}
+	for sibling in &suite_folders {
+		if sibling == folder_name {
+			continue;
+		}
+		if let Some(id) = toc::read_folder_toc_for_client(&addons_path, sibling, &toc_ctx)
+			.and_then(|m| m.curseforge_project_id)
+		{
+			if !toc_project_ids.contains(&id) {
+				toc_project_ids.push(id);
+			}
+		}
+	}
+
 	let summary = find_curseforge_for_update(
 		folder_name,
 		tracked.as_ref(),
 		title.as_deref(),
 		install.game_version_type_id,
-		toc_meta.curseforge_project_id,
+		&toc_project_ids,
 	)
 	.await
 	.ok_or_else(|| {
@@ -454,7 +506,6 @@ pub async fn update_addon_with_progress(
 	})?;
 
 	let installed_at = tracked.and_then(|t| t.installed_at.clone());
-	let suite_folders = crate::wow::suite::suite_folders_for(&addons_path, folder_name);
 	let backup_root = addons_path.join(format!(
 		".wam-backup-suite-{}-{}",
 		folder_name,
